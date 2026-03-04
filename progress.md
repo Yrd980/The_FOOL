@@ -52,3 +52,18 @@
 - Verified crowd live run:
   - `bun run src/index.ts --rounds=1 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10`
   - produced replay with zero schema/decision errors and populated persona/rhythm metrics.
+- Implemented browser visualization stack:
+  - added `viewer/` frontend (canvas playback + chat/persona/metrics panels)
+  - added `src/viewerServer.ts` for local replay APIs + static serving
+  - added `viewer` script in `package.json`
+- Resolved TS Bun global typing by adding `@types/bun` and `tsconfig` Bun types.
+- Verified with:
+  - `bun run typecheck`
+  - `bun run check`
+  - viewer smoke test (`/health`, `/api/latest`, `/`) on port `4174`
+- Re-checked viewer frontend files to ensure no broken CSS/JS after watch-mode enhancements.
+- Re-verified project health:
+  - `bun run typecheck`
+  - `bun run check` (new dry-run replay generated)
+  - viewer smoke test on `4174` with `/health`, `/api/replays`, `/api/latest`, `/`
+- Updated README viewer section to include follow-latest and loop playback controls.

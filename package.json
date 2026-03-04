@@ -7,6 +7,7 @@
     "start": "bun run src/index.ts",
     "simulate": "bun run src/index.ts --rounds=10",
     "crowd": "bun run src/index.ts --rounds=20 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10",
+    "viewer": "bun run src/viewerServer.ts",
     "check": "bun run src/index.ts --dry-run --rounds=5",
     "typecheck": "tsc --noEmit"
   },
@@ -15,6 +16,7 @@
     "dotenv": "^17.3.1"
   },
   "devDependencies": {
+    "@types/bun": "^1.3.10",
     "@types/node": "^24.5.2",
     "typescript": "^5.9.2"
   }

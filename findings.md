@@ -62,3 +62,28 @@
 - Live verification with profile pack:
   - command used `--rounds=1 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10`
   - replay `output/replay-2026-03-04T11-34-06-576Z.json` shows `agent_count=10`, `max_concurrent_agents=10`, zero decision/schema errors, and populated `persona_notes` + `round_metrics`.
+- New requirement: provide direct web visualization of current effect.
+- Latest replay currently available: `output/replay-2026-03-04T11-38-55-174Z.json`.
+- Replay structure confirmed for web UI needs:
+  - top-level: `config`, `ranking`, `final_highlights`, `replay`
+  - each round: `public_messages`, `private_messages`, `persona_notes`, `round_metrics`, `highlights`, `errors`.
+- Existing CLI already supports `--profiles` and `--concurrency`, so viewer only needs to consume replay JSON and animate it.
+- Web viewer implemented:
+  - static UI files: `viewer/index.html`, `viewer/styles.css`, `viewer/app.js`
+  - local server: `src/viewerServer.ts`
+  - package script: `bun run viewer`
+- Server API endpoints: `/api/replays`, `/api/latest`, `/api/replay/:name`, `/health`.
+- Added Bun typings (`@types/bun`) and updated `tsconfig` `types` to include `bun`.
+- Validation:
+  - `bun run typecheck` passes
+  - `bun run check` passes
+  - viewer endpoint smoke test returns `200` on `/` and valid JSON on `/api/latest`.
+- Re-inspected viewer frontend after partial patching concerns:
+  - `viewer/index.html` includes `watchState`, `followLatestToggle`, and `loopToggle` controls.
+  - `viewer/styles.css` has valid selectors (no malformed `.#roundRange` style token present).
+  - `viewer/app.js` replay polling + auto-follow + loop playback code is complete and syntactically intact.
+- Fresh smoke validation on port `4174`:
+  - `/health` returns `{ "ok": true }`.
+  - `/api/replays` and `/api/latest` return valid replay payloads.
+  - `/` returns `200` and contains latest watch-control DOM nodes.
+- README web-viewer section now explicitly documents “跟随最新” and “循环播放” controls.

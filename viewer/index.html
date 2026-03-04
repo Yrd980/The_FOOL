@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pixel Crowd Theatre</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/viewer/styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape bg-shape-a"></div>
+    <div class="bg-shape bg-shape-b"></div>
+
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">AI Digital Twins Arena</p>
+          <h1>Pixel Crowd Theatre</h1>
+          <p id="subtitle">加载中...</p>
+          <p id="watchState" class="watch-state">自动观战模式</p>
+        </div>
+        <div class="hero-actions">
+          <select id="replaySelect"></select>
+          <button id="reloadBtn" class="ghost">刷新列表</button>
+        </div>
+      </header>
+
+      <section class="stage-grid">
+        <article class="panel canvas-panel">
+          <div class="panel-head">
+            <h2>Battle Canvas</h2>
+            <div class="round-chip" id="roundChip">Round 0 / 0</div>
+          </div>
+          <canvas id="battleCanvas" width="768" height="768" aria-label="battle canvas"></canvas>
+          <div class="controls">
+            <button id="prevBtn">上一回合</button>
+            <button id="playBtn" class="primary">播放</button>
+            <button id="nextBtn">下一回合</button>
+            <label class="toggle">
+              <input id="followLatestToggle" type="checkbox" checked />
+              跟随最新
+            </label>
+            <label class="toggle">
+              <input id="loopToggle" type="checkbox" checked />
+              循环播放
+            </label>
+            <label>
+              速度
+              <input id="speedRange" type="range" min="300" max="1800" step="100" value="900" />
+            </label>
+          </div>
+          <input id="roundRange" type="range" min="0" max="0" value="0" />
+        </article>
+
+        <article class="panel metrics-panel">
+          <div class="panel-head">
+            <h2>Round Pulse</h2>
+          </div>
+          <div class="metrics-grid" id="metricsGrid"></div>
+          <h3>Top Ranking</h3>
+          <ol id="rankingList" class="ranking"></ol>
+        </article>
+      </section>
+
+      <section class="feed-grid">
+        <article class="panel feed">
+          <div class="panel-head"><h2>Public Voice</h2></div>
+          <ul id="publicList" class="message-list"></ul>
+        </article>
+
+        <article class="panel feed">
+          <div class="panel-head"><h2>Private Wire</h2></div>
+          <ul id="privateList" class="message-list"></ul>
+        </article>
+
+        <article class="panel feed">
+          <div class="panel-head"><h2>Persona Notes</h2></div>
+          <ul id="personaList" class="persona-list"></ul>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="/viewer/app.js"></script>
+  </body>
+</html>

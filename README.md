@@ -54,6 +54,28 @@ bun run src/index.ts --rounds=20 --width=96 --height=96 --agents=20 --concurrenc
 
 输出 replay 会保存到 `output/replay-*.json`。
 
+## 网页观战（直接看效果）
+
+启动本地可视化：
+
+```bash
+bun run viewer
+```
+
+打开：
+
+```text
+http://localhost:4173
+```
+
+功能：
+- 自动读取 `output/` 最新 replay（也可切换历史 replay）
+- 像素画布逐回合播放
+- 支持“跟随最新”自动切换新 replay（轮询观战）
+- 支持“循环播放”回放模式
+- 同步显示公开发言、私聊、人格注释（`persona_notes`）
+- 显示每回合热闹度指标（`round_metrics`）
+
 ## 数字分身（OpenClaw风格）
 
 使用样例分身文件（10个分身）：
@@ -106,5 +128,10 @@ src/
   index.ts
   mockAgent.ts
   types.ts
+  viewerServer.ts
+viewer/
+  index.html
+  styles.css
+  app.js
 output/
 ```
