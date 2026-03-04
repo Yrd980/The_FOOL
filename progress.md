@@ -1,0 +1,54 @@
+# Progress Log
+
+## 2026-03-04
+- Read planning-with-files skill instructions.
+- Ran session recovery script for current project path.
+- Confirmed workspace starts empty.
+- Created planning files: `task_plan.md`, `findings.md`, `progress.md`.
+- Captured initial error/behavior (`rg --files` exit code in empty directory).
+- Updated direction to Bun-managed workflow based on new user requirement.
+- Implemented initial JS scaffold for schemas/client/engine/entrypoint.
+- Received new requirement to migrate implementation to TypeScript.
+- Migrated source to TypeScript (`src/*.ts`) and added `tsconfig.json`.
+- Updated scripts to Bun-first workflow and installed dev deps (`typescript`, `@types/node`).
+- Fixed TS compile issue and Ajv draft compatibility issue.
+- Added `.gitignore`, `README.md`, and initialized git repo (`git init`).
+- Verified with:
+  - `bun run typecheck`
+  - `bun run check`
+- Ran live simulation using DeepSeek key sourced from fish secrets.
+- Retrieved and inspected replay output; observed schema mismatch causing fallback usage in live mode.
+- Added DeepSeek structured-output preference and compatibility fallback.
+- Added `src/decisionNormalizer.ts` for coercion from malformed LLM JSON into `TurnDecision`.
+- Updated engine with second-attempt repair prompt on schema failure.
+- Fixed normalization coordinate bug and added coordinate bounding.
+- Re-ran checks:
+  - `bun run typecheck`
+  - `bun run check`
+  - live run with fish-loaded key (`--rounds=3`) now reports zero schema/decision errors.
+- Started new iteration to add frontline action-candidate hints for model decisions.
+- Added action hint types and prompt fields (`valid_action_hints`).
+- Implemented candidate generation in engine (paint/fortify/invade/burst + contested hotspots).
+- Passed hints through both first-pass decision request and repair-pass request.
+- Verified:
+  - `bun run typecheck`
+  - `bun run check`
+  - live run (`--rounds=3`) with fish-sourced key
+- Started new iteration for stronger digital-twin personality persistence and proactive behavior shaping.
+- Added `identity_dna` to state model and schema.
+- Refactored behavior steering to DNA-driven rules (removed hard dependency on `persona` condition branches).
+- Added replay `persona_notes` for explainable identity-consistent behavior.
+- Verified:
+  - `bun run typecheck`
+  - `bun run check`
+  - live run (`--rounds=2`) with fish-sourced key and zero runtime/schema errors.
+- Added crowd mode support:
+  - `EngineConfig.maxConcurrentAgents` + concurrent per-round decision collection
+  - profile-based twin loading via `--profiles`
+  - replay `round_metrics` output
+- Added `profiles/openclaw-sample.json` with 10 digital twins.
+- Verified crowd dry-run:
+  - `bun run src/index.ts --dry-run --rounds=3 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10`
+- Verified crowd live run:
+  - `bun run src/index.ts --rounds=1 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10`
+  - produced replay with zero schema/decision errors and populated persona/rhythm metrics.

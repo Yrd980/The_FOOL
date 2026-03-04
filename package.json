@@ -1,0 +1,21 @@
+{
+  "name": "ai-pixel-war",
+  "version": "0.1.0",
+  "description": "AI pixel war MVP with diplomacy, mood, and DeepSeek-driven decisions",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "simulate": "bun run src/index.ts --rounds=10",
+    "crowd": "bun run src/index.ts --rounds=20 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10",
+    "check": "bun run src/index.ts --dry-run --rounds=5",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ajv": "^8.18.0",
+    "dotenv": "^17.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2"
+  }
+}

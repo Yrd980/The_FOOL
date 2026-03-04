@@ -1,0 +1,64 @@
+# Findings
+
+## 2026-03-04
+- Planning skill loaded and session catchup executed successfully (no carry-over output).
+- Current project directory started effectively empty.
+- `rg --files` returns non-zero in empty directory; this is expected.
+- User requirement expanded to include Git management in addition to DeepSeek-based AI simulation skeleton.
+- Node project initialized with ESM mode and scripts (`start`, `simulate`, `check`).
+- Dependencies installed successfully: `ajv`, `dotenv`.
+- User requested switching package/runtime management to Bun before core implementation.
+- Core scaffold files were created in JavaScript; user then requested TypeScript migration for stronger type checks.
+- Bun install succeeded and generated `bun.lock` (lockfile migrated from prior npm lock).
+- Typecheck currently fails at `src/engine.ts` due to TypeScript narrowing around Ajv validation path.
+- Type error fixed by avoiding `never` narrowing in Ajv-failed branch.
+- Runtime schema error fixed by switching to `Ajv2020` for draft-2020-12 compatibility.
+- Dry-run simulation now passes via `bun run check`.
+- Git repository initialized and project files are ready for first commit.
+- Current git status is cleanly untracked initial set (expected immediately after `git init`).
+- Live run with DeepSeek succeeded when loading key via `fish -c` bridge and exporting in shell.
+- Replay file generated: `output/replay-2026-03-04T10-44-30-365Z.json`.
+- Important: most live responses failed strict `TurnDecision` schema validation and fell back to mock decisions, indicating prompt-output mismatch.
+- Current `deepseekClient.ts` does not request JSON response format and performs only single-shot generation.
+- Current `engine.ts` validates once and immediately falls back to mock on mismatch (no repair retry / normalization).
+- Implemented live-conformance hardening:
+  - DeepSeek requests now prefer `response_format: { type: "json_object" }` with fallback when unsupported.
+  - Added decision normalization/mapping layer for common malformed keys (`action`, `target`, `message`, etc.).
+  - Added second-pass repair call when first response fails schema.
+- Added run-level `error_stats` summary in CLI output (`schema_validation`, `schema_repaired`, `decision_generation`).
+- Detected and fixed coordinate-normalization bug that accidentally defaulted missing coords to `(0,0)`.
+- Added coordinate-range prompt hints and action coordinate bounding in engine.
+- Latest live run (`output/replay-2026-03-04T11-01-35-501Z.json`) shows:
+- `error_stats` all zero
+- non-zero expansion events with multiple unique target coordinates.
+- Quantitative comparison:
+  - old live replay `output/replay-2026-03-04T10-44-30-365Z.json`: `schema_validation=18`
+  - new live replay `output/replay-2026-03-04T11-01-35-501Z.json`: `schema_validation=0`
+- New requirement: provide per-agent frontline action candidates in prompt (no human input) to reduce low-quality/random coordinate selection.
+- Current engine prompt input path has no explicit `valid_action_hints` field yet.
+- Current types file has no dedicated structure for action-candidate hints.
+- Added typed action-hint payload (`ActionHints`) and wired it into prompt input.
+- Engine now builds per-agent candidate points from owned frontier, enemy adjacency, and last-round contested hotspots.
+- Live run after hint integration: `output/replay-2026-03-04T11-08-56-797Z.json`
+  - `error_stats` remained zero
+  - expansion activity increased to `26` unique expansion targets across 3 rounds (previous comparable run had `6`).
+- New user priority: emphasize persistent personalized AI identity (digital twin style) over generic behavior.
+- Current model has persona labels but lacks explicit long-term identity DNA fields and replay-level personality rationale output.
+- User clarified that forced proactive behavior is not the goal; personality realism should override action-count pressure.
+- Implemented `identity_dna` as required state field in both TS types and JSON schema.
+- Reworked steering logic from persona-enum branching to DNA-weight branching (`risk/aggression/diplomacy/creativity + core_values`).
+- Added replay `persona_notes` with per-round personality rationale and activity score.
+- Live verification file: `output/replay-2026-03-04T11-24-33-198Z.json`
+  - `error_stats` all zero
+  - `persona_notes` present for all agents in each round.
+- Added crowd-scaling primitives for 10-30 digital twins:
+  - `--concurrency` option and engine-side concurrent decision collection.
+  - `--profiles` option to load batch digital-twin profiles from JSON.
+  - replay `round_metrics` for heat visualization (expanded/attacked/treaties/messages).
+- Added sample profile pack: `profiles/openclaw-sample.json` (10 twins).
+- Dry-run verification with profile pack:
+  - command used `--dry-run --rounds=3 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10`
+  - resulting replay reports `agent_count=10`, `max_concurrent_agents=10`, and zero schema/decision errors.
+- Live verification with profile pack:
+  - command used `--rounds=1 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10`
+  - replay `output/replay-2026-03-04T11-34-06-576Z.json` shows `agent_count=10`, `max_concurrent_agents=10`, zero decision/schema errors, and populated `persona_notes` + `round_metrics`.
