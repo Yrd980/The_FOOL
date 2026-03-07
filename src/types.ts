@@ -103,6 +103,30 @@ export interface Point {
   y: number;
 }
 
+export interface ArtZone {
+  id: string;
+  label: string;
+  kind: "center_halo" | "diagonal_rift" | "horizon_band" | "corner_sigils" | "spiral";
+  motif: string;
+  preferred_palette: string[];
+  emphasis: number;
+  offset: number;
+  radius: number;
+  note: string;
+}
+
+export interface ArtDirection {
+  mode: "myth";
+  theme_prompt: string;
+  title: string;
+  mood_words: string[];
+  palette: string[];
+  forbidden_colors: string[];
+  motifs: string[];
+  composition_notes: string[];
+  zone_guides: ArtZone[];
+}
+
 export interface OpponentSnapshot {
   id: string;
   archetype: string;
@@ -127,6 +151,8 @@ export interface ActionHints {
   invade_candidates: Point[];
   burst_centers: Point[];
   contested_hotspots: Point[];
+  palette_candidates: string[];
+  motif_focus: string[];
 }
 
 export type TurnIntent = "expand" | "defend" | "cooperate" | "betray" | "art_focus" | "revenge";
@@ -189,6 +215,7 @@ export interface EngineConfig {
   dryRun: boolean;
   model: string;
   profilePath?: string;
+  mythPrompt?: string;
 }
 
 export interface ScoreItem {
@@ -203,6 +230,12 @@ export interface ScoreItem {
 
 export interface ReplayRound {
   round: number;
+  canvas_updates: Array<{
+    x: number;
+    y: number;
+    owner: string | null;
+    color: string;
+  }>;
   public_messages: Array<{ agent_id: string; message: string }>;
   private_messages: Array<{ from: string; to: string; content: string }>;
   persona_notes: Array<{ agent_id: string; note: string; proactive_score: number }>;
@@ -260,7 +293,9 @@ export interface SimulationResult {
     dry_run: boolean;
     model: string;
     profile_path?: string;
+    myth_prompt?: string;
   };
+  art_direction: ArtDirection;
   ranking: ScoreItem[];
   final_highlights: MemoryEvent[];
   replay: ReplayRound[];

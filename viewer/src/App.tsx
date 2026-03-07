@@ -10,6 +10,7 @@ type MemoryEvent = {
 
 type ReplayRound = {
   round: number;
+  canvas_updates: Array<{ x: number; y: number; owner: string | null; color: string }>;
   public_messages: Array<{ agent_id: string; message: string }>;
   private_messages: Array<{ from: string; to: string; content: string }>;
   persona_notes: Array<{ agent_id: string; note: string; proactive_score: number }>;
@@ -85,7 +86,7 @@ type ReplayListItem = {
 
 type Frame = {
   round: number;
-  board: Array<Array<string | null>>;
+  board: Array<Array<{ owner: string | null; color: string }>>;
   territory: Map<string, number>;
   source: ReplayRound;
 };
@@ -174,22 +175,38 @@ function buildAgentDirectory(replay: ReplayData): AgentDirectoryItem[] {
 }
 
 function buildFrames(replay: ReplayData): Frame[] {
-  const board = Array.from({ length: replay.config.height }, () => Array<string | null>(replay.config.width).fill(null));
+  const fallbackColors = stableColorMap(replay);
+  const board = Array.from({ length: replay.config.height }, () =>
+    Array.from({ length: replay.config.width }, () => ({ owner: null as string | null, color: "#111111" }))
+  );
   const frames: Frame[] = [];
 
   for (const round of replay.replay) {
-    for (const event of round.highlights) {
-      if (event.type !== "expanded" && event.type !== "attacked") continue;
-      const point = parseCoord(event.target);
-      if (!point) continue;
-      if (point.x < 0 || point.y < 0 || point.x >= replay.config.width || point.y >= replay.config.height) continue;
-      board[point.y][point.x] = event.by;
+    if (round.canvas_updates?.length) {
+      for (const update of round.canvas_updates) {
+        if (update.x < 0 || update.y < 0 || update.x >= replay.config.width || update.y >= replay.config.height) continue;
+        board[update.y][update.x] = {
+          owner: update.owner,
+          color: update.color
+        };
+      }
+    } else {
+      for (const event of round.highlights) {
+        if (event.type !== "expanded" && event.type !== "attacked") continue;
+        const point = parseCoord(event.target);
+        if (!point) continue;
+        if (point.x < 0 || point.y < 0 || point.x >= replay.config.width || point.y >= replay.config.height) continue;
+        board[point.y][point.x] = {
+          owner: event.by,
+          color: fallbackColors.get(event.by) || "#999999"
+        };
+      }
     }
 
     const territory = new Map<string, number>();
     for (let y = 0; y < replay.config.height; y += 1) {
       for (let x = 0; x < replay.config.width; x += 1) {
-        const owner = board[y][x];
+        const owner = board[y][x].owner;
         if (!owner) continue;
         territory.set(owner, (territory.get(owner) || 0) + 1);
       }
@@ -394,9 +411,9 @@ export function App() {
 
     for (let y = 0; y < currentReplay.config.height; y += 1) {
       for (let x = 0; x < currentReplay.config.width; x += 1) {
-        const owner = frame.board[y][x];
-        if (!owner) continue;
-        context.fillStyle = currentReplay.colorMap.get(owner) || "#999";
+        const cell = frame.board[y][x];
+        if (!cell.owner) continue;
+        context.fillStyle = cell.color;
         context.fillRect(Math.floor(x * cellW), Math.floor(y * cellH), Math.ceil(cellW), Math.ceil(cellH));
       }
     }

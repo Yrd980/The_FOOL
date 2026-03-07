@@ -147,3 +147,49 @@
   - `http://localhost:4173/health`
   - `http://localhost:4173/api/latest`
   - `http://localhost:4173/`
+- Returned to the mainline product issue: the generated artwork still looked incomplete.
+- Measured the actual bottleneck:
+  - old dry-run replay on `64x64` / `5` rounds had only `15` occupied cells (`fill_rate=0.0037`)
+- Fixed the generation/render path:
+  - added brush-style paint strokes instead of single-pixel paint
+  - added exact per-round `canvas_updates` to replay output
+  - added final-round canvas resolve so the last frame fills the remaining empty area
+  - updated the React viewer to render actual cell colors from `canvas_updates`
+  - added slight paint palette variation in `dry-run` mode
+- Re-validated:
+  - `bun run typecheck`
+  - `bun run check`
+  - `bun run viewer:build`
+  - viewer smoke test via `/api/latest` and `/`
+- Latest dry-run replay now reports full coverage (`fill_rate=1`) and exposes large final-round `canvas_updates`.
+- Started the next mainline refinement: make the final image feel like a mythic artwork instead of just a filled battlefield.
+- Added `Myth Mode` / art-director layer:
+  - new CLI theme args `--myth=` / `--theme=`
+  - shared top-level `art_direction` in simulation output
+  - theme-driven palette + motif + zone guide generation
+- Wired Myth Mode into:
+  - agent prompts
+  - action hints
+  - fallback painting
+  - final canvas color harmonization
+  - art scoring
+- Verified with:
+  - `bun run typecheck`
+  - `bun run check`
+  - custom myth dry-run (`72x72`, `6` rounds, shattered throne / tidal cathedral theme)
+  - viewer smoke test on the new replay payload
+- User reviewed an intermediate Myth output and flagged it as visually odd.
+- Responded by tightening the mainline art loop:
+  - added shared target artwork grid (`artTargetColors`)
+  - shifted action hints toward target mismatch instead of pure territory/frontline pressure
+  - reduced myth surface noise by snapping to a compact render palette
+- Re-validated on the same myth theme:
+  - `bun run typecheck`
+  - dry-run custom myth replay `output/replay-2026-03-07T07-36-32-544Z.json`
+  - dry-run target-guided replay `output/replay-2026-03-07T07-40-39-883Z.json`
+  - viewer smoke test via direct Bun server on `4174`
+- User then pointed out that the image was still not readable enough as a concrete picture.
+- Responded by pushing the target canvas toward silhouette-first composition:
+  - added layered target generation (background, halo, motif fill, outline, support forms)
+  - kept target-guided painting active so agents still converge toward the shared wall-piece target
+- Re-validated with replay `output/replay-2026-03-07T07-47-31-489Z.json` and confirmed latest replay serving still works.

@@ -1,4 +1,4 @@
-import type { ActionHints, AgentState, OpponentSnapshot, Point, TurnAction, TurnDecision, TurnIntent } from "./types";
+import type { ActionHints, AgentState, ArtDirection, OpponentSnapshot, Point, TurnAction, TurnDecision, TurnIntent } from "./types";
 
 const ACTION_COST: Record<TurnAction["action"], number> = {
   wait: 0,
@@ -16,6 +16,20 @@ function randomBetween(min: number, max: number): number {
   return min + randomInt(max - min + 1);
 }
 
+function clampByte(value: number): number {
+  return Math.max(0, Math.min(255, value));
+}
+
+function shiftColor(hex: string, delta: number): string {
+  const match = hex.match(/^#?([0-9a-f]{6})$/i);
+  if (!match) return hex;
+  const value = match[1];
+  const red = clampByte(parseInt(value.slice(0, 2), 16) + delta);
+  const green = clampByte(parseInt(value.slice(2, 4), 16) + delta);
+  const blue = clampByte(parseInt(value.slice(4, 6), 16) + delta);
+  return `#${red.toString(16).padStart(2, "0")}${green.toString(16).padStart(2, "0")}${blue.toString(16).padStart(2, "0")}`;
+}
+
 function stablePairBias(agentId: string, targetId: string, round: number): number {
   const key = `${agentId}:${targetId}:${round}`;
   let hash = 0;
@@ -30,6 +44,18 @@ function pickPoint(candidates: Point[], width: number, height: number): Point {
     return candidates[randomInt(Math.min(candidates.length, 3))];
   }
   return { x: randomInt(width), y: randomInt(height) };
+}
+
+function pickPaintColor(agent: AgentState, intent: TurnIntent, round: number, validActionHints: ActionHints, artDirection: ArtDirection): string {
+  const directedPalette = validActionHints.palette_candidates?.length ? validActionHints.palette_candidates : artDirection.palette;
+  const palette = [...directedPalette, agent.color, shiftColor(agent.color, 18), shiftColor(agent.color, -22), shiftColor(agent.color, 32)];
+  if (intent === "art_focus") {
+    return palette[round % palette.length];
+  }
+  if (agent.identity_dna.creativity_bias >= 75) {
+    return palette[(round + 1) % palette.length];
+  }
+  return palette[0];
 }
 
 function pushAction(actions: TurnAction[], action: TurnAction, energyLeft: { value: number }): boolean {
@@ -128,7 +154,15 @@ function chooseTarget(agent: AgentState, opponents: OpponentSnapshot[], intent: 
   return ranked[0]?.id ?? agent.id;
 }
 
-function buildActions(agent: AgentState, intent: TurnIntent, width: number, height: number, validActionHints: ActionHints): TurnAction[] {
+function buildActions(
+  agent: AgentState,
+  intent: TurnIntent,
+  width: number,
+  height: number,
+  validActionHints: ActionHints,
+  round: number,
+  artDirection: ArtDirection
+): TurnAction[] {
   const dna = agent.identity_dna;
   const values = dna.core_values.map((value) => value.toLowerCase());
   const actions: TurnAction[] = [];
@@ -174,7 +208,7 @@ function buildActions(agent: AgentState, intent: TurnIntent, width: number, heig
 
     if (priority.action === "paint") {
       const point = pickPoint(validActionHints.paint_candidates, width, height);
-      pushAction(actions, { action: "paint", x: point.x, y: point.y, color: agent.color }, energyLeft);
+      pushAction(actions, { action: "paint", x: point.x, y: point.y, color: pickPaintColor(agent, intent, round, validActionHints, artDirection) }, energyLeft);
       continue;
     }
 
@@ -190,7 +224,12 @@ function buildActions(agent: AgentState, intent: TurnIntent, width: number, heig
 
   if (actions.length === 0) {
     const point = pickPoint(validActionHints.paint_candidates, width, height);
-    pushAction(actions, { action: "paint", x: point.x, y: point.y, color: agent.color }, energyLeft);
+    pushAction(actions, {
+      action: "paint",
+      x: point.x,
+      y: point.y,
+      color: pickPaintColor(agent, intent, round, validActionHints, artDirection)
+    }, energyLeft);
   }
 
   return actions.length > 0 ? actions : [{ action: "wait" }];
@@ -278,7 +317,8 @@ export function buildMockDecision({
   width,
   height,
   opponents,
-  validActionHints
+  validActionHints,
+  artDirection
 }: {
   agent: AgentState;
   round: number;
@@ -286,6 +326,7 @@ export function buildMockDecision({
   height: number;
   opponents: OpponentSnapshot[];
   validActionHints: ActionHints;
+  artDirection: ArtDirection;
 }): TurnDecision {
   const intent = pickIntent(agent, opponents);
   const target = chooseTarget(agent, opponents, intent, round);
@@ -298,7 +339,7 @@ export function buildMockDecision({
     public_message: buildPublicMessage(agent, intent),
     private_messages: buildPrivateMessage(agent, targetSnapshot, intent),
     treaty_proposals: buildTreaty(agent, round, targetSnapshot, intent),
-    actions: buildActions(agent, intent, width, height, validActionHints),
+    actions: buildActions(agent, intent, width, height, validActionHints, round, artDirection),
     emotion_delta: buildEmotionDelta(intent),
     mood_change_reason: `${agent.identity_dna.archetype} reacted to frontline pressure`
   };

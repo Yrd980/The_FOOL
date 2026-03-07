@@ -29,6 +29,9 @@ Build a runnable JavaScript MVP for AI pixel war using DeepSeek API, managed wit
 | 13. Visualize social memory in viewer | completed | Added replay social snapshots/metrics and a viewer Twin Lens panel for bonds, rivalries, and last-round summaries |
 | 14. Migrate viewer to React + Tailwind | completed | Rebuilt viewer with Vite React/Tailwind, preserved Bun replay API flow, and validated build plus `bun run viewer` serving |
 | 15. Add viewer dev workflow | completed | Added Vite hot-reload mode with Bun API-only server and proxy-backed `bun run viewer:dev` |
+| 16. Ensure final canvas becomes full pixel art | completed | Added brush-style paint, exact canvas replay updates, and final-round canvas resolve so the last frame reaches full coverage |
+| 17. Add Myth Mode art director | completed | Added shared myth art direction, theme-driven palette/zone guidance, art-aware prompts, and aesthetic scoring |
+| 18. Reduce Myth Mode artifact noise | completed | Replaced noisy per-pixel myth coloring with a shared target canvas, quantized palette, and target-guided painting hints |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

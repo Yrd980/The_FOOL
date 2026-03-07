@@ -46,6 +46,12 @@ bun run check
 bun run start
 ```
 
+神话壁画主题（推荐主线玩法）：
+
+```bash
+bun run src/index.ts --dry-run --rounds=6 --width=72 --height=72 --myth="a shattered throne blooming into a tidal cathedral, solemn but dangerous"
+```
+
 自定义参数：
 
 ```bash
@@ -84,6 +90,7 @@ http://localhost:4173
 - 基于 `React + Tailwind CSS + Vite` 的观战前端
 - 自动读取 `output/` 最新 replay（也可切换历史 replay）
 - 像素画布逐回合播放
+- 使用真实 `canvas_updates` 回放画布颜色，而不只是按 territory owner 着色
 - 支持“跟随最新”自动切换新 replay（轮询观战）
 - 支持“循环播放”回放模式
 - 同步显示公开发言、私聊、人格注释（`persona_notes`）
@@ -107,13 +114,16 @@ bun run src/index.ts --rounds=20 --width=96 --height=96 --profiles=profiles/open
 - 分身会根据 `trust / affinity / debt / recent_shared_events` 调整协商、结盟、复仇与发言
 - `dry-run` / fallback 也走 DNA + 关系驱动逻辑，不再是简单 persona 脚本
 - replay 中包含 `persona_notes`、`round_metrics`、`social_metrics` 与 `social_snapshot`，可直接用于“热闹度”与人际关系可视化
+- 最后一回合会执行画布收束填充，确保最终呈现出完整像素画
 
 ## 当前设计重点
 
 - 核心体验是“一群有鲜明人格的数字分身在抢像素地盘、协商、冲突、作画”
 - 默认行为优先由 `identity_dna`、情绪、关系与共享历史共同决定
+- 默认启用 `Myth Mode`，即共享一份神话艺术方向（`art_direction`），而不是去临摹现实物体
 - `persona` 仅保留为兼容标签，不再作为主要行为分流依据
 - agent 会记住具体对象之间的事件，例如签约、毁约、进攻、失地与冲突胜负
+- 若传入 `--myth="..."`，系统会围绕这句主题生成调色板、motif、构图区和共享审美宪法
 
 ## 类型检查
 

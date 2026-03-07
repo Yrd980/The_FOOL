@@ -8,6 +8,8 @@ import { DeepSeekClient, buildAgentSystemPrompt, buildAgentUserPrompt } from "./
 import type {
   ActionHints,
   AgentState,
+  ArtDirection,
+  ArtZone,
   DigitalTwinProfile,
   EngineConfig,
   IdentityDNA,
@@ -28,6 +30,54 @@ const __dirname = path.dirname(__filename);
 const COLORS = ["#E63946", "#2A9D8F", "#F4A261", "#457B9D", "#E9C46A", "#1D3557", "#FF6B6B", "#4CC9F0"];
 
 const LEGACY_PERSONAS: Persona[] = ["expansionist", "defender", "artist", "schemer"];
+const DEFAULT_MYTH_PROMPT = "A fractured crown rising from a luminous tide, half shrine, half warning";
+const ART_PALETTE_LIBRARY: Array<{ name: string; colors: string[]; forbidden: string[]; moods: string[] }> = [
+  {
+    name: "Solar Relic",
+    colors: ["#22181C", "#8C1C13", "#BF4342", "#E7D7C1", "#F5B700"],
+    forbidden: ["#00FF00", "#FF00FF"],
+    moods: ["regal", "sacrificial", "heated"]
+  },
+  {
+    name: "Moon Archive",
+    colors: ["#101935", "#2D3047", "#5C80BC", "#E8C547", "#F7F7FF"],
+    forbidden: ["#FF6B6B", "#00E5FF"],
+    moods: ["lunar", "quiet", "prophetic"]
+  },
+  {
+    name: "Ritual Rust",
+    colors: ["#201E1F", "#4F5D75", "#BFC0C0", "#EF8354", "#E4FDE1"],
+    forbidden: ["#00FFCC", "#FF55FF"],
+    moods: ["industrial", "weathered", "ritual"]
+  },
+  {
+    name: "Verdict Bloom",
+    colors: ["#102A43", "#2C7A7B", "#F6BD60", "#F28482", "#F7EDE2"],
+    forbidden: ["#7D00FF", "#00F5D4"],
+    moods: ["ceremonial", "soft", "ornate"]
+  },
+  {
+    name: "Ashen Choir",
+    colors: ["#161925", "#23395B", "#406E8E", "#CBF7ED", "#EEC643"],
+    forbidden: ["#FF1493", "#39FF14"],
+    moods: ["sacred", "choral", "cold-fire"]
+  }
+];
+
+const MOTIF_LIBRARY = [
+  "crown",
+  "halo",
+  "rift",
+  "banner",
+  "eye",
+  "spiral",
+  "bridge",
+  "throne",
+  "storm-mark",
+  "wing",
+  "sigil",
+  "tide"
+];
 const DEFAULT_TWIN_DNA_LIBRARY: IdentityDNA[] = [
   {
     archetype: "Frontier Composer",
@@ -166,6 +216,62 @@ function signedNumber(value: number): string {
   return value > 0 ? `+${value}` : `${value}`;
 }
 
+function hashText(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash >>> 0);
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const match = hex.match(/^#?([0-9a-f]{6})$/i);
+  if (!match) return { r: 0, g: 0, b: 0 };
+  const value = match[1];
+  return {
+    r: parseInt(value.slice(0, 2), 16),
+    g: parseInt(value.slice(2, 4), 16),
+    b: parseInt(value.slice(4, 6), 16)
+  };
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  return `#${clamp(Math.round(r), 0, 255)
+    .toString(16)
+    .padStart(2, "0")}${clamp(Math.round(g), 0, 255)
+    .toString(16)
+    .padStart(2, "0")}${clamp(Math.round(b), 0, 255)
+    .toString(16)
+    .padStart(2, "0")}`;
+}
+
+function blendHexColors(base: string, accent: string, amount: number): string {
+  const left = hexToRgb(base);
+  const right = hexToRgb(accent);
+  const ratio = clamp(amount, 0, 1);
+  return rgbToHex(
+    left.r + (right.r - left.r) * ratio,
+    left.g + (right.g - left.g) * ratio,
+    left.b + (right.b - left.b) * ratio
+  );
+}
+
+function colorDistance(left: string, right: string): number {
+  const a = hexToRgb(left);
+  const b = hexToRgb(right);
+  return Math.sqrt((a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2);
+}
+
+function uniqueColors(colors: string[]): string[] {
+  return [...new Set(colors.filter((color) => /^#[0-9A-Fa-f]{6}$/.test(color)))];
+}
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const t = clamp((value - edge0) / Math.max(edge1 - edge0, 1e-6), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
 type DecisionRequestStatus = "ok" | "repaired" | "fallback";
 
 interface DecisionRequestResult {
@@ -184,6 +290,10 @@ export class PixelWarEngine {
   private readonly maxConcurrentAgents: number;
   private readonly dryRun: boolean;
   private readonly profilePath?: string;
+  private readonly mythPrompt: string;
+  private readonly artDirection: ArtDirection;
+  private readonly mythRenderPalette: string[];
+  private readonly artTargetColors: string[][];
   private readonly deepSeek: DeepSeekClient;
   private readonly validateAgent: ValidateFunction<AgentState>;
   private readonly validateDecision: ValidateFunction<TurnDecision>;
@@ -192,6 +302,7 @@ export class PixelWarEngine {
   private agents: AgentState[];
   private events: MemoryEvent[] = [];
   private activeTreaties: Treaty[] = [];
+  private currentRoundUpdateMap = new Map<string, ReplayRound["canvas_updates"][number]>();
 
   constructor(config: Partial<EngineConfig> = {}) {
     this.width = config.width ?? 64;
@@ -201,6 +312,10 @@ export class PixelWarEngine {
     this.maxConcurrentAgents = Math.max(1, config.maxConcurrentAgents ?? 8);
     this.dryRun = config.dryRun ?? false;
     this.profilePath = config.profilePath;
+    this.mythPrompt = (config.mythPrompt || DEFAULT_MYTH_PROMPT).trim();
+    this.artDirection = this.buildArtDirection(this.mythPrompt);
+    this.mythRenderPalette = this.buildRenderPalette(this.artDirection);
+    this.artTargetColors = this.buildArtTarget(this.artDirection);
     this.deepSeek = new DeepSeekClient({ model: config.model ?? "deepseek-chat" });
 
     const agentSchemaPath = path.join(__dirname, "..", "schemas", "agent-state.schema.json");
@@ -228,6 +343,282 @@ export class PixelWarEngine {
       board.push(row);
     }
     return board;
+  }
+
+  private buildArtDirection(themePrompt: string): ArtDirection {
+    const lower = themePrompt.toLowerCase();
+    const seed = hashText(themePrompt);
+    const paletteKit =
+      ART_PALETTE_LIBRARY.find((item) =>
+        item.moods.some((mood) => lower.includes(mood)) ||
+        (item.name === "Solar Relic" && (lower.includes("crown") || lower.includes("throne") || lower.includes("king"))) ||
+        (item.name === "Moon Archive" && (lower.includes("moon") || lower.includes("dream") || lower.includes("night"))) ||
+        (item.name === "Ritual Rust" && (lower.includes("machine") || lower.includes("rust") || lower.includes("ruin"))) ||
+        (item.name === "Verdict Bloom" && (lower.includes("garden") || lower.includes("flower") || lower.includes("choir"))) ||
+        (item.name === "Ashen Choir" && (lower.includes("storm") || lower.includes("tide") || lower.includes("shrine")))
+      ) ?? ART_PALETTE_LIBRARY[seed % ART_PALETTE_LIBRARY.length];
+
+    const palette = [...paletteKit.colors];
+    const motifs = [...new Set(MOTIF_LIBRARY.filter((motif) => lower.includes(motif)).concat(shuffled(MOTIF_LIBRARY).slice(0, 3)))].slice(0, 5);
+    const titleLead = motifs[0] ? `${motifs[0][0].toUpperCase()}${motifs[0].slice(1)}` : "Myth";
+
+    const zoneGuides: ArtZone[] = [
+      {
+        id: "core-halo",
+        label: "Core Halo",
+        kind: "center_halo",
+        motif: motifs[0] ?? "crown",
+        preferred_palette: palette.slice(2, 5),
+        emphasis: 92,
+        offset: ((seed % 17) - 8) / 100,
+        radius: 0.26,
+        note: "中心应该有召唤感或圣像感，允许更亮、更庄严。"
+      },
+      {
+        id: "diagonal-rift",
+        label: "Diagonal Rift",
+        kind: "diagonal_rift",
+        motif: motifs[1] ?? "rift",
+        preferred_palette: [palette[0], palette[1], palette[3]],
+        emphasis: 74,
+        offset: ((seed % 29) - 14) / 100,
+        radius: 0.12,
+        note: "斜向张力带，适合冲突、裂痕、旗帜或攻势。"
+      },
+      {
+        id: "horizon-band",
+        label: "Horizon Band",
+        kind: "horizon_band",
+        motif: motifs[2] ?? "banner",
+        preferred_palette: [palette[1], palette[2], palette[4]],
+        emphasis: 68,
+        offset: 0.52 + ((seed % 11) - 5) / 100,
+        radius: 0.14,
+        note: "水平叙事带，适合秩序、仪式、协商和结构。"
+      },
+      {
+        id: "corner-sigils",
+        label: "Corner Sigils",
+        kind: "corner_sigils",
+        motif: motifs[3] ?? "sigil",
+        preferred_palette: [palette[0], palette[4]],
+        emphasis: 34,
+        offset: 0,
+        radius: 0.11,
+        note: "角落是副叙事与签名区域，适合留下象征。"
+      },
+      {
+        id: "spiral-echo",
+        label: "Spiral Echo",
+        kind: "spiral",
+        motif: motifs[4] ?? "spiral",
+        preferred_palette: [palette[2], palette[3], palette[4]],
+        emphasis: 61,
+        offset: (seed % 360) / 360,
+        radius: 0.32,
+        note: "允许局部重复、回声与梦境式旋涡。"
+      }
+    ];
+
+    return {
+      mode: "myth",
+      theme_prompt: themePrompt,
+      title: `${paletteKit.name} ${titleLead} Myth`,
+      mood_words: paletteKit.moods,
+      palette,
+      forbidden_colors: paletteKit.forbidden,
+      motifs,
+      composition_notes: [
+        "中心必须有主意象，不要整张图平均化。",
+        "保留 10%-18% 的安静区，不要把每个区域都填得同样吵。",
+        "让高张力区域沿一条斜向或环形轨迹传播。",
+        "重复 motif 时要像仪式回声，不要像机械复制。"
+      ],
+      zone_guides: zoneGuides
+    };
+  }
+
+  private buildRenderPalette(artDirection: ArtDirection): string[] {
+    const base = artDirection.palette;
+    const derived = [
+      ...base,
+      ...base.slice(0, -1).map((color, index) => blendHexColors(color, base[index + 1], 0.5)),
+      blendHexColors(base[0], base[base.length - 1], 0.25),
+      blendHexColors(base[0], base[base.length - 1], 0.75),
+      blendHexColors(base[1] ?? base[0], base[3] ?? base[base.length - 1], 0.5)
+    ];
+    return uniqueColors(derived).slice(0, 14);
+  }
+
+  private motifMask(motif: string, zone: ArtZone, x: number, y: number): number {
+    const nx = x / Math.max(1, this.width - 1);
+    const ny = y / Math.max(1, this.height - 1);
+    const centerX = zone.kind === "corner_sigils" ? (nx < 0.5 ? 0.12 : 0.88) : 0.5 + (zone.kind === "center_halo" ? zone.offset : 0);
+    const centerY = zone.kind === "corner_sigils" ? (ny < 0.5 ? 0.12 : 0.88) : zone.kind === "horizon_band" ? zone.offset : 0.5;
+    const dx = nx - centerX;
+    const dy = ny - centerY;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    const lower = motif.toLowerCase();
+
+    if (lower.includes("throne") || lower.includes("crown")) {
+      const seat = absX < 0.16 && dy > 0.02 && dy < 0.18 ? 1 : 0;
+      const back = absX < 0.09 && dy > -0.28 && dy < 0.04 ? 1 : 0;
+      const base = absX < 0.22 && dy > 0.16 && dy < 0.26 ? 1 : 0;
+      const arms = ((absX > 0.11 && absX < 0.18 && dy > -0.03 && dy < 0.08) ? 1 : 0) * 0.9;
+      const spikes = dy < -0.18 && dy > -0.34 && absX < 0.18 && ((Math.floor((dx + 0.18) * 18) % 2 === 0) ? 1 : 0);
+      return clamp(Math.max(seat, back, base, arms, spikes ? 0.7 : 0), 0, 1);
+    }
+
+    if (lower.includes("eye")) {
+      const almond = 1 - (absX / 0.26 + absY / 0.12);
+      const pupil = absX < 0.03 && absY < 0.03 ? 1 : 0;
+      return clamp(Math.max(almond, pupil), 0, 1);
+    }
+
+    if (lower.includes("wing")) {
+      const wingSpan = 1 - Math.max(0, (absY / 0.2 + Math.max(0, absX - 0.08) / 0.28));
+      return clamp(wingSpan, 0, 1);
+    }
+
+    if (lower.includes("storm") || lower.includes("rift")) {
+      const line = 0.46 + zone.offset + Math.sin(nx * Math.PI * 5) * 0.06;
+      const dist = Math.abs(ny - line);
+      return clamp(1 - dist / 0.05, 0, 1);
+    }
+
+    if (lower.includes("banner") || lower.includes("bridge") || lower.includes("arch")) {
+      const band = 1 - Math.abs(ny - zone.offset) / 0.05;
+      const arch = 1 - Math.abs(Math.hypot(dx, dy + 0.03) - 0.18) / 0.05;
+      return clamp(Math.max(band * 0.8, arch), 0, 1);
+    }
+
+    if (lower.includes("tide")) {
+      const wave = 0.68 + Math.sin(nx * Math.PI * 2.2 + zone.offset * 6) * 0.06;
+      return clamp(1 - Math.abs(ny - wave) / 0.08, 0, 1);
+    }
+
+    if (lower.includes("sigil")) {
+      const diamond = 1 - (absX / 0.09 + absY / 0.09);
+      const cross = Math.max(1 - absX / 0.02, 1 - absY / 0.02);
+      return clamp(Math.max(diamond, cross * 0.55), 0, 1);
+    }
+
+    const angle = Math.atan2(dy, dx) / (Math.PI * 2);
+    const dist = Math.hypot(dx, dy);
+    const spiral = 1 - Math.abs(dist - (0.02 + ((angle + zone.offset + 1) % 1) * 0.3)) / 0.04;
+    return clamp(spiral, 0, 1);
+  }
+
+  private motifOutlineStrength(motif: string, zone: ArtZone, x: number, y: number): number {
+    const center = this.motifMask(motif, zone, x, y);
+    let edge = 0;
+    for (const neighbor of this.neighbors4(x, y)) {
+      const around = this.motifMask(motif, zone, neighbor.x, neighbor.y);
+      edge = Math.max(edge, Math.abs(center - around));
+    }
+    return clamp(edge, 0, 1);
+  }
+
+  private applyLayerMask(
+    field: string[][],
+    zone: ArtZone,
+    motif: string,
+    fillColor: string,
+    opacityScale: number,
+    minMask = 0.03
+  ): void {
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const mask = this.motifMask(motif, zone, x, y);
+        if (mask < minMask) continue;
+        field[y][x] = blendHexColors(field[y][x], fillColor, clamp(mask * opacityScale, 0.08, 0.9));
+      }
+    }
+  }
+
+  private applyOutlineLayer(field: string[][], zone: ArtZone, motif: string, outlineColor: string): void {
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const mask = this.motifMask(motif, zone, x, y);
+        const edge = this.motifOutlineStrength(motif, zone, x, y);
+        if (mask < 0.08 || edge < 0.18) continue;
+        field[y][x] = blendHexColors(field[y][x], outlineColor, clamp(edge * 0.95, 0.18, 0.82));
+      }
+    }
+  }
+
+  private applyHaloLayer(field: string[][], zone: ArtZone, haloColor: string, strength: number): void {
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const weight = this.zoneWeight(zone, x, y) * (zone.emphasis / 100);
+        if (weight < 0.04) continue;
+        field[y][x] = blendHexColors(field[y][x], haloColor, clamp(weight * strength, 0.04, 0.38));
+      }
+    }
+  }
+
+  private buildArtTarget(artDirection: ArtDirection): string[][] {
+    const dark = artDirection.palette[0] ?? "#22181C";
+    const deep = artDirection.palette[1] ?? dark;
+    const mid = artDirection.palette[2] ?? deep;
+    const light = artDirection.palette[3] ?? mid;
+    const accent = artDirection.palette[4] ?? light;
+    const field = Array.from({ length: this.height }, () => Array<string>(this.width).fill(dark));
+    const core = artDirection.zone_guides.find((zone) => zone.kind === "center_halo") ?? artDirection.zone_guides[0];
+    const diagonal = artDirection.zone_guides.find((zone) => zone.kind === "diagonal_rift") ?? artDirection.zone_guides[1] ?? core;
+    const horizon = artDirection.zone_guides.find((zone) => zone.kind === "horizon_band") ?? artDirection.zone_guides[2] ?? core;
+    const corners = artDirection.zone_guides.find((zone) => zone.kind === "corner_sigils") ?? artDirection.zone_guides[3] ?? core;
+    const spiral = artDirection.zone_guides.find((zone) => zone.kind === "spiral") ?? artDirection.zone_guides[4] ?? core;
+
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const nx = x / Math.max(1, this.width - 1);
+        const ny = y / Math.max(1, this.height - 1);
+        const baseTone = clamp(0.12 + ny * 0.42 + Math.sin(nx * Math.PI * 1.4) * 0.05, 0, 1);
+        field[y][x] = this.paletteGradientColor([dark, deep, mid, light], baseTone);
+      }
+    }
+
+    this.applyHaloLayer(field, core, blendHexColors(light, accent, 0.35), 0.55);
+    this.applyHaloLayer(field, spiral, blendHexColors(mid, accent, 0.25), 0.24);
+    this.applyHaloLayer(field, diagonal, blendHexColors(dark, deep, 0.4), 0.28);
+
+    if (core) {
+      this.applyLayerMask(field, core, core.motif, blendHexColors(dark, mid, 0.25), 0.88, 0.06);
+      this.applyOutlineLayer(field, core, core.motif, dark);
+    }
+
+    if (horizon) {
+      this.applyLayerMask(field, horizon, horizon.motif, blendHexColors(light, accent, 0.18), 0.42, 0.08);
+    }
+
+    if (diagonal) {
+      this.applyLayerMask(field, diagonal, diagonal.motif, blendHexColors(deep, dark, 0.2), 0.56, 0.07);
+    }
+
+    if (spiral) {
+      this.applyLayerMask(field, spiral, spiral.motif, blendHexColors(mid, light, 0.3), 0.28, 0.1);
+    }
+
+    if (corners) {
+      this.applyLayerMask(field, corners, corners.motif, accent, 0.2, 0.18);
+    }
+
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const halo = core ? this.zoneWeight(core, x, y) : 0;
+        const diagonalWeight = diagonal ? this.zoneWeight(diagonal, x, y) : 0;
+        const horizonWeight = horizon ? this.zoneWeight(horizon, x, y) : 0;
+        const quietMask = Math.max(0, 1 - halo * 1.1 - diagonalWeight * 0.8 - horizonWeight * 0.5);
+        if (quietMask > 0.72) {
+          field[y][x] = blendHexColors(field[y][x], light, 0.12);
+        }
+        field[y][x] = this.snapToRenderPalette(field[y][x]);
+      }
+    }
+
+    return field;
   }
 
   private goalWeightsFromDNA(dna: IdentityDNA): AgentState["goal_weights"] {
@@ -365,8 +756,9 @@ export class PixelWarEngine {
 
         const idCandidate = typeof profile.id === "string" ? profile.id.trim() : `a${i + 1}`;
         const id = /^[a-zA-Z0-9_-]{1,24}$/.test(idCandidate) ? idCandidate : `a${i + 1}`;
-        const colorCandidate = typeof profile.color === "string" ? profile.color.trim() : COLORS[i % COLORS.length];
-        const color = /^#[0-9A-Fa-f]{6}$/.test(colorCandidate) ? colorCandidate : COLORS[i % COLORS.length];
+        const paletteColor = this.artDirection.palette[i % this.artDirection.palette.length] ?? COLORS[i % COLORS.length];
+        const colorCandidate = typeof profile.color === "string" ? profile.color.trim() : paletteColor;
+        const color = /^#[0-9A-Fa-f]{6}$/.test(colorCandidate) ? colorCandidate : paletteColor;
         const name = (profile.name || `Twin-${i + 1}`).slice(0, 20);
 
         const agent: AgentState = {
@@ -394,7 +786,7 @@ export class PixelWarEngine {
       const agent: AgentState = {
         id,
         name: `Twin-${i + 1}`,
-        color: COLORS[i % COLORS.length],
+        color: this.artDirection.palette[i % this.artDirection.palette.length] ?? COLORS[i % COLORS.length],
         identity_dna: dna,
         goal_weights: this.normalizeGoalWeights(dna),
         emotion: { anger: 20, fear: 20, confidence: 50, satisfaction: 50 },
@@ -435,7 +827,7 @@ export class PixelWarEngine {
 
       used.add(`${x},${y}`);
       this.board[y][x].owner = agent.id;
-      this.board[y][x].color = agent.color;
+      this.board[y][x].color = this.mythColorForPoint(agent, x, y, agent.color, 1);
 
       const agentId = agent.id;
       if (!this.validateAgent(agent)) {
@@ -448,6 +840,277 @@ export class PixelWarEngine {
 
   private inBounds(x: number, y: number): boolean {
     return x >= 0 && y >= 0 && x < this.width && y < this.height;
+  }
+
+  private recordCanvasUpdate(x: number, y: number): void {
+    if (!this.inBounds(x, y)) return;
+    const cell = this.board[y][x];
+    this.currentRoundUpdateMap.set(`${x},${y}`, {
+      x,
+      y,
+      owner: cell.owner,
+      color: cell.color
+    });
+  }
+
+  private currentFillRate(): number {
+    let occupied = 0;
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        if (this.board[y][x].owner) occupied += 1;
+      }
+    }
+    return occupied / (this.width * this.height);
+  }
+
+  private paintBrushRadius(agent: AgentState): number {
+    const fillRate = this.currentFillRate();
+    let radius = fillRate < 0.12 ? 3 : fillRate < 0.45 ? 2 : 1;
+    if (agent.identity_dna.creativity_bias >= 80 && fillRate < 0.7) {
+      radius += 1;
+    }
+    if (agent.identity_dna.risk_appetite <= 30) {
+      radius -= 1;
+    }
+    return clamp(radius, 1, 4);
+  }
+
+  private squarePoints(centerX: number, centerY: number, radius: number): Point[] {
+    const points: Point[] = [];
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        const x = centerX + dx;
+        const y = centerY + dy;
+        if (this.inBounds(x, y)) {
+          points.push({ x, y });
+        }
+      }
+    }
+    return points;
+  }
+
+  private diamondPoints(centerX: number, centerY: number, radius: number): Point[] {
+    const points: Point[] = [];
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        if (Math.abs(dx) + Math.abs(dy) > radius) continue;
+        const x = centerX + dx;
+        const y = centerY + dy;
+        if (this.inBounds(x, y)) {
+          points.push({ x, y });
+        }
+      }
+    }
+    return points;
+  }
+
+  private setCellState(x: number, y: number, owner: string | null, color: string, fortify?: number): void {
+    if (!this.inBounds(x, y)) return;
+    this.board[y][x].owner = owner;
+    this.board[y][x].color = color;
+    if (typeof fortify === "number") {
+      this.board[y][x].fortify = fortify;
+    }
+    this.recordCanvasUpdate(x, y);
+  }
+
+  private zoneWeight(zone: ArtZone, x: number, y: number): number {
+    const nx = x / Math.max(1, this.width - 1);
+    const ny = y / Math.max(1, this.height - 1);
+    const cx = 0.5 + zone.offset;
+    const cy = 0.5;
+
+    if (zone.kind === "center_halo") {
+      const dist = Math.hypot(nx - cx, ny - cy);
+      return Math.max(0, 1 - dist / Math.max(zone.radius, 0.08));
+    }
+
+    if (zone.kind === "diagonal_rift") {
+      const line = nx + zone.offset;
+      const dist = Math.abs(ny - line);
+      return Math.max(0, 1 - dist / Math.max(zone.radius, 0.05));
+    }
+
+    if (zone.kind === "horizon_band") {
+      const dist = Math.abs(ny - zone.offset);
+      return Math.max(0, 1 - dist / Math.max(zone.radius, 0.05));
+    }
+
+    if (zone.kind === "corner_sigils") {
+      const distances = [
+        Math.hypot(nx, ny),
+        Math.hypot(1 - nx, ny),
+        Math.hypot(nx, 1 - ny),
+        Math.hypot(1 - nx, 1 - ny)
+      ];
+      return Math.max(0, 1 - Math.min(...distances) / Math.max(zone.radius, 0.08));
+    }
+
+    const dx = nx - 0.5;
+    const dy = ny - 0.5;
+    const dist = Math.hypot(dx, dy);
+    const angle = (Math.atan2(dy, dx) / Math.PI + 1) / 2;
+    const spiralBias = 1 - Math.abs(((angle + zone.offset) % 1) - dist) * 1.8;
+    return clamp((spiralBias + (1 - dist / Math.max(zone.radius, 0.12))) / 2, 0, 1);
+  }
+
+  private paletteGradientColor(palette: string[], tone: number): string {
+    if (palette.length === 0) {
+      return this.artDirection.palette[0] ?? "#E7D7C1";
+    }
+    if (palette.length === 1) {
+      return palette[0];
+    }
+
+    const scaled = clamp(tone, 0, 1) * (palette.length - 1);
+    const leftIndex = Math.floor(scaled);
+    const rightIndex = Math.min(palette.length - 1, leftIndex + 1);
+    const blend = scaled - leftIndex;
+    return blendHexColors(palette[leftIndex], palette[rightIndex], blend);
+  }
+
+  private snapToRenderPalette(color: string): string {
+    let winner = this.mythRenderPalette[0] ?? color;
+    let bestDistance = colorDistance(color, winner);
+
+    for (const candidate of this.mythRenderPalette) {
+      const distance = colorDistance(color, candidate);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        winner = candidate;
+      }
+    }
+
+    return winner;
+  }
+
+  private globalColorTone(x: number, y: number): number {
+    const nx = x / Math.max(1, this.width - 1);
+    const ny = y / Math.max(1, this.height - 1);
+    const seed = (hashText(this.artDirection.title) % 997) / 997;
+    const waveA = Math.sin((nx * 1.15 + seed) * Math.PI * 2);
+    const waveB = Math.cos((ny * 1.35 - seed * 0.7) * Math.PI * 2);
+    const diagonal = Math.sin(((nx + ny) * 0.55 + seed * 0.5) * Math.PI * 2);
+    return clamp(0.5 + waveA * 0.18 + waveB * 0.16 + diagonal * 0.08, 0, 1);
+  }
+
+  private zoneTone(zone: ArtZone, x: number, y: number, agent: AgentState): number {
+    const nx = x / Math.max(1, this.width - 1);
+    const ny = y / Math.max(1, this.height - 1);
+    const seed = (hashText(`${this.artDirection.title}:${zone.id}:${agent.id}`) % 997) / 997;
+
+    if (zone.kind === "center_halo") {
+      const dx = nx - (0.5 + zone.offset);
+      const dy = ny - 0.5;
+      const dist = Math.hypot(dx, dy);
+      const halo = 1 - smoothstep(0, Math.max(zone.radius, 0.1), dist);
+      const ring = 0.5 + 0.5 * Math.cos((dist * 3.2 - seed) * Math.PI * 2);
+      return clamp(halo * 0.72 + ring * 0.28, 0, 1);
+    }
+
+    if (zone.kind === "diagonal_rift") {
+      const dist = Math.abs(ny - (nx + zone.offset));
+      const ridge = 1 - smoothstep(0, Math.max(zone.radius, 0.06), dist);
+      const along = 0.5 + 0.5 * Math.sin((nx * 1.6 + ny * 0.9 + seed) * Math.PI * 2);
+      return clamp(ridge * 0.7 + along * 0.3, 0, 1);
+    }
+
+    if (zone.kind === "horizon_band") {
+      const dist = Math.abs(ny - zone.offset);
+      const band = 1 - smoothstep(0, Math.max(zone.radius, 0.08), dist);
+      const wave = 0.5 + 0.5 * Math.sin((nx * 1.2 + seed) * Math.PI * 2);
+      return clamp(band * 0.74 + wave * 0.26, 0, 1);
+    }
+
+    if (zone.kind === "corner_sigils") {
+      const distances = [
+        Math.hypot(nx, ny),
+        Math.hypot(1 - nx, ny),
+        Math.hypot(nx, 1 - ny),
+        Math.hypot(1 - nx, 1 - ny)
+      ];
+      const dist = Math.min(...distances);
+      const pocket = 1 - smoothstep(0, Math.max(zone.radius, 0.08), dist);
+      const ring = 0.5 + 0.5 * Math.cos((dist * 6 + seed) * Math.PI);
+      return clamp(pocket * 0.82 + ring * 0.18, 0, 1);
+    }
+
+    const dx = nx - 0.5;
+    const dy = ny - 0.5;
+    const dist = Math.hypot(dx, dy);
+    const angle = Math.atan2(dy, dx) / (Math.PI * 2);
+    const spiral = 0.5 + 0.5 * Math.sin((angle + dist * 1.9 + zone.offset + seed) * Math.PI * 4);
+    const falloff = 1 - smoothstep(0, Math.max(zone.radius, 0.16), dist);
+    return clamp(spiral * 0.6 + falloff * 0.4, 0, 1);
+  }
+
+  private preferredZoneKindsForAgent(agent: AgentState): ArtZone["kind"][] {
+    const kinds: ArtZone["kind"][] = [];
+    if (agent.identity_dna.creativity_bias >= 70) kinds.push("center_halo", "spiral");
+    if (agent.identity_dna.aggression_bias >= 65) kinds.push("diagonal_rift");
+    if (agent.identity_dna.diplomacy_bias >= 65) kinds.push("horizon_band");
+    if (agent.identity_dna.risk_appetite <= 40) kinds.push("corner_sigils");
+    if (kinds.length === 0) kinds.push("center_halo", "diagonal_rift");
+    return [...new Set(kinds)];
+  }
+
+  private mythPaletteCandidatesForAgent(agent: AgentState): string[] {
+    const zones = this.artDirection.zone_guides.filter((zone) => this.preferredZoneKindsForAgent(agent).includes(zone.kind));
+    const colors = zones.flatMap((zone) => zone.preferred_palette).concat(this.artDirection.palette);
+    return [...new Set(colors)].slice(0, 8);
+  }
+
+  private mythColorForPoint(agent: AgentState, x: number, y: number, requestedColor?: string, round = 1): string {
+    const targetColor = this.artTargetColors[y]?.[x] ?? this.artDirection.palette[0] ?? agent.color;
+    const blendSource = requestedColor && /^#[0-9A-Fa-f]{6}$/.test(requestedColor) ? requestedColor : agent.color;
+    const creativityMix = clamp(agent.identity_dna.creativity_bias / 320, 0.05, 0.18);
+    const roundEcho = ((round + hashText(agent.id)) % 3) / 60;
+    const mixed = blendHexColors(targetColor, blendSource, creativityMix + roundEcho);
+    return this.snapToRenderPalette(mixed);
+  }
+
+  private mythFocusPoints(agent: AgentState): Point[] {
+    const preferredKinds = this.preferredZoneKindsForAgent(agent);
+    const scored: Array<Point & { weight: number }> = [];
+
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const weight = this.artDirection.zone_guides.reduce((sum, zone) => {
+          const zoneWeight = this.zoneWeight(zone, x, y) * (zone.emphasis / 100);
+          return sum + (preferredKinds.includes(zone.kind) ? zoneWeight * 1.5 : zoneWeight * 0.55);
+        }, 0);
+        if (weight < 0.3) continue;
+        scored.push({ x, y, weight });
+      }
+    }
+
+    return scored
+      .sort((left, right) => right.weight - left.weight)
+      .slice(0, 60)
+      .map(({ x, y }) => ({ x, y }));
+  }
+
+  private mythAestheticScore(agent: AgentState): number {
+    let total = 0;
+    let count = 0;
+    const preferredKinds = this.preferredZoneKindsForAgent(agent);
+
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const cell = this.board[y][x];
+        if (cell.owner !== agent.id) continue;
+        const preferredColor = this.artTargetColors[y][x];
+        const colorScore = 1 - colorDistance(cell.color, preferredColor) / 441.6729559;
+        const zoneScore = this.artDirection.zone_guides.reduce((best, zone) => {
+          const raw = this.zoneWeight(zone, x, y);
+          return preferredKinds.includes(zone.kind) ? Math.max(best, raw * 1.2) : Math.max(best, raw * 0.6);
+        }, 0);
+        total += clamp(colorScore * 70 + zoneScore * 30, 0, 100);
+        count += 1;
+      }
+    }
+
+    return count > 0 ? total / count : 0;
   }
 
   private getAgentById(agentId: string): AgentState | undefined {
@@ -758,6 +1421,19 @@ export class PixelWarEngine {
     return selected;
   }
 
+  private mergeUniquePoints(primary: Point[], secondary: Point[], limit: number): Point[] {
+    const output: Point[] = [];
+    const seen = new Set<string>();
+    for (const point of [...primary, ...secondary]) {
+      const key = `${point.x},${point.y}`;
+      if (seen.has(key)) continue;
+      output.push(point);
+      seen.add(key);
+      if (output.length >= limit) break;
+    }
+    return output;
+  }
+
   private collectOwnedCells(agentId: string): Point[] {
     const owned: Point[] = [];
     for (let y = 0; y < this.height; y += 1) {
@@ -808,12 +1484,66 @@ export class PixelWarEngine {
     return this.selectUniquePoints(points, limit);
   }
 
+  private targetMismatchAt(x: number, y: number): number {
+    const targetColor = this.artTargetColors[y]?.[x];
+    if (!targetColor) return 0;
+    const cell = this.board[y][x];
+    const distance = colorDistance(cell.color, targetColor);
+    if (!cell.owner) {
+      return distance + 110;
+    }
+    return distance;
+  }
+
+  private targetPriorityPoints(agent: AgentState): { paint: Point[]; invade: Point[]; fortify: Point[] } {
+    const preferredKinds = this.preferredZoneKindsForAgent(agent);
+    const paint: Array<Point & { score: number }> = [];
+    const invade: Array<Point & { score: number }> = [];
+    const fortify: Array<Point & { score: number }> = [];
+
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const cell = this.board[y][x];
+        const mismatch = this.targetMismatchAt(x, y);
+        if (mismatch < 18) continue;
+
+        const zoneBias = this.artDirection.zone_guides.reduce((sum, zone) => {
+          const raw = this.zoneWeight(zone, x, y) * (zone.emphasis / 100);
+          return sum + (preferredKinds.includes(zone.kind) ? raw * 1.5 : raw * 0.4);
+        }, 0);
+
+        const score = mismatch + zoneBias * 100;
+        if (!cell.owner || cell.owner === agent.id) {
+          paint.push({ x, y, score });
+          if (cell.owner === agent.id && cell.fortify < 1 && zoneBias > 0.35) {
+            fortify.push({ x, y, score: score * 0.7 });
+          }
+        } else {
+          invade.push({ x, y, score });
+        }
+      }
+    }
+
+    const pick = (items: Array<Point & { score: number }>, limit: number): Point[] =>
+      items
+        .sort((left, right) => right.score - left.score)
+        .slice(0, limit * 4)
+        .map(({ x, y }) => ({ x, y }));
+
+    return {
+      paint: pick(paint, 14),
+      invade: pick(invade, 10),
+      fortify: pick(fortify, 8)
+    };
+  }
+
   private buildActionHints(agent: AgentState, round: number): ActionHints {
     const ownedCells = this.collectOwnedCells(agent.id);
     const paintRaw: Point[] = [];
     const fortifyRaw: Point[] = [];
     const invadeRaw: Point[] = [];
     const burstRaw: Point[] = [];
+    const targetPriority = this.targetPriorityPoints(agent);
 
     for (const own of ownedCells) {
       let hasEnemyNeighbor = false;
@@ -838,6 +1568,7 @@ export class PixelWarEngine {
     }
 
     const hotspots = this.collectContestedHotspots(round);
+    const mythRaw = this.mythFocusPoints(agent);
     for (const point of hotspots) {
       const owner = this.board[point.y][point.x].owner;
       if (owner !== agent.id) {
@@ -873,11 +1604,28 @@ export class PixelWarEngine {
     }
 
     return {
-      paint_candidates: this.selectUniquePoints(paintRaw.length > 0 ? paintRaw : this.randomPoints(10), 10),
-      fortify_candidates: this.selectUniquePoints(fortifyRaw.length > 0 ? fortifyRaw : this.randomPoints(8), 8),
-      invade_candidates: this.selectUniquePoints(invadeRaw.length > 0 ? invadeRaw : this.randomPoints(10), 10),
-      burst_centers: this.selectUniquePoints(burstRaw.length > 0 ? burstRaw : this.randomPoints(8), 8),
-      contested_hotspots: this.selectUniquePoints(hotspots, 6)
+      paint_candidates: this.mergeUniquePoints(
+        targetPriority.paint,
+        this.mergeUniquePoints(mythRaw, paintRaw.length > 0 ? paintRaw : this.randomPoints(10), 16),
+        14
+      ),
+      fortify_candidates: this.mergeUniquePoints(targetPriority.fortify, fortifyRaw.length > 0 ? fortifyRaw : this.randomPoints(8), 8),
+      invade_candidates: this.mergeUniquePoints(
+        targetPriority.invade,
+        this.mergeUniquePoints(hotspots, invadeRaw.length > 0 ? invadeRaw : this.randomPoints(10), 14),
+        10
+      ),
+      burst_centers: this.mergeUniquePoints(
+        targetPriority.invade,
+        this.mergeUniquePoints(hotspots, burstRaw.length > 0 ? burstRaw : this.randomPoints(8), 12),
+        8
+      ),
+      contested_hotspots: this.selectUniquePoints(hotspots, 6),
+      palette_candidates: this.mythPaletteCandidatesForAgent(agent),
+      motif_focus: this.artDirection.zone_guides
+        .filter((zone) => this.preferredZoneKindsForAgent(agent).includes(zone.kind))
+        .map((zone) => `${zone.label}: ${zone.motif}`)
+        .slice(0, 4)
     };
   }
 
@@ -911,6 +1659,19 @@ export class PixelWarEngine {
       return "Forward line first. Claim and hold.".slice(0, 60);
     }
     return `${agent.identity_dna.archetype}: staying in character.`.slice(0, 60);
+  }
+
+  private personalMythReading(agent: AgentState): string {
+    const preferredKinds = this.preferredZoneKindsForAgent(agent)
+      .map((kind) => this.artDirection.zone_guides.find((zone) => zone.kind === kind)?.label)
+      .filter((item): item is string => Boolean(item))
+      .slice(0, 2);
+
+    return [
+      `${agent.identity_dna.archetype} sees this mural as ${this.artDirection.motifs.slice(0, 2).join(" and ")}.`,
+      `Preferred zones: ${preferredKinds.join(", ") || "Core Halo"}.`,
+      `Core values to preserve: ${agent.identity_dna.core_values.slice(0, 2).join(", ")}.`
+    ].join(" ");
   }
 
   private stablePairBias(agentId: string, targetId: string, round: number): number {
@@ -1006,7 +1767,7 @@ export class PixelWarEngine {
     const pickPaint = (): TurnAction | null => {
       const point = hints.paint_candidates[0];
       if (!point) return null;
-      return { action: "paint", x: point.x, y: point.y, color: agent.color };
+      return { action: "paint", x: point.x, y: point.y, color: this.mythColorForPoint(agent, point.x, point.y, agent.color, round) };
     };
 
     const pickFortify = (): TurnAction | null => {
@@ -1166,10 +1927,18 @@ export class PixelWarEngine {
     if (action.action === "paint") {
       if (!this.inBounds(action.x, action.y)) return;
       agent.energy -= cost;
-      this.board[action.y][action.x].owner = agent.id;
-      this.board[action.y][action.x].color = agent.color;
-      this.board[action.y][action.x].fortify = 0;
-      this.events.push({ round, type: "expanded", by: agent.id, target: `${action.x},${action.y}` });
+      const stroke = this.squarePoints(action.x, action.y, this.paintBrushRadius(agent));
+      for (const point of stroke) {
+        const cell = this.board[point.y][point.x];
+        if (cell.owner && cell.owner !== agent.id) continue;
+
+        const wasEmpty = !cell.owner;
+        const nextColor = this.mythColorForPoint(agent, point.x, point.y, action.color, round);
+        this.setCellState(point.x, point.y, agent.id, nextColor, 0);
+        if (wasEmpty) {
+          this.events.push({ round, type: "expanded", by: agent.id, target: `${point.x},${point.y}` });
+        }
+      }
       return;
     }
 
@@ -1177,7 +1946,11 @@ export class PixelWarEngine {
       if (!this.inBounds(action.x, action.y)) return;
       if (this.board[action.y][action.x].owner !== agent.id) return;
       agent.energy -= cost;
-      this.board[action.y][action.x].fortify = clamp(this.board[action.y][action.x].fortify + 1, 0, 3);
+      for (const point of this.diamondPoints(action.x, action.y, 1)) {
+        const cell = this.board[point.y][point.x];
+        if (cell.owner !== agent.id) continue;
+        this.setCellState(point.x, point.y, agent.id, cell.color, clamp(cell.fortify + 1, 0, 3));
+      }
       return;
     }
 
@@ -1205,12 +1978,29 @@ export class PixelWarEngine {
       const defendPower = 1 + targetCell.fortify * 0.6 + Math.random() * 0.25;
 
       if (attackPower >= defendPower) {
-        targetCell.owner = agent.id;
-        targetCell.color = agent.color;
-        targetCell.fortify = 0;
-        this.events.push({ round, type: "attacked", by: agent.id, target: defenderId });
+        const footprint = this.diamondPoints(action.x, action.y, 1);
+        let captured = 0;
+        for (const point of footprint) {
+          const cell = this.board[point.y][point.x];
+          if (!cell.owner || cell.owner === agent.id) continue;
+          const pointNeighbors = this.countOwnedNeighbors(agent.id, point.x, point.y);
+          const localAttackPower =
+            attackPower + pointNeighbors * 0.35 + agent.identity_dna.aggression_bias * 0.002 + Math.random() * 0.15;
+          const localDefendPower = 1 + cell.fortify * 0.6 + Math.random() * 0.2;
+          if (localAttackPower < localDefendPower) continue;
+          const previousOwner = cell.owner;
+          this.setCellState(point.x, point.y, agent.id, this.mythColorForPoint(agent, point.x, point.y, agent.color, round), 0);
+          this.events.push({ round, type: "attacked", by: agent.id, target: previousOwner });
+          if (previousOwner && previousOwner !== agent.id) {
+            this.events.push({ round, type: "lost_area", by: previousOwner, target: agent.id });
+          }
+          captured += 1;
+        }
+        if (captured === 0) {
+          this.setCellState(action.x, action.y, agent.id, this.mythColorForPoint(agent, action.x, action.y, agent.color, round), 0);
+          this.events.push({ round, type: "attacked", by: agent.id, target: defenderId });
+        }
         this.events.push({ round, type: "won_conflict", by: agent.id, target: defenderId });
-        this.events.push({ round, type: "lost_area", by: defenderId, target: agent.id });
       }
       return;
     }
@@ -1235,9 +2025,12 @@ export class PixelWarEngine {
           const nearby = this.countOwnedNeighbors(agent.id, x, y);
           const chance = 0.15 + nearby * 0.2;
           if (Math.random() < chance) {
-            targetCell.owner = agent.id;
-            targetCell.color = agent.color;
-            targetCell.fortify = 0;
+            const previousOwner = targetCell.owner;
+            this.setCellState(x, y, agent.id, this.mythColorForPoint(agent, x, y, agent.color, round), 0);
+            this.events.push({ round, type: "attacked", by: agent.id, target: previousOwner ?? undefined });
+            if (previousOwner && previousOwner !== agent.id) {
+              this.events.push({ round, type: "lost_area", by: previousOwner, target: agent.id });
+            }
           }
         }
       }
@@ -1276,7 +2069,8 @@ export class PixelWarEngine {
       width: this.width,
       height: this.height,
       opponents: this.buildOpponentSummary(agent.id),
-      validActionHints
+      validActionHints,
+      artDirection: this.artDirection
     });
   }
 
@@ -1286,11 +2080,12 @@ export class PixelWarEngine {
       return this.buildFallbackDecision(agent, round, validActionHints);
     }
 
-    const systemPrompt = buildAgentSystemPrompt(agent);
+    const systemPrompt = buildAgentSystemPrompt(agent, this.artDirection, this.personalMythReading(agent));
     const userPrompt = buildAgentUserPrompt({
       round,
       width: this.width,
       height: this.height,
+      artDirection: this.artDirection,
       selfState: {
         id: agent.id,
         identity_dna: agent.identity_dna,
@@ -1393,7 +2188,7 @@ export class PixelWarEngine {
 
     try {
       const repairRaw = await this.deepSeek.generateDecision({
-        systemPrompt: buildAgentSystemPrompt(agent),
+        systemPrompt: buildAgentSystemPrompt(agent, this.artDirection, this.personalMythReading(agent)),
         userPrompt: this.buildRepairPrompt({
           agent,
           round,
@@ -1537,6 +2332,81 @@ export class PixelWarEngine {
     return map;
   }
 
+  private seedCurrentRoundWithBoard(): void {
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        if (!this.board[y][x].owner) continue;
+        this.recordCanvasUpdate(x, y);
+      }
+    }
+  }
+
+  private resolveFinalCanvas(round: number): void {
+    const queue: Array<{ x: number; y: number; owner: string; color: string }> = [];
+    const visited = Array.from({ length: this.height }, () => Array(this.width).fill(false));
+
+    for (const point of shuffled(
+      this.board.flatMap((row, y) =>
+        row.flatMap((cell, x) =>
+          cell.owner
+            ? [
+                {
+                  x,
+                  y,
+                  owner: cell.owner,
+                  color: cell.color
+                }
+              ]
+            : []
+        )
+      )
+    )) {
+      visited[point.y][point.x] = true;
+      queue.push(point);
+    }
+
+    let cursor = 0;
+    while (cursor < queue.length) {
+      const current = queue[cursor];
+      cursor += 1;
+
+      for (const neighbor of this.neighbors4(current.x, current.y)) {
+        if (visited[neighbor.y][neighbor.x]) continue;
+        visited[neighbor.y][neighbor.x] = true;
+
+        const cell = this.board[neighbor.y][neighbor.x];
+        if (!cell.owner) {
+          const ownerAgent = this.getAgentById(current.owner);
+          const resolvedColor = ownerAgent
+            ? this.mythColorForPoint(ownerAgent, neighbor.x, neighbor.y, current.color, round)
+            : current.color;
+          this.setCellState(neighbor.x, neighbor.y, current.owner, resolvedColor, 0);
+          this.events.push({ round, type: "expanded", by: current.owner, target: `${neighbor.x},${neighbor.y}` });
+        }
+
+        queue.push({
+          x: neighbor.x,
+          y: neighbor.y,
+          owner: this.board[neighbor.y][neighbor.x].owner ?? current.owner,
+          color: this.board[neighbor.y][neighbor.x].color || current.color
+        });
+      }
+    }
+
+    for (let y = 0; y < this.height; y += 1) {
+      for (let x = 0; x < this.width; x += 1) {
+        const owner = this.board[y][x].owner;
+        if (!owner) continue;
+        const ownerAgent = this.getAgentById(owner);
+        if (!ownerAgent) continue;
+        const finalColor = this.mythColorForPoint(ownerAgent, x, y, this.board[y][x].color, round);
+        if (finalColor !== this.board[y][x].color) {
+          this.setCellState(x, y, owner, finalColor, this.board[y][x].fortify);
+        }
+      }
+    }
+  }
+
   private buildScores(): SimulationResult["ranking"] {
     const total = this.width * this.height;
     const territory = this.territoryMap();
@@ -1544,15 +2414,16 @@ export class PixelWarEngine {
     const scores = this.agents.map((agent) => {
       const territoryCells = territory.get(agent.id) ?? 0;
       const territoryScore = (territoryCells / total) * 100;
-
+      const mythScore = this.mythAestheticScore(agent);
       const artScore =
-        50 +
-        agent.emotion.confidence * 0.2 +
-        agent.emotion.satisfaction * 0.2 +
-        agent.reputation * 0.15 -
-        agent.emotion.anger * 0.1;
+        18 +
+        mythScore * 0.72 +
+        agent.emotion.confidence * 0.08 +
+        agent.emotion.satisfaction * 0.08 +
+        agent.reputation * 0.08 -
+        agent.emotion.anger * 0.04;
 
-      const finalScore = 0.55 * territoryScore + 0.45 * clamp(artScore, 0, 100);
+      const finalScore = 0.42 * territoryScore + 0.58 * clamp(artScore, 0, 100);
       return {
         agent_id: agent.id,
         name: agent.name,
@@ -1596,6 +2467,10 @@ export class PixelWarEngine {
     const replay: ReplayRound[] = [];
 
     for (let round = 1; round <= this.rounds; round += 1) {
+      this.currentRoundUpdateMap = new Map();
+      if (round === 1) {
+        this.seedCurrentRoundWithBoard();
+      }
       this.resetEnergy();
 
       const decisions: TurnDecision[] = [];
@@ -1678,12 +2553,16 @@ export class PixelWarEngine {
 
       this.consumeMemory(round);
       this.decrementCooldowns();
+      if (round === this.rounds) {
+        this.resolveFinalCanvas(round);
+      }
 
       const roundHighlights = this.events.filter((event) => event.round === round);
       const socialSnapshot = this.buildSocialSnapshot();
       const socialMetrics = this.buildSocialMetrics();
       replay.push({
         round,
+        canvas_updates: [...this.currentRoundUpdateMap.values()],
         public_messages: decisions.map((decision) => ({ agent_id: decision.agent_id, message: decision.public_message })),
         private_messages: decisions.flatMap((decision) =>
           decision.private_messages.map((message) => ({ from: decision.agent_id, to: message.target_id, content: message.content }))
@@ -1712,8 +2591,10 @@ export class PixelWarEngine {
         max_concurrent_agents: this.maxConcurrentAgents,
         dry_run: this.dryRun,
         model: this.deepSeek.modelName,
-        ...(this.profilePath ? { profile_path: this.profilePath } : {})
+        ...(this.profilePath ? { profile_path: this.profilePath } : {}),
+        myth_prompt: this.mythPrompt
       },
+      art_direction: this.artDirection,
       ranking: this.buildScores(),
       final_highlights: this.events.slice(-25),
       replay

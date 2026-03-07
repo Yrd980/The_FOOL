@@ -181,3 +181,70 @@
   - `bun run viewer:dev` served `200` on `/`
   - `http://localhost:4173/health` returned `{"ok":true}`
   - `http://localhost:4173/api/latest` returned replay JSON via Vite proxy
+
+## 2026-03-07 Mainline Pixel-Art Fix
+- Root cause of “看不到完整像素画” had two layers:
+  - territory growth was too sparse (`5` rounds on `64x64` previously produced only `15 / 4096` occupied cells, fill rate `0.0037`)
+  - viewer reconstructed the board from owner events only, so it could not replay exact per-cell color updates
+- Implemented mainline fix:
+  - `paint` now lays down a square brush stroke instead of a single pixel
+  - the engine records exact `canvas_updates` per round
+  - the last round runs a canvas-resolve pass to fill all remaining empty cells for a complete final image
+  - viewer now renders actual cell colors from `canvas_updates`
+  - dry-run paint colors now vary around each twin's base color instead of staying perfectly flat
+- Validation after the fix:
+  - `bun run typecheck` passes
+  - `bun run check` reports `occupied_cells: 4096`, `total_cells: 4096`, `fill_rate: 1`
+  - latest replay `output/replay-2026-03-07T07-01-35-399Z.json` contains `canvas_updates`
+  - viewer smoke test confirms `/api/latest` exposes the new round payload and `/` still loads normally
+
+## 2026-03-07 Myth Mode Art Director
+- User clarified that the target aesthetic is closer to OpenClaw-like “shared mythic intent” than to copying real-world reference images.
+- Implemented `Myth Mode` as the new mainline art layer:
+  - the engine always builds a shared `art_direction`
+  - CLI can override the theme with `--myth=\"...\"` / `--theme=\"...\"`
+  - `art_direction` includes palette, forbidden colors, motifs, composition notes, and zone guides
+- Myth Mode now affects:
+  - default twin colors
+  - action hints (`paint_candidates`, `palette_candidates`, `motif_focus`)
+  - live prompts (`art_direction` + personal myth reading)
+  - fallback paint colors
+  - final canvas color harmonization
+  - art scoring
+- Validation:
+  - `bun run typecheck` passes
+  - `bun run check` passes with full coverage
+  - dry-run custom theme example:
+    - command: `--dry-run --rounds=6 --width=72 --height=72 --myth=\"a shattered throne blooming into a tidal cathedral, solemn but dangerous\"`
+    - replay: `output/replay-2026-03-07T07-20-41-703Z.json`
+    - result includes top-level `art_direction`
+    - resulting palette converged around a coherent red / ivory / gold mythic range
+- Validation note:
+  - `bun run viewer:serve --port=4174` did not forward the CLI arg as expected under Bun script execution; switched to direct `bun run src/viewerServer.ts --port=4174` for smoke verification instead of repeating the same failing invocation.
+- Validation note:
+  - a combined shell command that chained `viewer:build` and background server startup in one line caused an unstable smoke run; switched back to a small `set -euo pipefail` script block for reliable verification instead of repeating the same structure.
+- Visual artifact follow-up:
+  - The next weird-looking output came from two remaining issues:
+    - the myth surface was still too territory-driven instead of target-image-driven
+    - Myth Mode color fields still had too much local variation, which made the image read as block noise rather than a wall piece
+- Implemented stronger mainline correction:
+  - introduced a shared target artwork grid (`artTargetColors`) derived from the myth art direction
+  - target-guided action hints now prioritize cells that differ most from the target artwork
+  - myth painting now snaps to a finite render palette instead of producing thousands of near-random shades
+  - myth color selection now follows the shared target canvas first, with only a small twin-specific tint
+- Validation after retuning:
+  - replay `output/replay-2026-03-07T07-36-32-544Z.json` reduced effective colors to `8`
+  - replay `output/replay-2026-03-07T07-40-39-883Z.json` kept `fill_rate=1` while using target-guided painting
+  - viewer smoke verification still passes against `/api/latest` with the new payload structure
+- Readability follow-up:
+  - Even after noise reduction, output could still read as abstract blocks rather than a clear wall piece.
+  - Reworked the myth target builder to be silhouette-first instead of soft-zone-first.
+  - The target artwork now layers:
+    - background field
+    - halo field
+    - primary motif fill
+    - outline pass
+    - horizon / diagonal support forms
+- Validation after silhouette-first rebuild:
+  - replay `output/replay-2026-03-07T07-47-31-489Z.json` keeps `fill_rate=1`
+  - latest replay is now being served correctly through `/api/latest`

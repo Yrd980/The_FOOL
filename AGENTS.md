@@ -7,6 +7,7 @@
 - 这是一个基于 Bun + TypeScript 的 AI 像素大战项目。
 - 核心体验不是“机械地主动行动”，而是“一群有鲜明人格的数字分身在抢像素地盘、协商、冲突、作画”。
 - 行为设计优先保持“像人”的数字分身质感，参考 OpenClaw 风格的人格化分身，而不是简单的职业脚本。
+- 默认推荐玩法是 `Myth Mode`：共享一份神话艺术方向，让分身共同长出一张壁画，而不是临摹现实照片。
 
 ## 技术栈
 
@@ -24,6 +25,7 @@
 - 干跑模拟：`bun run check`
 - 实时模拟：`bun run start`
 - 10 人数字分身样例：`bun run crowd`
+- 神话主题样例：`bun run src/index.ts --dry-run --rounds=6 --width=72 --height=72 --myth=\"a shattered throne blooming into a tidal cathedral\"`
 - 构建 viewer：`bun run viewer:build`
 - viewer 开发热更新：`bun run viewer:dev`
 - 启动网页观战：`bun run viewer`
@@ -68,6 +70,7 @@
 - 新增行为逻辑时，优先思考是否能从 `risk_appetite`、`aggression_bias`、`diplomacy_bias`、`creativity_bias`、`core_values` 等字段推导，而不是添加新的硬编码分支。
 - 分身之间的协商与敌意应尽量基于“具体对象关系”推进，例如 `trust`、`affinity`、`debt`、`recent_shared_events`，而不是只看全局局势。
 - 若新增互动逻辑，优先让双方都能记住事件，避免只有行动发起者有记忆、被影响方却“失忆”。
+- 若改画面生成逻辑，优先维持共享 `art_direction` 的一致性：调色板、motif、构图区域应先于局部随机性。
 
 ## 改动建议
 

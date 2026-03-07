@@ -54,6 +54,10 @@ function parseArgs(argv: string[]): EngineConfig {
       options.profilePath = arg.split("=")[1];
       continue;
     }
+    if (arg.startsWith("--myth=") || arg.startsWith("--theme=")) {
+      options.mythPrompt = arg.split("=")[1];
+      continue;
+    }
   }
 
   return options;
@@ -102,6 +106,10 @@ async function main(): Promise<void> {
     territory: item.territory_cells
   }));
 
+  const occupiedCells = result.ranking.reduce((sum, item) => sum + item.territory_cells, 0);
+  const totalCells = result.config.width * result.config.height;
+  const fillRate = totalCells > 0 ? Number((occupiedCells / totalCells).toFixed(4)) : 0;
+
   const errorStats = result.replay.reduce(
     (acc, round) => {
       for (const err of round.errors) {
@@ -120,6 +128,9 @@ async function main(): Promise<void> {
         message: "Simulation complete",
         output: outPath,
         top3,
+        occupied_cells: occupiedCells,
+        total_cells: totalCells,
+        fill_rate: fillRate,
         error_stats: errorStats,
         mode: options.dryRun ? "dry-run" : "deepseek-live"
       },
