@@ -157,3 +157,27 @@
   - `bun run check` passes
   - viewer smoke test on `4174` returns `200` on `/` and `/api/latest` includes `social_metrics` + `social_snapshot`
 - Neutral relations were initially surfacing as fake rivalries because base tension is `28`; fixed by tightening the rivalry threshold to `>= 40` or explicit debt / distrust.
+
+## 2026-03-07 React Viewer Migration
+- Viewer architecture migrated from static DOM scripts to `React + Tailwind CSS + Vite`.
+- Bun server responsibility is now cleanly split:
+  - `src/viewerServer.ts` serves replay APIs
+  - the same server now serves built Vite assets from `viewer/dist`
+- Package scripts updated:
+  - `bun run viewer:build`
+  - `bun run viewer:serve`
+  - `bun run viewer` now builds then serves
+  - `bun run typecheck` now checks both root TS and `viewer/tsconfig.json`
+- Smoke validation:
+  - `bun run typecheck` passes
+  - `bun run viewer:build` passes
+  - `bun run viewer` serves `200` on `/` and `{"ok":true}` on `/health`
+- One shell-level validation command initially failed because of quote mismatch while extracting asset URLs; switched to a simpler `grep`-based approach.
+- Added frontend development workflow:
+  - `src/viewerServer.ts` now supports `--api-only` mode for API-only serving.
+  - `viewer/vite.config.ts` proxies `/api` and `/health` to the Bun API server on `4174`.
+  - `package.json` now includes `viewer:api` and `viewer:dev`.
+- Dev-mode smoke validation:
+  - `bun run viewer:dev` served `200` on `/`
+  - `http://localhost:4173/health` returned `{"ok":true}`
+  - `http://localhost:4173/api/latest` returned replay JSON via Vite proxy

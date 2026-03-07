@@ -14,7 +14,7 @@
 - 语言：`TypeScript`
 - 模块系统：`ESM`
 - 校验：`Ajv`
-- 前端观战界面：原生 `HTML + CSS + JavaScript`
+- 前端观战界面：`React + Tailwind CSS + Vite`
 - 模型接入：DeepSeek，使用环境变量 `DEEPSEEK_API_KEY`
 
 ## 常用命令
@@ -24,6 +24,8 @@
 - 干跑模拟：`bun run check`
 - 实时模拟：`bun run start`
 - 10 人数字分身样例：`bun run crowd`
+- 构建 viewer：`bun run viewer:build`
+- viewer 开发热更新：`bun run viewer:dev`
 - 启动网页观战：`bun run viewer`
 
 默认在提交前至少运行：
@@ -54,7 +56,7 @@
 - 优先使用 `bun`，不要切回 `npm`、`pnpm` 或引入额外构建工具，除非明确需要。
 - 保持 TypeScript 类型、`schemas/*.json`、以及实际运行时行为同步；如果改了一个，检查另外两个是否也要更新。
 - 不要硬编码 API Key，不要把密钥写入仓库；仅从环境变量读取 `DEEPSEEK_API_KEY`。
-- viewer 保持轻量，继续使用原生前端，不要无必要引入 React/Vue 等框架。
+- viewer 现在基于 `React + Tailwind + Vite`，优先沿用当前组件式结构，不要无必要退回原生 DOM 拼接。
 - 尽量做小而明确的改动，避免无关重构。
 
 ## 人格与行为设计原则
@@ -71,7 +73,7 @@
 
 - 改模拟核心时，优先查看：`src/types.ts`、`src/engine.ts`、`schemas/`
 - 改 LLM 输出稳定性时，优先查看：`src/deepseekClient.ts`、`src/decisionNormalizer.ts`
-- 改观战体验时，优先查看：`src/viewerServer.ts`、`viewer/index.html`、`viewer/styles.css`、`viewer/app.js`
+- 改观战体验时，优先查看：`src/viewerServer.ts`、`viewer/src/App.tsx`、`viewer/src/index.css`、`viewer/index.html`、`viewer/vite.config.ts`
 - 改数字分身样例时，保持样例之间有明显人格差异，不要只改名字和颜色
 - 改关系/记忆行为时，重点查看：`src/engine.ts` 中 relation 更新、memory 传播、opponent summary 构建，以及 `src/mockAgent.ts` 的 fallback 社交逻辑
 

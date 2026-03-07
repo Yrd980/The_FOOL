@@ -6,6 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 const viewerRoot = path.join(projectRoot, "viewer");
+const viewerDistRoot = path.join(viewerRoot, "dist");
 const outputRoot = path.join(projectRoot, "output");
 
 function parsePort(argv: string[]): number {
@@ -16,6 +17,10 @@ function parsePort(argv: string[]): number {
     throw new Error("port must be 1-65535");
   }
   return num;
+}
+
+function apiOnlyMode(argv: string[]): boolean {
+  return argv.includes("--api-only");
 }
 
 function latestReplayName(): string | null {
@@ -59,20 +64,37 @@ function contentType(filePath: string): string {
   if (filePath.endsWith(".html")) return "text/html; charset=utf-8";
   if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
   if (filePath.endsWith(".js")) return "application/javascript; charset=utf-8";
+  if (filePath.endsWith(".mjs")) return "application/javascript; charset=utf-8";
   if (filePath.endsWith(".json")) return "application/json; charset=utf-8";
+  if (filePath.endsWith(".svg")) return "image/svg+xml";
+  if (filePath.endsWith(".png")) return "image/png";
+  if (filePath.endsWith(".woff2")) return "font/woff2";
   return "application/octet-stream";
 }
 
 function serveStatic(urlPath: string): Response {
+  if (!fs.existsSync(viewerDistRoot)) {
+    return new Response("Viewer bundle not found. Run `bun run viewer:build` first.", { status: 503 });
+  }
+
   const pathname = urlPath === "/" ? "/index.html" : urlPath;
   const safeRelative = pathname.replace(/^\/+/, "");
-  const filePath = path.join(viewerRoot, safeRelative);
+  const filePath = path.join(viewerDistRoot, safeRelative);
 
-  if (!filePath.startsWith(viewerRoot)) {
+  if (!filePath.startsWith(viewerDistRoot)) {
     return new Response("Forbidden", { status: 403 });
   }
 
   if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    const fallback = path.join(viewerDistRoot, "index.html");
+    if (fs.existsSync(fallback)) {
+      return new Response(Bun.file(fallback), {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store"
+        }
+      });
+    }
     return new Response("Not Found", { status: 404 });
   }
 
@@ -85,6 +107,7 @@ function serveStatic(urlPath: string): Response {
 }
 
 const port = parsePort(process.argv.slice(2));
+const apiOnly = apiOnlyMode(process.argv.slice(2));
 
 const server = Bun.serve({
   port,
@@ -129,8 +152,18 @@ const server = Bun.serve({
       return Response.json({ ok: true });
     }
 
-    if (url.pathname.startsWith("/viewer") || url.pathname === "/") {
-      const staticPath = url.pathname === "/" ? "/index.html" : url.pathname.replace(/^\/viewer/, "");
+    if (apiOnly) {
+      return new Response("Not Found", { status: 404 });
+    }
+
+    if (url.pathname === "/" || url.pathname === "/viewer" || url.pathname === "/viewer/" || url.pathname.startsWith("/assets/")) {
+      const staticPath =
+        url.pathname === "/" || url.pathname === "/viewer" || url.pathname === "/viewer/" ? "/index.html" : url.pathname;
+      return serveStatic(staticPath);
+    }
+
+    if (url.pathname.startsWith("/viewer/")) {
+      const staticPath = url.pathname.replace(/^\/viewer/, "");
       return serveStatic(staticPath);
     }
 
@@ -138,4 +171,4 @@ const server = Bun.serve({
   }
 });
 
-console.log(`Viewer running at http://localhost:${server.port}`);
+console.log(apiOnly ? `Viewer API running at http://localhost:${server.port}` : `Viewer running at http://localhost:${server.port}`);

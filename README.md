@@ -62,6 +62,18 @@ bun run src/index.ts --rounds=20 --width=96 --height=96 --agents=20 --concurrenc
 bun run viewer
 ```
 
+开发模式（React 热更新 + Bun replay API）：
+
+```bash
+bun run viewer:dev
+```
+
+如只想构建前端产物：
+
+```bash
+bun run viewer:build
+```
+
 打开：
 
 ```text
@@ -69,6 +81,7 @@ http://localhost:4173
 ```
 
 功能：
+- 基于 `React + Tailwind CSS + Vite` 的观战前端
 - 自动读取 `output/` 最新 replay（也可切换历史 replay）
 - 像素画布逐回合播放
 - 支持“跟随最新”自动切换新 replay（轮询观战）
@@ -142,8 +155,12 @@ src/
   types.ts
   viewerServer.ts
 viewer/
+  src/
+    App.tsx
+    main.tsx
+    index.css
   index.html
-  styles.css
-  app.js
+  tsconfig.json
+  vite.config.ts
 output/
 ```

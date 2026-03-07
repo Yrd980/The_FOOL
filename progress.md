@@ -122,3 +122,28 @@
   - viewer smoke test on `4174`
   - `/api/latest` confirmed to include `social_metrics` and `social_snapshot`
 - Fixed one UX issue where neutral relations were incorrectly shown as rivalries in the viewer.
+- Started frontend architecture migration from static viewer files to `React + Tailwind CSS + Vite`.
+- Added frontend dependencies:
+  - `react`
+  - `react-dom`
+  - `vite`
+  - `@vitejs/plugin-react`
+  - `tailwindcss`
+  - `@tailwindcss/vite`
+- Rebuilt viewer as a React app under `viewer/src/` and removed the old `viewer/app.js` / `viewer/styles.css` architecture.
+- Updated `src/viewerServer.ts` to serve built Vite assets from `viewer/dist` with SPA fallback.
+- Updated scripts so `bun run viewer` now builds then serves the React viewer.
+- Verified migration with:
+  - `bun run typecheck`
+  - `bun run viewer:build`
+  - `bun run viewer`
+  - `/health` and `/` both returned expected responses
+- Added `viewer:dev` workflow:
+  - `viewer:api` runs Bun replay API in `--api-only` mode on `4174`
+  - `viewer:dev` starts the Bun API server plus Vite hot reload on `4173`
+  - `viewer/vite.config.ts` proxies `/api` and `/health` to the Bun API server
+- Verified dev workflow with:
+  - `bun run viewer:dev`
+  - `http://localhost:4173/health`
+  - `http://localhost:4173/api/latest`
+  - `http://localhost:4173/`

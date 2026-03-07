@@ -7,17 +7,29 @@
     "start": "bun run src/index.ts",
     "simulate": "bun run src/index.ts --rounds=10",
     "crowd": "bun run src/index.ts --rounds=20 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10",
-    "viewer": "bun run src/viewerServer.ts",
+    "viewer:build": "cd viewer && bunx vite build",
+    "viewer:api": "bun run src/viewerServer.ts --api-only --port=4174",
+    "viewer:dev": "sh -c 'bun run viewer:api & trap \"kill 0\" EXIT; cd viewer && bunx vite --host 0.0.0.0 --port 4173 --strictPort'",
+    "viewer:serve": "bun run src/viewerServer.ts",
+    "viewer": "bun run viewer:build && bun run viewer:serve",
     "check": "bun run src/index.ts --dry-run --rounds=5",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --project viewer/tsconfig.json --noEmit"
   },
   "dependencies": {
     "ajv": "^8.18.0",
-    "dotenv": "^17.3.1"
+    "dotenv": "^17.3.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.2.1",
     "@types/bun": "^1.3.10",
     "@types/node": "^24.5.2",
-    "typescript": "^5.9.2"
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "tailwindcss": "^4.2.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.3.1"
   }
 }

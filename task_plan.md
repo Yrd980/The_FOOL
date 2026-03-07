@@ -27,6 +27,8 @@ Build a runnable JavaScript MVP for AI pixel war using DeepSeek API, managed wit
 | 11. Reduce persona-centered behavior | completed | Made persona optional, shifted defaults/mock behavior to DNA-driven logic, and expanded opponent identity summaries |
 | 12. Add person-specific interaction memory | completed | Shared events now propagate to both sides, relations evolve from incidents, and prompts/fallbacks can reason about shared history |
 | 13. Visualize social memory in viewer | completed | Added replay social snapshots/metrics and a viewer Twin Lens panel for bonds, rivalries, and last-round summaries |
+| 14. Migrate viewer to React + Tailwind | completed | Rebuilt viewer with Vite React/Tailwind, preserved Bun replay API flow, and validated build plus `bun run viewer` serving |
+| 15. Add viewer dev workflow | completed | Added Vite hot-reload mode with Bun API-only server and proxy-backed `bun run viewer:dev` |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
@@ -39,3 +41,4 @@ Build a runnable JavaScript MVP for AI pixel war using DeepSeek API, managed wit
 | Coordinate normalization defaulted missing values to (0,0) | 1 | Made coordinate parsing strict and bounded coordinates to canvas |
 | Typecheck error for `Bun` global in viewer server | 1 | Add Bun types and include `bun` type in tsconfig |
 | TS widened mock action literals to `string` | 1 | Added `as const` on mock priority action literals |
+| Shell smoke test command hit quote mismatch while parsing asset path | 1 | Replaced fragile `rg` quote pattern with `grep`-based extraction |
