@@ -75,6 +75,8 @@ http://localhost:4173
 - 支持“循环播放”回放模式
 - 同步显示公开发言、私聊、人格注释（`persona_notes`）
 - 显示每回合热闹度指标（`round_metrics`）
+- 显示每回合社交热度（`social_metrics`）
+- 提供 `Twin Lens` 关系透镜，可查看单个分身的情绪、最近摘要、强关系与高张力关系
 
 ## 数字分身（OpenClaw风格）
 
@@ -91,7 +93,7 @@ bun run src/index.ts --rounds=20 --width=96 --height=96 --profiles=profiles/open
 - 行为主导字段是 `identity_dna`，`persona` 现在仅作为可选兼容标签
 - 分身会根据 `trust / affinity / debt / recent_shared_events` 调整协商、结盟、复仇与发言
 - `dry-run` / fallback 也走 DNA + 关系驱动逻辑，不再是简单 persona 脚本
-- replay 中包含 `persona_notes` 与 `round_metrics`，可直接用于“热闹度”可视化
+- replay 中包含 `persona_notes`、`round_metrics`、`social_metrics` 与 `social_snapshot`，可直接用于“热闹度”与人际关系可视化
 
 ## 当前设计重点
 

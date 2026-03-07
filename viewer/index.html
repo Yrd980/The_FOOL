@@ -64,6 +64,8 @@
           <div class="metrics-grid" id="metricsGrid"></div>
           <h3>Top Ranking</h3>
           <ol id="rankingList" class="ranking"></ol>
+          <h3>Social Heat</h3>
+          <div class="metrics-grid social-metrics-grid" id="socialMetricsGrid"></div>
         </article>
       </section>
 
@@ -81,6 +83,24 @@
         <article class="panel feed">
           <div class="panel-head"><h2>Persona Notes</h2></div>
           <ul id="personaList" class="persona-list"></ul>
+        </article>
+
+        <article class="panel feed social-feed">
+          <div class="panel-head social-head">
+            <h2>Twin Lens</h2>
+            <select id="agentLensSelect"></select>
+          </div>
+          <div id="agentLensCard" class="lens-card"></div>
+          <div class="relation-columns">
+            <div>
+              <h3>Strong Bonds</h3>
+              <ul id="bondList" class="relation-list"></ul>
+            </div>
+            <div>
+              <h3>Hot Rivalries</h3>
+              <ul id="rivalList" class="relation-list"></ul>
+            </div>
+          </div>
         </article>
       </section>
     </main>

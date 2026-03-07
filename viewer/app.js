@@ -17,6 +17,11 @@ const privateList = document.getElementById("privateList");
 const personaList = document.getElementById("personaList");
 const metricsGrid = document.getElementById("metricsGrid");
 const rankingList = document.getElementById("rankingList");
+const socialMetricsGrid = document.getElementById("socialMetricsGrid");
+const agentLensSelect = document.getElementById("agentLensSelect");
+const agentLensCard = document.getElementById("agentLensCard");
+const bondList = document.getElementById("bondList");
+const rivalList = document.getElementById("rivalList");
 
 const REPLAY_POLL_MS = 7000;
 
@@ -51,6 +56,21 @@ let roundIndex = 0;
 let timer = null;
 let replayPollTimer = null;
 let listLoading = false;
+let selectedLensAgentId = "";
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function signed(value) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "0";
+  return value > 0 ? `+${value}` : `${value}`;
+}
 
 function parseCoord(target) {
   if (typeof target !== "string") return null;
@@ -65,12 +85,34 @@ function stableColorMap(replay) {
   for (const round of replay.replay || []) {
     for (const msg of round.public_messages || []) ids.add(msg.agent_id);
     for (const note of round.persona_notes || []) ids.add(note.agent_id);
+    for (const social of round.social_snapshot || []) ids.add(social.agent_id);
     for (const event of round.highlights || []) if (event.by) ids.add(event.by);
   }
   const ordered = [...ids].sort((a, b) => a.localeCompare(b));
   const map = new Map();
   ordered.forEach((id, idx) => map.set(id, palette[idx % palette.length]));
   return map;
+}
+
+function buildAgentDirectory(replay) {
+  const directory = new Map();
+
+  for (const row of replay.ranking || []) {
+    directory.set(row.agent_id, { id: row.agent_id, name: row.name || row.agent_id });
+  }
+
+  for (const round of replay.replay || []) {
+    for (const social of round.social_snapshot || []) {
+      directory.set(social.agent_id, {
+        id: social.agent_id,
+        name: social.name || social.agent_id,
+        archetype: social.archetype || "",
+        color: social.color || null
+      });
+    }
+  }
+
+  return [...directory.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function buildFrames(replay) {
@@ -81,10 +123,10 @@ function buildFrames(replay) {
   for (const round of replay.replay) {
     for (const event of round.highlights || []) {
       if (event.type === "expanded" || event.type === "attacked") {
-        const p = parseCoord(event.target);
-        if (!p) continue;
-        if (p.x < 0 || p.y < 0 || p.x >= width || p.y >= height) continue;
-        board[p.y][p.x] = event.by;
+        const point = parseCoord(event.target);
+        if (!point) continue;
+        if (point.x < 0 || point.y < 0 || point.x >= width || point.y >= height) continue;
+        board[point.y][point.x] = event.by;
       }
     }
 
@@ -138,6 +180,10 @@ function drawFrame(frame) {
   }
 }
 
+function metricCard(label, value) {
+  return `<div class="metric"><div class="k">${escapeHtml(label)}</div><div class="v">${escapeHtml(value)}</div></div>`;
+}
+
 function renderMetrics(round, frame) {
   const m = round.round_metrics || {
     expanded: 0,
@@ -146,6 +192,13 @@ function renderMetrics(round, frame) {
     public_messages: 0,
     private_messages: 0
   };
+  const social = round.social_metrics || {
+    alliance_links: 0,
+    rivalry_links: 0,
+    max_tension: 0,
+    avg_trust: 0,
+    avg_debt: 0
+  };
 
   metricsGrid.innerHTML = [
     ["Expanded", m.expanded],
@@ -153,30 +206,134 @@ function renderMetrics(round, frame) {
     ["Treaties", m.treaties_signed],
     ["Public Msg", m.public_messages],
     ["Private Msg", m.private_messages],
-    ["Occupied", [...frame.territory.values()].reduce((a, b) => a + b, 0)]
+    ["Occupied", [...frame.territory.values()].reduce((sum, value) => sum + value, 0)]
   ]
-    .map(([k, v]) => `<div class="metric"><div class="k">${k}</div><div class="v">${v}</div></div>`)
+    .map(([label, value]) => metricCard(label, value))
+    .join("");
+
+  socialMetricsGrid.innerHTML = [
+    ["Alliances", social.alliance_links],
+    ["Rivalries", social.rivalry_links],
+    ["Max Tension", social.max_tension],
+    ["Avg Trust", social.avg_trust],
+    ["Avg Debt", social.avg_debt]
+  ]
+    .map(([label, value]) => metricCard(label, value))
     .join("");
 }
 
 function renderMessages(round) {
   publicList.innerHTML =
     (round.public_messages || [])
-      .map((m) => `<li class="message"><div class="meta">${m.agent_id}</div><div>${m.message}</div></li>`)
+      .map(
+        (message) =>
+          `<li class="message"><div class="meta">${escapeHtml(message.agent_id)}</div><div>${escapeHtml(message.message)}</div></li>`
+      )
       .join("") || `<li class="message">暂无公开发言</li>`;
 
   privateList.innerHTML =
     (round.private_messages || [])
-      .map((m) => `<li class="message"><div class="meta">${m.from} -> ${m.to}</div><div>${m.content}</div></li>`)
+      .map(
+        (message) =>
+          `<li class="message"><div class="meta">${escapeHtml(message.from)} -> ${escapeHtml(message.to)}</div><div>${escapeHtml(message.content)}</div></li>`
+      )
       .join("") || `<li class="message">暂无私聊</li>`;
 
   personaList.innerHTML =
     (round.persona_notes || [])
       .map(
-        (p) =>
-          `<li class="persona"><div class="meta">${p.agent_id}</div><div>${p.note}</div><div class="score">active ${p.proactive_score}</div></li>`
+        (note) =>
+          `<li class="persona"><div class="meta">${escapeHtml(note.agent_id)}</div><div>${escapeHtml(note.note)}</div><div class="score">active ${escapeHtml(note.proactive_score)}</div></li>`
       )
       .join("") || `<li class="persona">暂无人格注释</li>`;
+}
+
+function syncLensSelect(round) {
+  if (!currentReplay) return;
+  const entries = currentReplay.agentDirectory || [];
+  agentLensSelect.innerHTML = entries
+    .map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}${entry.archetype ? ` · ${escapeHtml(entry.archetype)}` : ""}</option>`)
+    .join("");
+
+  const ids = new Set((round.social_snapshot || []).map((item) => item.agent_id));
+  if (!selectedLensAgentId || !ids.has(selectedLensAgentId)) {
+    selectedLensAgentId = round.social_snapshot?.[0]?.agent_id || currentReplay.ranking?.[0]?.agent_id || entries[0]?.id || "";
+  }
+  agentLensSelect.value = selectedLensAgentId;
+}
+
+function renderRelationList(element, items, emptyText, kind) {
+  element.innerHTML =
+    (items || [])
+      .map((item) => {
+        const color = currentReplay?.colorMap?.get(item.target_id) || "#999";
+        const events = (item.recent_shared_events || []).slice(0, 2).join(" · ");
+        return `<li class="relation-item" data-target-id="${escapeHtml(item.target_id)}">
+          <div class="headline"><span class="rank-dot" style="background:${escapeHtml(color)}"></span>${escapeHtml(item.target_name)}</div>
+          <div class="meta"><span>${escapeHtml(item.target_id)}</span><span>${kind === "bond" ? "bond" : "heat"} ${escapeHtml(item.tension)}</span></div>
+          <div class="stats">
+            <span class="good">trust ${escapeHtml(signed(item.trust))}</span>
+            <span class="good">aff ${escapeHtml(signed(item.affinity))}</span>
+            <span class="warn">debt ${escapeHtml(signed(item.debt))}</span>
+          </div>
+          <div class="events">${escapeHtml(events || "暂无共享事件")}</div>
+        </li>`;
+      })
+      .join("") || `<li class="relation-item">${escapeHtml(emptyText)}</li>`;
+}
+
+function bindRelationClicks() {
+  for (const element of [...bondList.querySelectorAll("[data-target-id]"), ...rivalList.querySelectorAll("[data-target-id]")]) {
+    element.addEventListener("click", () => {
+      selectedLensAgentId = element.dataset.targetId || selectedLensAgentId;
+      renderRound(roundIndex);
+    });
+  }
+}
+
+function renderLens(round, frame) {
+  if (!currentReplay) return;
+  syncLensSelect(round);
+
+  const snapshot = (round.social_snapshot || []).find((item) => item.agent_id === selectedLensAgentId) || round.social_snapshot?.[0];
+  if (!snapshot) {
+    agentLensCard.innerHTML = `<p class="lens-summary">当前 replay 不包含社交快照。</p>`;
+    bondList.innerHTML = `<li class="relation-item">暂无关系数据</li>`;
+    rivalList.innerHTML = `<li class="relation-item">暂无关系数据</li>`;
+    return;
+  }
+
+  const color = currentReplay.colorMap.get(snapshot.agent_id) || snapshot.color || "#999";
+  const territory = frame.territory.get(snapshot.agent_id) || 0;
+
+  agentLensCard.innerHTML = `
+    <h3><span class="rank-dot" style="background:${escapeHtml(color)}"></span> ${escapeHtml(snapshot.name)}</h3>
+    <div class="lens-meta">
+      <span>${escapeHtml(snapshot.agent_id)}</span>
+      <span>${escapeHtml(snapshot.archetype)}</span>
+      <span>cells ${escapeHtml(territory)}</span>
+    </div>
+    <p class="lens-summary">${escapeHtml(snapshot.last_round_summary || "这一回合还没有形成足够明确的人际摘要。")}</p>
+    <div class="emotion-strip">
+      <div class="emotion-chip"><span class="k">anger</span><span class="v">${escapeHtml(snapshot.emotion.anger)}</span></div>
+      <div class="emotion-chip"><span class="k">fear</span><span class="v">${escapeHtml(snapshot.emotion.fear)}</span></div>
+      <div class="emotion-chip"><span class="k">confidence</span><span class="v">${escapeHtml(snapshot.emotion.confidence)}</span></div>
+      <div class="emotion-chip"><span class="k">satisfaction</span><span class="v">${escapeHtml(snapshot.emotion.satisfaction)}</span></div>
+    </div>
+  `;
+
+  renderRelationList(bondList, snapshot.strongest_bonds, "暂无明显盟友", "bond");
+  renderRelationList(rivalList, snapshot.hottest_rivalries, "暂无明显宿敌", "rival");
+  bindRelationClicks();
+}
+
+function bindRankingClicks() {
+  for (const element of rankingList.querySelectorAll("[data-agent-id]")) {
+    element.addEventListener("click", () => {
+      selectedLensAgentId = element.dataset.agentId || selectedLensAgentId;
+      renderRound(roundIndex);
+    });
+  }
 }
 
 function renderRanking(frame, prevFrame) {
@@ -190,7 +347,7 @@ function renderRanking(frame, prevFrame) {
       const cells = frame.territory.get(id) || 0;
       const prev = prevFrame ? prevFrame.territory.get(id) || 0 : cells;
       const delta = cells - prev;
-      const score = currentReplay.ranking.find((x) => x.agent_id === id)?.final_score || 0;
+      const score = currentReplay.ranking.find((item) => item.agent_id === id)?.final_score || 0;
       return {
         id,
         cells,
@@ -199,7 +356,7 @@ function renderRanking(frame, prevFrame) {
         share: totalCells > 0 ? (cells / totalCells) * 100 : 0
       };
     })
-    .sort((a, b) => b.cells - a.cells || b.score - a.score)
+    .sort((left, right) => right.cells - left.cells || right.score - left.score)
     .slice(0, Math.min(12, currentReplay.config.agent_count || 12));
 
   rankingList.innerHTML = items
@@ -207,15 +364,18 @@ function renderRanking(frame, prevFrame) {
       const color = currentReplay.colorMap.get(item.id) || "#999";
       const deltaClass = item.delta > 0 ? "up" : item.delta < 0 ? "down" : "";
       const deltaText = item.delta > 0 ? `+${item.delta}` : item.delta < 0 ? `${item.delta}` : "0";
-      return `<li>
+      const activeClass = item.id === selectedLensAgentId ? "active" : "";
+      return `<li class="${activeClass}" data-agent-id="${escapeHtml(item.id)}">
         <div class="rank-headline">
-          <span class="rank-agent"><span class="rank-dot" style="background:${color}"></span>${item.id}</span>
-          <span><span class="rank-delta ${deltaClass}">${deltaText}</span> · ${item.cells}</span>
+          <span class="rank-agent"><span class="rank-dot" style="background:${escapeHtml(color)}"></span>${escapeHtml(item.id)}</span>
+          <span><span class="rank-delta ${deltaClass}">${escapeHtml(deltaText)}</span> · ${escapeHtml(item.cells)}</span>
         </div>
-        <div class="rank-bar"><div class="rank-fill" style="width:${Math.max(1, item.share).toFixed(2)}%;background:${color};"></div></div>
+        <div class="rank-bar"><div class="rank-fill" style="width:${Math.max(1, item.share).toFixed(2)}%;background:${escapeHtml(color)};"></div></div>
       </li>`;
     })
     .join("");
+
+  bindRankingClicks();
 }
 
 function updateWatchState(extra = "") {
@@ -235,6 +395,7 @@ function renderRound(index) {
   drawFrame(frame);
   renderMetrics(round, frame);
   renderMessages(round);
+  renderLens(round, frame);
   renderRanking(frame, prevFrame);
 
   roundChip.textContent = `Round ${round.round} / ${frames.length}`;
@@ -281,11 +442,11 @@ function startReplayPolling() {
 }
 
 async function fetchJSON(url) {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`${res.status} ${res.statusText}`);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
   }
-  return res.json();
+  return response.json();
 }
 
 async function loadReplay(name, { autoPlay = true, hint = "" } = {}) {
@@ -293,8 +454,13 @@ async function loadReplay(name, { autoPlay = true, hint = "" } = {}) {
   currentReplayName = name;
   currentReplay = {
     ...data,
-    colorMap: stableColorMap(data)
+    colorMap: stableColorMap(data),
+    agentDirectory: buildAgentDirectory(data)
   };
+
+  if (!selectedLensAgentId || !currentReplay.agentDirectory.some((item) => item.id === selectedLensAgentId)) {
+    selectedLensAgentId = currentReplay.ranking?.[0]?.agent_id || currentReplay.agentDirectory[0]?.id || "";
+  }
 
   frames = buildFrames(data);
   roundRange.max = String(Math.max(0, frames.length - 1));
@@ -319,7 +485,7 @@ async function loadReplayList({ autoSwitchLatest = true, preserveSelection = tru
 
     replays = incoming;
     replaySelect.innerHTML = replays
-      .map((entry) => `<option value="${entry.name}">${entry.name} · ${entry.mtime}</option>`)
+      .map((entry) => `<option value="${escapeHtml(entry.name)}">${escapeHtml(entry.name)} · ${escapeHtml(entry.mtime)}</option>`)
       .join("");
 
     if (replays.length === 0) {
@@ -392,6 +558,11 @@ speedRange.addEventListener("input", () => {
   if (timer) {
     startPlayback();
   }
+});
+
+agentLensSelect.addEventListener("change", () => {
+  selectedLensAgentId = agentLensSelect.value;
+  renderRound(roundIndex);
 });
 
 followLatestToggle.addEventListener("change", async () => {

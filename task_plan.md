@@ -26,6 +26,7 @@ Build a runnable JavaScript MVP for AI pixel war using DeepSeek API, managed wit
 | 10. Add web visualization | completed | Added browser viewer + local server + replay API; added follow-latest/loop watch controls and re-validated endpoint playback |
 | 11. Reduce persona-centered behavior | completed | Made persona optional, shifted defaults/mock behavior to DNA-driven logic, and expanded opponent identity summaries |
 | 12. Add person-specific interaction memory | completed | Shared events now propagate to both sides, relations evolve from incidents, and prompts/fallbacks can reason about shared history |
+| 13. Visualize social memory in viewer | completed | Added replay social snapshots/metrics and a viewer Twin Lens panel for bonds, rivalries, and last-round summaries |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

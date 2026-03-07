@@ -527,6 +527,24 @@ export class PixelWarEngine {
     return [...new Set(notes)].slice(-3);
   }
 
+  private relationSnapshot(agent: AgentState, targetId: string): OpponentSnapshot["relationship"] {
+    const relation = relationToMap(agent.relations).get(targetId) ?? { target_id: targetId, trust: 0, affinity: 0, debt: 0 };
+    const recentSharedEvents = this.sharedHistory(agent, targetId);
+    const tension = clamp(
+      Math.round(28 - relation.trust * 0.35 - relation.affinity * 0.2 + relation.debt * 0.45 + recentSharedEvents.length * 6),
+      0,
+      100
+    );
+
+    return {
+      trust: relation.trust,
+      affinity: relation.affinity,
+      debt: relation.debt,
+      tension,
+      recent_shared_events: recentSharedEvents
+    };
+  }
+
   private updateRelationsFromEvent(event: MemoryEvent): void {
     if (!event.target || !this.getAgentById(event.target)) return;
 
@@ -585,6 +603,108 @@ export class PixelWarEngine {
 
     const parts = [...directEvents, relationLines.length > 0 ? `relations ${relationLines.join(", ")}` : ""].filter(Boolean);
     return (parts.join(" | ") || "No direct personal incident last round.").slice(0, 120);
+  }
+
+  private buildSocialSnapshot(): ReplayRound["social_snapshot"] {
+    return this.agents.map((agent) => {
+      const relationRows = agent.relations
+        .map((relation) => {
+          const target = this.getAgentById(relation.target_id);
+          if (!target) return null;
+          const snapshot = this.relationSnapshot(agent, target.id);
+          return {
+            target_id: target.id,
+            target_name: target.name,
+            trust: snapshot.trust,
+            affinity: snapshot.affinity,
+            debt: snapshot.debt,
+            tension: snapshot.tension,
+            recent_shared_events: snapshot.recent_shared_events
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+      const strongestBonds = [...relationRows]
+        .sort(
+          (left, right) =>
+            right.trust +
+            right.affinity * 0.8 -
+            right.debt * 0.3 -
+            (left.trust + left.affinity * 0.8 - left.debt * 0.3)
+        )
+        .filter((item) => item.trust > 0 || item.affinity > 0 || item.recent_shared_events.length > 0)
+        .slice(0, 3);
+
+      const hottestRivalries = [...relationRows]
+        .sort(
+          (left, right) =>
+            right.tension +
+            right.debt * 0.8 -
+            right.trust * 0.25 -
+            (left.tension + left.debt * 0.8 - left.trust * 0.25)
+        )
+        .filter((item) => item.tension >= 40 || item.debt > 0 || item.trust < 0)
+        .slice(0, 3);
+
+      return {
+        agent_id: agent.id,
+        name: agent.name,
+        color: agent.color,
+        archetype: agent.identity_dna.archetype,
+        last_round_summary: agent.last_round_summary,
+        emotion: agent.emotion,
+        strongest_bonds: strongestBonds,
+        hottest_rivalries: hottestRivalries
+      };
+    });
+  }
+
+  private buildSocialMetrics(): ReplayRound["social_metrics"] {
+    const seen = new Set<string>();
+    let allianceLinks = 0;
+    let rivalryLinks = 0;
+    let maxTension = 0;
+    let trustTotal = 0;
+    let debtTotal = 0;
+    let relationCount = 0;
+
+    for (const agent of this.agents) {
+      for (const relation of agent.relations) {
+        const target = this.getAgentById(relation.target_id);
+        if (!target) continue;
+
+        const snapshot = this.relationSnapshot(agent, target.id);
+        maxTension = Math.max(maxTension, snapshot.tension);
+        trustTotal += snapshot.trust;
+        debtTotal += Math.max(0, snapshot.debt);
+        relationCount += 1;
+
+        const pairKey = [agent.id, target.id].sort().join("::");
+        if (seen.has(pairKey)) continue;
+        seen.add(pairKey);
+
+        const reverse = this.relationSnapshot(target, agent.id);
+        const avgTrust = (snapshot.trust + reverse.trust) / 2;
+        const avgAffinity = (snapshot.affinity + reverse.affinity) / 2;
+        const avgDebt = (Math.max(0, snapshot.debt) + Math.max(0, reverse.debt)) / 2;
+        const pairTension = Math.max(snapshot.tension, reverse.tension);
+
+        if (avgTrust >= 12 && avgAffinity >= 6) {
+          allianceLinks += 1;
+        }
+        if (pairTension >= 48 || avgDebt >= 10 || avgTrust <= -10) {
+          rivalryLinks += 1;
+        }
+      }
+    }
+
+    return {
+      alliance_links: allianceLinks,
+      rivalry_links: rivalryLinks,
+      max_tension: maxTension,
+      avg_trust: relationCount > 0 ? Number((trustTotal / relationCount).toFixed(1)) : 0,
+      avg_debt: relationCount > 0 ? Number((debtTotal / relationCount).toFixed(1)) : 0
+    };
   }
 
   private countOwnedNeighbors(agentId: string, x: number, y: number): number {
@@ -1126,7 +1246,13 @@ export class PixelWarEngine {
 
   private buildOpponentSummary(agentId: string): OpponentSnapshot[] {
     const self = this.getAgentById(agentId);
-    const relationMap = self ? relationToMap(self.relations) : new Map<string, AgentState["relations"][number]>();
+    const neutralRelationship = {
+      trust: 0,
+      affinity: 0,
+      debt: 0,
+      tension: 28,
+      recent_shared_events: [] as string[]
+    };
 
     return this.agents
       .filter((agent) => agent.id !== agentId)
@@ -1138,25 +1264,7 @@ export class PixelWarEngine {
         signature_moves: agent.identity_dna.signature_moves.slice(0, 2),
         reputation: agent.reputation,
         emotion: agent.emotion,
-        relationship: (() => {
-          const relation = relationMap.get(agent.id) ?? { target_id: agent.id, trust: 0, affinity: 0, debt: 0 };
-          const recentSharedEvents = self ? this.sharedHistory(self, agent.id) : [];
-          const tension = clamp(
-            Math.round(
-              28 - relation.trust * 0.35 - relation.affinity * 0.2 + relation.debt * 0.45 + recentSharedEvents.length * 6
-            ),
-            0,
-            100
-          );
-
-          return {
-            trust: relation.trust,
-            affinity: relation.affinity,
-            debt: relation.debt,
-            tension,
-            recent_shared_events: recentSharedEvents
-          };
-        })(),
+        relationship: self ? this.relationSnapshot(self, agent.id) : neutralRelationship,
         ...(agent.persona ? { legacy_persona: agent.persona } : {})
       }));
   }
@@ -1572,6 +1680,8 @@ export class PixelWarEngine {
       this.decrementCooldowns();
 
       const roundHighlights = this.events.filter((event) => event.round === round);
+      const socialSnapshot = this.buildSocialSnapshot();
+      const socialMetrics = this.buildSocialMetrics();
       replay.push({
         round,
         public_messages: decisions.map((decision) => ({ agent_id: decision.agent_id, message: decision.public_message })),
@@ -1586,6 +1696,8 @@ export class PixelWarEngine {
           public_messages: decisions.length,
           private_messages: decisions.reduce((count, decision) => count + decision.private_messages.length, 0)
         },
+        social_metrics: socialMetrics,
+        social_snapshot: socialSnapshot,
         highlights: roundHighlights,
         errors: turnErrors
       });

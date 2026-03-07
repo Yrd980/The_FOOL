@@ -108,3 +108,17 @@
   - `bun audit`
   - `bun run typecheck`
   - `bun run check`
+- Started viewer follow-up to visualize relationship memory directly in the browser.
+- Extended replay output with:
+  - `social_metrics`
+  - `social_snapshot`
+- Updated viewer frontend:
+  - added `Social Heat` cards in metrics panel
+  - added `Twin Lens` panel with agent selector, summary, emotions, bonds, and rivalries
+  - made ranking rows and relationship cards clickable to switch the focused twin
+- Verified viewer enhancement with:
+  - `bun run typecheck`
+  - `bun run check`
+  - viewer smoke test on `4174`
+  - `/api/latest` confirmed to include `social_metrics` and `social_snapshot`
+- Fixed one UX issue where neutral relations were incorrectly shown as rivalries in the viewer.

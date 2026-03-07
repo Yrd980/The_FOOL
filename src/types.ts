@@ -213,6 +213,39 @@ export interface ReplayRound {
     public_messages: number;
     private_messages: number;
   };
+  social_metrics: {
+    alliance_links: number;
+    rivalry_links: number;
+    max_tension: number;
+    avg_trust: number;
+    avg_debt: number;
+  };
+  social_snapshot: Array<{
+    agent_id: string;
+    name: string;
+    color: string;
+    archetype: string;
+    last_round_summary?: string;
+    emotion: Emotion;
+    strongest_bonds: Array<{
+      target_id: string;
+      target_name: string;
+      trust: number;
+      affinity: number;
+      debt: number;
+      tension: number;
+      recent_shared_events: string[];
+    }>;
+    hottest_rivalries: Array<{
+      target_id: string;
+      target_name: string;
+      trust: number;
+      affinity: number;
+      debt: number;
+      tension: number;
+      recent_shared_events: string[];
+    }>;
+  }>;
   highlights: MemoryEvent[];
   errors: Array<{ round: number; agent_id: string; type: string; detail: string }>;
 }

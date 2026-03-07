@@ -142,3 +142,18 @@
   - `bun audit`
   - `bun run typecheck`
   - `bun run check`
+
+## 2026-03-07 Viewer Social Visualization
+- Current replay format still lacks per-round social snapshots, so the viewer cannot yet render relationships directly.
+- Current viewer layout already has a metrics/ranking column and a 3-panel feed row, which is a good fit for adding one more “social graph / selected twin” panel without changing the overall navigation model.
+- Current viewer JS reconstructs territory from `highlights`, so the cleanest viewer enhancement is to extend `ReplayRound` with social snapshot data instead of inferring relationships on the frontend.
+- Viewer social visualization implemented:
+  - `ReplayRound` now carries `social_metrics` and `social_snapshot`.
+  - viewer metrics column now includes social heat cards (`alliances`, `rivalries`, `max_tension`, `avg_trust`, `avg_debt`).
+  - viewer feed now includes a `Twin Lens` panel with agent selector, last-round summary, emotion chips, strongest bonds, and hot rivalries.
+  - ranking rows and relation cards are clickable to retarget the current lens agent.
+- Smoke validation:
+  - `bun run typecheck` passes
+  - `bun run check` passes
+  - viewer smoke test on `4174` returns `200` on `/` and `/api/latest` includes `social_metrics` + `social_snapshot`
+- Neutral relations were initially surfacing as fake rivalries because base tension is `28`; fixed by tightening the rivalry threshold to `>= 40` or explicit debt / distrust.
