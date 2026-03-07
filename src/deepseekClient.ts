@@ -1,4 +1,4 @@
-import type { ActionHints, AgentState, ArtDirection, OpponentSnapshot, TurnDecision } from "./types";
+import type { ActionHints, AgentState, ArtDirection, OpponentSnapshot } from "./types";
 
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
 const DEFAULT_MODEL = "deepseek-chat";
@@ -199,18 +199,4 @@ export function buildAgentUserPrompt({
     "energy_rule: paint=1, fortify=1, invade=2, burst=3(cooldown=3)",
     "请仅返回TurnDecision JSON。"
   ].join("\n");
-}
-
-export function minimalDecision(agentId: string, round: number, color: string): TurnDecision {
-  return {
-    agent_id: agentId,
-    round,
-    intent: "defend",
-    public_message: "holding position",
-    private_messages: [],
-    treaty_proposals: [],
-    actions: [{ action: "paint", x: 0, y: 0, color }],
-    emotion_delta: { anger: 0, fear: 0, confidence: 0, satisfaction: 0 },
-    mood_change_reason: "fallback"
-  };
 }

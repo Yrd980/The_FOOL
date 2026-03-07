@@ -230,6 +230,11 @@ export interface ScoreItem {
 
 export interface ReplayRound {
   round: number;
+  art_phase: {
+    id: "block_in" | "silhouette" | "motif" | "background" | "resolve";
+    label: string;
+    focus: string;
+  };
   canvas_updates: Array<{
     x: number;
     y: number;

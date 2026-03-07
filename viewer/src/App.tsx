@@ -10,6 +10,11 @@ type MemoryEvent = {
 
 type ReplayRound = {
   round: number;
+  art_phase: {
+    id: "block_in" | "silhouette" | "motif" | "background" | "resolve";
+    label: string;
+    focus: string;
+  };
   canvas_updates: Array<{ x: number; y: number; owner: string | null; color: string }>;
   public_messages: Array<{ agent_id: string; message: string }>;
   private_messages: Array<{ from: string; to: string; content: string }>;
@@ -606,7 +611,9 @@ export function App() {
           <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-xl font-semibold text-[#13232f]">Round Pulse</h2>
-              <span className="font-mono text-xs text-[#5b6a71]">social + territory</span>
+              <span className="font-mono text-xs text-[#5b6a71]">
+                {currentRound?.art_phase ? `${currentRound.art_phase.label} · ${currentRound.art_phase.focus}` : "social + territory"}
+              </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <MetricCard label="Expanded" value={metrics.expanded} />

@@ -40,6 +40,11 @@ set -Ux DEEPSEEK_API_KEY \"your_deepseek_key\"
 bun run check
 ```
 
+说明：
+- 默认 `check` 现在会生成 `8` 回合回放，而不是 `5` 回合
+- 画布会按回合渐进收束，不再在最后一步突然补完整张图
+- 回放现在带有 `art_phase`，会显示当前回合是在搭大形、补轮廓、补内部 motif、扩背景还是收束
+
 完整模拟（实时调用 DeepSeek）：
 
 ```bash
@@ -97,6 +102,14 @@ http://localhost:4173
 - 显示每回合热闹度指标（`round_metrics`）
 - 显示每回合社交热度（`social_metrics`）
 - 提供 `Twin Lens` 关系透镜，可查看单个分身的情绪、最近摘要、强关系与高张力关系
+- `Round Pulse` 头部会显示当前生成阶段（`art_phase`），方便理解现在是在搭主体、补轮廓、补内部、扩背景还是收束
+
+如果你主要想看 AI 在“聊什么 / 心情如何”：
+
+- `Public Voice`：公开发言
+- `Private Wire`：私聊
+- `Persona Notes`：这一回合的人格倾向说明
+- `Twin Lens`：单个分身的情绪、最近摘要、关系网络
 
 ## 数字分身（OpenClaw风格）
 
@@ -121,9 +134,64 @@ bun run src/index.ts --rounds=20 --width=96 --height=96 --profiles=profiles/open
 - 核心体验是“一群有鲜明人格的数字分身在抢像素地盘、协商、冲突、作画”
 - 默认行为优先由 `identity_dna`、情绪、关系与共享历史共同决定
 - 默认启用 `Myth Mode`，即共享一份神话艺术方向（`art_direction`），而不是去临摹现实物体
+- 默认回放采用分阶段作画：先主体大形，再轮廓，再内部 motif，再背景，最后整体收束
 - `persona` 仅保留为兼容标签，不再作为主要行为分流依据
 - agent 会记住具体对象之间的事件，例如签约、毁约、进攻、失地与冲突胜负
 - 若传入 `--myth="..."`，系统会围绕这句主题生成调色板、motif、构图区和共享审美宪法
+
+## 当前代码结构（模块化后）
+
+当前的运行链路仍然是：
+
+```text
+CLI (`src/index.ts`)
+  -> `PixelWarEngine` orchestrator (`src/engine.ts`)
+  -> replay JSON (`output/replay-*.json`)
+  -> viewer API / React viewer
+```
+
+但 `src/engine.ts` 现在主要负责“编排”，不再独自承载全部逻辑。引擎内部已经拆成这些职责模块：
+
+- `src/engine.ts`
+  - 回合主循环 orchestrator
+  - 维护共享状态容器（board / agents / events / treaties）
+  - 串联各个 engine 子模块
+- `src/engine/constants.ts`
+  - 默认神话 prompt、动作耗能、默认 twin DNA、基础常量
+- `src/engine/artDirector.ts`
+  - 启动期生成共享 `art_direction`
+  - 生成 render palette 与目标画布 `artTargetColors`
+- `src/engine/artRuntime.ts`
+  - 运行期的神话构图数学逻辑
+  - 例如 `motifMask`、`zoneWeight`、`artPhaseForRound`、`targetPriorityAt`
+- `src/engine/twinFactory.ts`
+  - 读取 `profiles`
+  - 规范化 DNA / goal weights
+  - 创建初始 agents 与初始落点
+- `src/engine/socialState.ts`
+  - relations / memory / treaties
+  - `social_snapshot` 与 `social_metrics`
+- `src/engine/decisionService.ts`
+  - 对手摘要
+  - 模型请求、repair、sanitize、bound
+  - 决策协议收口
+- `src/engine/strategyService.ts`
+  - `buildActionHints`
+  - `applyIdentitySteering`
+  - `personalMythReading`
+  - 审美评分与外交目标选择
+- `src/engine/canvasRuntime.ts`
+  - board helper / geometry
+  - 动作落子与渐进式画布收束
+- `src/engine/scoreboard.ts`
+  - 最终 territory / art / reputation 汇总评分
+
+可以把它理解成 4 层：
+
+- **世界层**：`artDirector` + `artRuntime`
+- **角色层**：`twinFactory` + `socialState`
+- **决策层**：`decisionService` + `strategyService`
+- **执行/结算层**：`canvasRuntime` + `scoreboard`
 
 ## 类型检查
 
@@ -158,6 +226,16 @@ schemas/
   agent-state.schema.json
   turn-decision.schema.json
 src/
+  engine/
+    artDirector.ts
+    artRuntime.ts
+    canvasRuntime.ts
+    constants.ts
+    decisionService.ts
+    scoreboard.ts
+    socialState.ts
+    strategyService.ts
+    twinFactory.ts
   deepseekClient.ts
   engine.ts
   index.ts

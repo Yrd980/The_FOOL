@@ -8,6 +8,7 @@
 - 核心体验不是“机械地主动行动”，而是“一群有鲜明人格的数字分身在抢像素地盘、协商、冲突、作画”。
 - 行为设计优先保持“像人”的数字分身质感，参考 OpenClaw 风格的人格化分身，而不是简单的职业脚本。
 - 默认推荐玩法是 `Myth Mode`：共享一份神话艺术方向，让分身共同长出一张壁画，而不是临摹现实照片。
+- 默认生成应尽量遵循“分阶段作画”：主体大形 → 主体轮廓 → 主体内部 motif → 背景 → 收束。
 
 ## 技术栈
 
@@ -44,7 +45,16 @@
 ## 目录说明
 
 - `src/index.ts`：CLI 入口，负责解析参数并启动模拟
-- `src/engine.ts`：核心回合循环、状态推进、人格驱动决策、replay 生成
+- `src/engine.ts`：引擎 orchestrator，负责主回合循环、共享状态容器与模块编排
+- `src/engine/constants.ts`：默认神话 prompt、动作耗能、默认 twin DNA 等常量
+- `src/engine/artDirector.ts`：启动期生成 `art_direction`、render palette、目标画布
+- `src/engine/artRuntime.ts`：运行期神话构图数学逻辑，如 `motifMask`、`zoneWeight`、`artPhase`
+- `src/engine/twinFactory.ts`：profile 读取、DNA 规范化、初始 agent 创建与落点
+- `src/engine/socialState.ts`：relations / memory / treaties / `social_snapshot` / `social_metrics`
+- `src/engine/decisionService.ts`：模型请求、repair、sanitize、决策协议收口
+- `src/engine/strategyService.ts`：`buildActionHints`、`applyIdentitySteering`、`personalMythReading`
+- `src/engine/canvasRuntime.ts`：board helper、动作落子、渐进式画布收束
+- `src/engine/scoreboard.ts`：最终 territory / art / reputation 汇总评分
 - `src/deepseekClient.ts`：DeepSeek API 调用
 - `src/decisionNormalizer.ts`：LLM 输出修复与规范化
 - `src/types.ts`：核心类型定义，很多地方以这里为准
@@ -71,14 +81,17 @@
 - 分身之间的协商与敌意应尽量基于“具体对象关系”推进，例如 `trust`、`affinity`、`debt`、`recent_shared_events`，而不是只看全局局势。
 - 若新增互动逻辑，优先让双方都能记住事件，避免只有行动发起者有记忆、被影响方却“失忆”。
 - 若改画面生成逻辑，优先维持共享 `art_direction` 的一致性：调色板、motif、构图区域应先于局部随机性。
+- 若改生成节奏，优先保证回放过程能被人看懂，不要出现“前面缓慢、最后一步突然全变”的体验。
 
 ## 改动建议
 
-- 改模拟核心时，优先查看：`src/types.ts`、`src/engine.ts`、`schemas/`
+- 改模拟核心时，优先查看：`src/types.ts`、`src/engine.ts`、`src/engine/`、`schemas/`
 - 改 LLM 输出稳定性时，优先查看：`src/deepseekClient.ts`、`src/decisionNormalizer.ts`
 - 改观战体验时，优先查看：`src/viewerServer.ts`、`viewer/src/App.tsx`、`viewer/src/index.css`、`viewer/index.html`、`viewer/vite.config.ts`
 - 改数字分身样例时，保持样例之间有明显人格差异，不要只改名字和颜色
-- 改关系/记忆行为时，重点查看：`src/engine.ts` 中 relation 更新、memory 传播、opponent summary 构建，以及 `src/mockAgent.ts` 的 fallback 社交逻辑
+- 改关系/记忆行为时，重点查看：`src/engine/socialState.ts`、`src/engine/decisionService.ts` 中 opponent summary 构建，以及 `src/mockAgent.ts` 的 fallback 社交逻辑
+- 改动作提示与人格 steering 时，重点查看：`src/engine/strategyService.ts`
+- 改画布推进与作画节奏时，重点查看：`src/engine/canvasRuntime.ts`、`src/engine/artRuntime.ts`
 
 ## 验收标准
 
