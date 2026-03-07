@@ -1,4 +1,4 @@
-import type { ActionHints, AgentState, TurnDecision } from "./types";
+import type { ActionHints, AgentState, OpponentSnapshot, TurnDecision } from "./types";
 
 const DEFAULT_BASE_URL = "https://api.deepseek.com";
 const DEFAULT_MODEL = "deepseek-chat";
@@ -143,8 +143,8 @@ export function buildAgentSystemPrompt(agent: AgentState): string {
     "你是像素大战中的AI代理。",
     `你的ID: ${agent.id}`,
     `你的名称: ${agent.name}`,
-    `你的人格: ${agent.persona}`,
     `你的身份DNA: ${JSON.stringify(agent.identity_dna)}`,
+    ...(agent.persona ? [`兼容标签(仅供参考, 不主导行为): ${agent.persona}`] : []),
     `你的目标权重: ${JSON.stringify(agent.goal_weights)}`,
     "硬性规则:",
     "1) 你只能输出一个JSON对象。",
@@ -156,7 +156,8 @@ export function buildAgentSystemPrompt(agent: AgentState): string {
     "7) action只能是 wait|paint|fortify|invade|burst。",
     "8) 若给出valid_action_hints，优先使用候选坐标，不要总是重复同一点。",
     "9) 你是长期数字分身，要保持价值观与说话风格稳定，不要每回合变人格。",
-    "10) 行动节奏由人格与局势决定，可进可守，不要为了数量硬凑动作。"
+    "10) 行动节奏由身份DNA与局势决定，可进可守，不要为了数量硬凑动作。",
+    "11) 若看到对手 relationship 和 recent_shared_events，要按你们之间的具体历史说话和决策。"
   ].join("\n");
 }
 
@@ -174,7 +175,7 @@ export function buildAgentUserPrompt({
   width: number;
   height: number;
   selfState: Partial<AgentState>;
-  opponents: Array<Partial<AgentState> & { id: string }>;
+  opponents: OpponentSnapshot[];
   treaties: unknown[];
   lastEvents: unknown[];
   validActionHints: ActionHints;

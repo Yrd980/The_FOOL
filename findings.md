@@ -87,3 +87,58 @@
   - `/api/replays` and `/api/latest` return valid replay payloads.
   - `/` returns `200` and contains latest watch-control DOM nodes.
 - README web-viewer section now explicitly documents “跟随最新” and “循环播放” controls.
+
+## 2026-03-07
+- Review focus: whether current design truly delivers “human-like digital twins with vivid personalities” rather than mechanical proactive scripts.
+- Early review result:
+  - `identity_dna` is a real first-class state field and is required by schema.
+  - However, the engine still preserves a strong `persona` layer as a fallback/default generator and as an opponent-summary label.
+  - This means the system direction is correct, but the current implementation is not yet fully free from role-template framing.
+- `src/engine.ts` currently creates default twins by cycling through four fixed personas and generating DNA from persona presets.
+- `schemas/agent-state.schema.json` still requires `persona`, so the data model treats persona as a mandatory primitive rather than an optional legacy label.
+- `src/deepseekClient.ts` system prompt includes both `persona` and `identity_dna`, but still introduces the agent to the model with “你的人格: ${agent.persona}”, which keeps the four-role abstraction prominent.
+- `src/engine.ts` `applyIdentitySteering()` does use DNA fields directly (`risk_appetite`, `aggression_bias`, `diplomacy_bias`, `creativity_bias`, `core_values`) to reshape actions and diplomacy, which is the strongest evidence that live behavior is trending toward DNA-driven twins.
+- `src/mockAgent.ts` remains explicitly persona-scripted (`artist` => `art_focus`, `schemer` => `betray/cooperate`), so dry-run mode still presents a more role-template experience than live mode.
+- `src/engine.ts` opponent summaries expose only `persona`, `reputation`, and `emotion`, not opponent DNA/archetype/speech traits, so inter-agent reasoning still sees others through coarse role labels.
+- Refactor completed to reduce persona centrality:
+  - `AgentState.persona` is now optional in TS + JSON Schema.
+  - default twin generation now comes from a varied DNA library instead of cycling four personas.
+  - base `goal_weights` now derive from DNA signals and core values instead of persona buckets.
+  - dry-run / fallback decisions now use DNA, action hints, energy, cooldown, and opponent identity summaries.
+  - opponent summaries now expose `archetype`, `core_values`, `speech_style`, and `signature_moves`, with `legacy_persona` only as an optional compatibility hint.
+  - system prompt now frames persona as optional compatibility metadata instead of the main behavior anchor.
+- New dry-run replay sample `output/replay-2026-03-07T05-52-33-202Z.json` shows more identity-shaped public lines such as:
+  - `Let this border carry my name.`
+  - `Hold the line and trade nothing away.`
+  - `You will notice this move too late.`
+- During refactor, TypeScript widened mock action priorities to `string`; resolved with literal `as const` annotations.
+
+## 2026-03-07 Interaction Review
+- Current person-specific interaction gap is structural, not cosmetic:
+  - `consumeMemory()` only appends round events to the acting agent (`event.by`), so the target of an attack/treaty/betrayal does not automatically remember that interaction.
+  - relation fields (`trust`, `affinity`, `debt`) are initialized but barely updated; aside from treaty-breaking penalty, the simulation does not yet let relationships evolve strongly from events.
+  - prompt-time opponent summaries currently expose identity traits, but not “my relationship with this specific twin” nor “our recent shared incidents”.
+- Consequence: agents can look distinctive in style, but they still do not fully negotiate as remembered individuals.
+- Implemented person-specific interaction memory:
+  - round events now propagate into memory for both the actor and the target (when the target is another agent).
+  - relations now evolve from `signed_treaty`, `broke_treaty`, and `attacked` events instead of staying mostly static.
+  - agents now receive `last_round_summary` plus opponent `relationship` snapshots (`trust`, `affinity`, `debt`, `tension`, `recent_shared_events`).
+  - successful invasions now also emit `won_conflict` / `lost_area` events for richer personal histories.
+- Dry-run verification after relationship refactor:
+  - `bun run typecheck` passes
+  - `bun run check` passes
+  - replay file: `output/replay-2026-03-07T06-12-30-634Z.json`
+- Live DeepSeek crowd validation after relationship refactor:
+  - command used `--rounds=2 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10`
+  - replay file: `output/replay-2026-03-07T06-14-38-007Z.json`
+  - `error_stats` remained all zero
+  - round 2 now shows treaty-aware messages such as `Kai, our pact holds. Others, watch your edges.` and `Pact holding. Any insights on others' moves?`
+- Residual observation:
+  - diplomacy targets are now less “everyone to Ava”, but they still cluster in early rounds because starting relations are neutral and some identity profiles are naturally high-attraction diplomatic hubs.
+- Documentation was updated to match the new design:
+  - `README.md` now explicitly states that shared history affects behavior and that `persona` is only a compatibility label.
+  - `AGENTS.md` now tells future agents to prioritize relationship-specific memory and bidirectional event remembrance.
+- Pre-commit security / validation gate passed on 2026-03-07:
+  - `bun audit`
+  - `bun run typecheck`
+  - `bun run check`

@@ -67,3 +67,44 @@
   - `bun run check` (new dry-run replay generated)
   - viewer smoke test on `4174` with `/health`, `/api/replays`, `/api/latest`, `/`
 - Updated README viewer section to include follow-latest and loop playback controls.
+- Started follow-up refactor to reduce persona-centered behavior after design review.
+- Updated data model:
+  - made `persona` optional in `src/types.ts` and `schemas/agent-state.schema.json`
+  - kept `persona` only as a compatibility label when explicitly supplied
+- Reworked engine defaults:
+  - replaced persona-cycled default twins with DNA library-based default twins
+  - changed base goal-weight derivation from persona buckets to DNA/core-value inference
+  - expanded opponent summaries to identity-rich snapshots
+- Reworked dry-run/fallback behavior:
+  - rewrote `src/mockAgent.ts` to use DNA + hints + energy/cooldown constraints
+  - aligned fallback generation paths through a shared engine helper
+  - updated DeepSeek prompt framing to emphasize DNA over persona
+- Fixed one TS regression during refactor (`string` widening in mock action priorities) and re-ran:
+  - `bun run typecheck`
+  - `bun run check`
+- Inspected latest dry-run replay and confirmed public lines + persona notes now feel more like distinct twins than role scripts.
+- Started next iteration for person-specific interaction memory and negotiation realism.
+- Added relationship-aware opponent snapshots and `last_round_summary` to engine prompt inputs.
+- Changed memory propagation so both sides remember shared incidents when another twin is the target.
+- Added relation updates from social/combat events:
+  - treaty signing builds trust/affinity
+  - treaty breaking damages trust sharply
+  - attacks create debt/tension asymmetry
+- Added richer conflict events (`won_conflict`, `lost_area`) to make personal histories more legible.
+- Reworked diplomacy target selection to avoid every neutral opener targeting the same twin.
+- Verified again:
+  - `bun run typecheck`
+  - `bun run check`
+- Ran live 10-twin DeepSeek validation using `profiles/openclaw-sample.json`:
+  - replay `output/replay-2026-03-07T06-13-09-017Z.json`
+  - replay `output/replay-2026-03-07T06-14-38-007Z.json`
+  - both runs completed with zero schema/repair/generation errors
+- Inspected live replay sample and confirmed round-2 treaty-aware messaging now references specific counterpart history more directly.
+- Updated `README.md` and `AGENTS.md` to document:
+  - DNA-first behavior model
+  - person-specific memory / relationship-driven interaction
+  - `persona` as compatibility-only metadata
+- Re-ran pre-commit validation gate:
+  - `bun audit`
+  - `bun run typecheck`
+  - `bun run check`

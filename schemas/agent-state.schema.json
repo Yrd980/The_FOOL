@@ -7,7 +7,6 @@
   "required": [
     "id",
     "name",
-    "persona",
     "color",
     "identity_dna",
     "goal_weights",

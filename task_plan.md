@@ -24,6 +24,8 @@ Build a runnable JavaScript MVP for AI pixel war using DeepSeek API, managed wit
 | 8. Add digital-twin personality system | completed | Introduced identity DNA, DNA-driven steering, and replay persona notes |
 | 9. Scale to 10-30 crowd mode | completed | Added profile loading, decision concurrency, and round heat metrics |
 | 10. Add web visualization | completed | Added browser viewer + local server + replay API; added follow-latest/loop watch controls and re-validated endpoint playback |
+| 11. Reduce persona-centered behavior | completed | Made persona optional, shifted defaults/mock behavior to DNA-driven logic, and expanded opponent identity summaries |
+| 12. Add person-specific interaction memory | completed | Shared events now propagate to both sides, relations evolve from incidents, and prompts/fallbacks can reason about shared history |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
@@ -35,3 +37,4 @@ Build a runnable JavaScript MVP for AI pixel war using DeepSeek API, managed wit
 | Fish syntax failed under `/bin/sh` wrapper when sourcing secrets | 1 | Read env via `fish -c` and inject into bash command |
 | Coordinate normalization defaulted missing values to (0,0) | 1 | Made coordinate parsing strict and bounded coordinates to canvas |
 | Typecheck error for `Bun` global in viewer server | 1 | Add Bun types and include `bun` type in tsconfig |
+| TS widened mock action literals to `string` | 1 | Added `as const` on mock priority action literals |

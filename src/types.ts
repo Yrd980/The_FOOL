@@ -54,7 +54,7 @@ export interface MemoryEvent {
 export interface AgentState {
   id: string;
   name: string;
-  persona: Persona;
+  persona?: Persona;
   color: string;
   identity_dna: IdentityDNA;
   goal_weights: GoalWeights;
@@ -101,6 +101,24 @@ export interface PrivateMessage {
 export interface Point {
   x: number;
   y: number;
+}
+
+export interface OpponentSnapshot {
+  id: string;
+  archetype: string;
+  core_values: string[];
+  speech_style: string;
+  signature_moves: string[];
+  reputation: number;
+  emotion: Emotion;
+  relationship: {
+    trust: number;
+    affinity: number;
+    debt: number;
+    tension: number;
+    recent_shared_events: string[];
+  };
+  legacy_persona?: Persona;
 }
 
 export interface ActionHints {

@@ -3,7 +3,7 @@
 全自动 AI 像素大战 MVP：
 - 画布对抗（占地 + 进攻 + 防守 + 爆破）
 - AI 公开发言 / 私聊 / 条约提案
-- 情绪与关系影响行动
+- 情绪、关系、共享历史影响行动
 - 支持数字分身档案（`identity_dna`）批量接入
 - DeepSeek 驱动回合决策（可切 `--dry-run`）
 
@@ -88,7 +88,17 @@ bun run src/index.ts --rounds=20 --width=96 --height=96 --profiles=profiles/open
 - `--profiles` 提供分身档案 JSON（数组或 `{ "profiles": [...] }`）
 - 若提供 `--profiles`，实际 agent 数量以档案数量为准
 - 推荐 `10-30` 个分身时将 `--concurrency` 设为 `8-16`
+- 行为主导字段是 `identity_dna`，`persona` 现在仅作为可选兼容标签
+- 分身会根据 `trust / affinity / debt / recent_shared_events` 调整协商、结盟、复仇与发言
+- `dry-run` / fallback 也走 DNA + 关系驱动逻辑，不再是简单 persona 脚本
 - replay 中包含 `persona_notes` 与 `round_metrics`，可直接用于“热闹度”可视化
+
+## 当前设计重点
+
+- 核心体验是“一群有鲜明人格的数字分身在抢像素地盘、协商、冲突、作画”
+- 默认行为优先由 `identity_dna`、情绪、关系与共享历史共同决定
+- `persona` 仅保留为兼容标签，不再作为主要行为分流依据
+- agent 会记住具体对象之间的事件，例如签约、毁约、进攻、失地与冲突胜负
 
 ## 类型检查
 

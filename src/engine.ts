@@ -13,6 +13,7 @@ import type {
   IdentityDNA,
   MemoryEvent,
   Persona,
+  OpponentSnapshot,
   Point,
   ReplayRound,
   SimulationResult,
@@ -24,8 +25,99 @@ import type {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PERSONALITIES: Persona[] = ["expansionist", "defender", "artist", "schemer"];
 const COLORS = ["#E63946", "#2A9D8F", "#F4A261", "#457B9D", "#E9C46A", "#1D3557", "#FF6B6B", "#4CC9F0"];
+
+const LEGACY_PERSONAS: Persona[] = ["expansionist", "defender", "artist", "schemer"];
+const DEFAULT_TWIN_DNA_LIBRARY: IdentityDNA[] = [
+  {
+    archetype: "Frontier Composer",
+    core_values: ["beauty", "momentum", "identity"],
+    speech_style: "expressive, brisk, image-rich",
+    risk_appetite: 72,
+    aggression_bias: 61,
+    diplomacy_bias: 46,
+    creativity_bias: 90,
+    signature_moves: ["motif chain", "tempo wedge", "border chorus"],
+    taboos: ["dull repetition", "color panic"]
+  },
+  {
+    archetype: "Quiet Steward",
+    core_values: ["stability", "honor", "continuity"],
+    speech_style: "calm, measured, reassuring",
+    risk_appetite: 28,
+    aggression_bias: 34,
+    diplomacy_bias: 82,
+    creativity_bias: 44,
+    signature_moves: ["fortified ring", "buffer pact", "line hold"],
+    taboos: ["reckless overreach", "betraying trust"]
+  },
+  {
+    archetype: "Flash Raider",
+    core_values: ["tempo", "pressure", "advantage"],
+    speech_style: "short, sharp, competitive",
+    risk_appetite: 83,
+    aggression_bias: 86,
+    diplomacy_bias: 24,
+    creativity_bias: 38,
+    signature_moves: ["double invade", "edge lock", "center disrupt"],
+    taboos: ["idle turns", "slow drift"]
+  },
+  {
+    archetype: "Velvet Broker",
+    core_values: ["timing", "alliance", "leverage"],
+    speech_style: "smooth, social, lightly ironic",
+    risk_appetite: 54,
+    aggression_bias: 48,
+    diplomacy_bias: 84,
+    creativity_bias: 58,
+    signature_moves: ["bait treaty", "swap fronts", "soft surround"],
+    taboos: ["public overcommitment", "predictable repeats"]
+  },
+  {
+    archetype: "Memory Mason",
+    core_values: ["legacy", "craft", "coherence"],
+    speech_style: "warm, reflective, quietly proud",
+    risk_appetite: 42,
+    aggression_bias: 32,
+    diplomacy_bias: 62,
+    creativity_bias: 88,
+    signature_moves: ["palette echo", "shape lock", "stability paint"],
+    taboos: ["chaotic spam", "meaningless damage"]
+  },
+  {
+    archetype: "Cinder Duelist",
+    core_values: ["revenge", "honor", "presence"],
+    speech_style: "direct, heated, stubborn",
+    risk_appetite: 67,
+    aggression_bias: 78,
+    diplomacy_bias: 37,
+    creativity_bias: 41,
+    signature_moves: ["counter edge", "burst feint", "pressure lane"],
+    taboos: ["appearing weak", "yielding first"]
+  },
+  {
+    archetype: "Circuit Diplomat",
+    core_values: ["balance", "reputation", "survival"],
+    speech_style: "clear, analytical, human",
+    risk_appetite: 39,
+    aggression_bias: 41,
+    diplomacy_bias: 79,
+    creativity_bias: 52,
+    signature_moves: ["peace corridor", "timed counter", "buffer weave"],
+    taboos: ["wasting energy", "burning bridges"]
+  },
+  {
+    archetype: "Signal Trickster",
+    core_values: ["surprise", "style", "timing"],
+    speech_style: "playful, sly, provocative",
+    risk_appetite: 76,
+    aggression_bias: 64,
+    diplomacy_bias: 59,
+    creativity_bias: 71,
+    signature_moves: ["spiral feint", "late flank", "contrast stripe"],
+    taboos: ["being readable", "boring symmetry"]
+  }
+];
 
 const ACTION_COST: Record<TurnAction["action"], number> = {
   wait: 0,
@@ -68,6 +160,10 @@ function relationToMap(relations: AgentState["relations"]): Map<string, AgentSta
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function signedNumber(value: number): string {
+  return value > 0 ? `+${value}` : `${value}`;
 }
 
 type DecisionRequestStatus = "ok" | "repaired" | "fallback";
@@ -134,31 +230,41 @@ export class PixelWarEngine {
     return board;
   }
 
-  private goalWeightsForPersona(persona: Persona): AgentState["goal_weights"] {
-    if (persona === "expansionist") {
-      return { territory: 0.5, art: 0.2, revenge: 0.2, reputation: 0.1 };
-    }
-    if (persona === "defender") {
-      return { territory: 0.35, art: 0.2, revenge: 0.1, reputation: 0.35 };
-    }
-    if (persona === "artist") {
-      return { territory: 0.2, art: 0.55, revenge: 0.05, reputation: 0.2 };
-    }
-    return { territory: 0.3, art: 0.15, revenge: 0.35, reputation: 0.2 };
-  }
+  private goalWeightsFromDNA(dna: IdentityDNA): AgentState["goal_weights"] {
+    const values = dna.core_values.map((value) => value.toLowerCase());
+    const territory =
+      0.18 +
+      dna.risk_appetite * 0.0022 +
+      dna.aggression_bias * 0.0025 +
+      (values.some((value) => value.includes("growth") || value.includes("pressure") || value.includes("tempo")) ? 0.14 : 0);
+    const art =
+      0.08 +
+      dna.creativity_bias * 0.0032 +
+      (values.some((value) => value.includes("beauty") || value.includes("legacy") || value.includes("craft")) ? 0.16 : 0);
+    const revenge =
+      0.06 +
+      dna.aggression_bias * 0.0019 +
+      dna.risk_appetite * 0.0012 +
+      (values.some((value) => value.includes("revenge") || value.includes("presence") || value.includes("advantage")) ? 0.14 : 0);
+    const reputation =
+      0.1 +
+      dna.diplomacy_bias * 0.0028 +
+      (values.some((value) => value.includes("honor") || value.includes("alliance") || value.includes("reputation")) ? 0.15 : 0);
 
-  private personaFromDNA(dna: IdentityDNA): Persona {
-    if (dna.creativity_bias >= 70) return "artist";
-    if (dna.aggression_bias >= 70 && dna.risk_appetite >= 60) return "expansionist";
-    if (dna.diplomacy_bias >= 70 && dna.aggression_bias < 60) return "defender";
-    return "schemer";
+    const sum = territory + art + revenge + reputation;
+    return {
+      territory: Number((territory / sum).toFixed(4)),
+      art: Number((art / sum).toFixed(4)),
+      revenge: Number((revenge / sum).toFixed(4)),
+      reputation: Number((reputation / sum).toFixed(4))
+    };
   }
 
   private normalizeGoalWeights(
-    persona: Persona,
+    dna: IdentityDNA,
     overrideWeights?: Partial<AgentState["goal_weights"]>
   ): AgentState["goal_weights"] {
-    const base = this.goalWeightsForPersona(persona);
+    const base = this.goalWeightsFromDNA(dna);
     const merged = {
       territory: overrideWeights?.territory ?? base.territory,
       art: overrideWeights?.art ?? base.art,
@@ -181,6 +287,23 @@ export class PixelWarEngine {
       revenge: Number((safe.revenge / sum).toFixed(4)),
       reputation: Number((safe.reputation / sum).toFixed(4))
     };
+  }
+
+  private buildDefaultTwinDNA(index: number): IdentityDNA {
+    const base = DEFAULT_TWIN_DNA_LIBRARY[index % DEFAULT_TWIN_DNA_LIBRARY.length];
+    const drift = ((index * 7) % 7) - 3;
+    const tilt = index % 2 === 0 ? 2 : -2;
+
+    return this.normalizeIdentityDNA({
+      ...base,
+      risk_appetite: clamp(base.risk_appetite + drift, 0, 100),
+      aggression_bias: clamp(base.aggression_bias + tilt, 0, 100),
+      diplomacy_bias: clamp(base.diplomacy_bias - tilt, 0, 100),
+      creativity_bias: clamp(base.creativity_bias + (index % 3) - 1, 0, 100),
+      core_values: [...base.core_values],
+      signature_moves: [...base.signature_moves],
+      taboos: [...base.taboos]
+    });
   }
 
   private normalizeIdentityDNA(input: IdentityDNA): IdentityDNA {
@@ -229,62 +352,6 @@ export class PixelWarEngine {
     return output;
   }
 
-  private identityDNAForPersona(persona: Persona, index: number): IdentityDNA {
-    if (persona === "expansionist") {
-      return {
-        archetype: "Conqueror",
-        core_values: ["growth", "pressure", "momentum"],
-        speech_style: "short, assertive, territorial",
-        risk_appetite: 78,
-        aggression_bias: 80,
-        diplomacy_bias: 35,
-        creativity_bias: 40,
-        signature_moves: ["border squeeze", "double invade", "center wedge"],
-        taboos: ["idle turns", "retreat without trade"]
-      };
-    }
-
-    if (persona === "defender") {
-      return {
-        archetype: "Warden",
-        core_values: ["stability", "honor", "counterplay"],
-        speech_style: "calm, direct, tactical",
-        risk_appetite: 35,
-        aggression_bias: 48,
-        diplomacy_bias: 65,
-        creativity_bias: 35,
-        signature_moves: ["fortified ring", "counter invade", "line hold"],
-        taboos: ["betraying active ally"]
-      };
-    }
-
-    if (persona === "artist") {
-      return {
-        archetype: "Curator",
-        core_values: ["beauty", "coherence", "legacy"],
-        speech_style: "expressive, poetic, confident",
-        risk_appetite: 52,
-        aggression_bias: 34,
-        diplomacy_bias: 58,
-        creativity_bias: 88,
-        signature_moves: ["palette wave", "shape lock", "motif repeat"],
-        taboos: ["chaotic spam", "color inconsistency"]
-      };
-    }
-
-    return {
-      archetype: "Operator",
-      core_values: ["advantage", "deception", "timing"],
-      speech_style: "sharp, ironic, manipulative",
-      risk_appetite: 70,
-      aggression_bias: 62,
-      diplomacy_bias: 72,
-      creativity_bias: 55,
-      signature_moves: ["bait treaty", "silent flank", "late betrayal"],
-      taboos: ["predictable repetition", "public overcommitment"]
-    };
-  }
-
   private createAgents(): AgentState[] {
     const agents: AgentState[] = [];
     const profiles = this.loadTwinProfiles();
@@ -294,8 +361,7 @@ export class PixelWarEngine {
       const profile = profiles[i];
       if (profile) {
         const dna = this.normalizeIdentityDNA(profile.identity_dna);
-        const persona =
-          profile.persona && PERSONALITIES.includes(profile.persona) ? profile.persona : this.personaFromDNA(dna);
+        const persona = profile.persona && LEGACY_PERSONAS.includes(profile.persona) ? profile.persona : undefined;
 
         const idCandidate = typeof profile.id === "string" ? profile.id.trim() : `a${i + 1}`;
         const id = /^[a-zA-Z0-9_-]{1,24}$/.test(idCandidate) ? idCandidate : `a${i + 1}`;
@@ -306,10 +372,9 @@ export class PixelWarEngine {
         const agent: AgentState = {
           id,
           name,
-          persona,
           color,
           identity_dna: dna,
-          goal_weights: this.normalizeGoalWeights(persona, profile.goal_weights),
+          goal_weights: this.normalizeGoalWeights(dna, profile.goal_weights),
           emotion: { anger: 20, fear: 20, confidence: 50, satisfaction: 50 },
           reputation: 70,
           energy: 3,
@@ -317,19 +382,21 @@ export class PixelWarEngine {
           relations: [],
           memory: []
         };
+        if (persona) {
+          agent.persona = persona;
+        }
         agents.push(agent);
         continue;
       }
 
       const id = `a${i + 1}`;
-      const persona = PERSONALITIES[i % PERSONALITIES.length];
+      const dna = this.buildDefaultTwinDNA(i);
       const agent: AgentState = {
         id,
-        name: `Agent-${i + 1}`,
-        persona,
+        name: `Twin-${i + 1}`,
         color: COLORS[i % COLORS.length],
-        identity_dna: this.identityDNAForPersona(persona, i),
-        goal_weights: this.goalWeightsForPersona(persona),
+        identity_dna: dna,
+        goal_weights: this.normalizeGoalWeights(dna),
         emotion: { anger: 20, fear: 20, confidence: 50, satisfaction: 50 },
         reputation: 70,
         energy: 3,
@@ -381,6 +448,143 @@ export class PixelWarEngine {
 
   private inBounds(x: number, y: number): boolean {
     return x >= 0 && y >= 0 && x < this.width && y < this.height;
+  }
+
+  private getAgentById(agentId: string): AgentState | undefined {
+    return this.agents.find((agent) => agent.id === agentId);
+  }
+
+  private adjustRelation(agentId: string, targetId: string, delta: Partial<Pick<AgentState["relations"][number], "trust" | "affinity" | "debt">>): void {
+    const agent = this.getAgentById(agentId);
+    if (!agent) return;
+
+    const relation = relationToMap(agent.relations).get(targetId);
+    if (!relation) return;
+
+    if (typeof delta.trust === "number") {
+      relation.trust = clamp(relation.trust + delta.trust, -100, 100);
+    }
+    if (typeof delta.affinity === "number") {
+      relation.affinity = clamp(relation.affinity + delta.affinity, -100, 100);
+    }
+    if (typeof delta.debt === "number") {
+      relation.debt = clamp(relation.debt + delta.debt, -100, 100);
+    }
+  }
+
+  private rememberEvent(agent: AgentState, event: MemoryEvent): void {
+    agent.memory.push(event);
+    if (agent.memory.length > 30) {
+      agent.memory.shift();
+    }
+  }
+
+  private describeSharedEvent(selfId: string, otherId: string, event: MemoryEvent): string | null {
+    const relatesToOther = event.by === otherId || event.target === otherId;
+    if (!relatesToOther) return null;
+
+    if (event.type === "signed_treaty") {
+      return `r${event.round} signed a pact`;
+    }
+
+    if (event.type === "broke_treaty") {
+      if (event.by === otherId && event.target === selfId) return `r${event.round} broke a treaty with you`;
+      if (event.by === selfId && event.target === otherId) return `r${event.round} you broke a treaty with them`;
+      return `r${event.round} treaty was broken`;
+    }
+
+    if (event.type === "attacked") {
+      if (event.by === otherId && event.target === selfId) return `r${event.round} attacked you`;
+      if (event.by === selfId && event.target === otherId) return `r${event.round} you attacked them`;
+      return `r${event.round} clashed with you`;
+    }
+
+    if (event.type === "won_conflict") {
+      if (event.by === otherId && event.target === selfId) return `r${event.round} beat you in a clash`;
+      if (event.by === selfId && event.target === otherId) return `r${event.round} you won against them`;
+      return `r${event.round} won a conflict`;
+    }
+
+    if (event.type === "lost_area") {
+      if (event.by === otherId && event.target === selfId) return `r${event.round} lost area to you`;
+      if (event.by === selfId && event.target === otherId) return `r${event.round} you lost area to them`;
+      return `r${event.round} territory changed hands`;
+    }
+
+    if (event.type === "allied") {
+      return `r${event.round} aligned with you`;
+    }
+
+    return null;
+  }
+
+  private sharedHistory(agent: AgentState, otherId: string): string[] {
+    const notes = agent.memory
+      .filter((event) => event.by === otherId || event.target === otherId)
+      .map((event) => this.describeSharedEvent(agent.id, otherId, event))
+      .filter((item): item is string => Boolean(item));
+
+    return [...new Set(notes)].slice(-3);
+  }
+
+  private updateRelationsFromEvent(event: MemoryEvent): void {
+    if (!event.target || !this.getAgentById(event.target)) return;
+
+    if (event.type === "signed_treaty") {
+      this.adjustRelation(event.by, event.target, { trust: 6, affinity: 5, debt: -4 });
+      this.adjustRelation(event.target, event.by, { trust: 6, affinity: 5, debt: -4 });
+      return;
+    }
+
+    if (event.type === "broke_treaty") {
+      this.adjustRelation(event.by, event.target, { trust: -18, affinity: -12, debt: -6 });
+      this.adjustRelation(event.target, event.by, { trust: -34, affinity: -18, debt: 20 });
+      return;
+    }
+
+    if (event.type === "attacked") {
+      this.adjustRelation(event.by, event.target, { trust: -6, affinity: -8, debt: -4 });
+      this.adjustRelation(event.target, event.by, { trust: -18, affinity: -12, debt: 14 });
+      return;
+    }
+
+    if (event.type === "allied") {
+      this.adjustRelation(event.by, event.target, { trust: 10, affinity: 8, debt: -6 });
+      this.adjustRelation(event.target, event.by, { trust: 10, affinity: 8, debt: -6 });
+    }
+  }
+
+  private buildLastRoundSummary(agent: AgentState, round: number, roundEvents: MemoryEvent[]): string {
+    const relationLines = agent.relations
+      .slice()
+      .sort((left, right) => right.trust + right.affinity - left.trust - left.affinity)
+      .slice(0, 2)
+      .map((relation) => `${relation.target_id}(t${signedNumber(relation.trust)},a${signedNumber(relation.affinity)},d${signedNumber(relation.debt)})`);
+
+    const directEvents = roundEvents
+      .filter((event) => event.by === agent.id || event.target === agent.id)
+      .map((event) => {
+        if (event.type === "signed_treaty") {
+          return `signed pact with ${event.target}`;
+        }
+        if (event.type === "broke_treaty") {
+          return event.by === agent.id ? `broke treaty vs ${event.target}` : `${event.by} broke treaty`;
+        }
+        if (event.type === "attacked") {
+          return event.by === agent.id ? `attacked ${event.target}` : `${event.by} attacked you`;
+        }
+        if (event.type === "won_conflict") {
+          return event.by === agent.id ? `won clash vs ${event.target}` : `${event.by} beat you`;
+        }
+        if (event.type === "lost_area") {
+          return event.by === agent.id ? `lost area to ${event.target}` : `${event.by} lost area`;
+        }
+        return event.type;
+      })
+      .slice(-2);
+
+    const parts = [...directEvents, relationLines.length > 0 ? `relations ${relationLines.join(", ")}` : ""].filter(Boolean);
+    return (parts.join(" | ") || "No direct personal incident last round.").slice(0, 120);
   }
 
   private countOwnedNeighbors(agentId: string, x: number, y: number): number {
@@ -589,6 +793,44 @@ export class PixelWarEngine {
     return `${agent.identity_dna.archetype}: staying in character.`.slice(0, 60);
   }
 
+  private stablePairBias(agentId: string, targetId: string, round: number): number {
+    const key = `${agentId}:${targetId}:${round}`;
+    let hash = 0;
+    for (let i = 0; i < key.length; i += 1) {
+      hash = (hash * 31 + key.charCodeAt(i)) % 9973;
+    }
+    return (hash % 100) / 100;
+  }
+
+  private pickDiplomaticTarget(agent: AgentState, round: number): string | null {
+    const relationMap = relationToMap(agent.relations);
+
+    const ranked = this.agents
+      .filter((target) => target.id !== agent.id)
+      .map((target) => {
+        const relation = relationMap.get(target.id) ?? { target_id: target.id, trust: 0, affinity: 0, debt: 0 };
+        const compatibility =
+          100 -
+          Math.abs(agent.identity_dna.diplomacy_bias - target.identity_dna.diplomacy_bias) * 0.5 -
+          Math.abs(agent.identity_dna.risk_appetite - target.identity_dna.risk_appetite) * 0.2;
+        const sharedHistory = this.sharedHistory(agent, target.id).length * 5;
+        const tensionPenalty = Math.max(0, relation.debt) * 0.6 + Math.max(0, -relation.trust) * 0.4;
+        const score =
+          relation.trust * 0.7 +
+          relation.affinity * 0.55 -
+          tensionPenalty +
+          compatibility * 0.18 +
+          target.reputation * 0.05 +
+          sharedHistory +
+          this.stablePairBias(agent.id, target.id, round) * 12;
+
+        return { id: target.id, score };
+      })
+      .sort((left, right) => right.score - left.score);
+
+    return ranked[0]?.id ?? null;
+  }
+
   private applyIdentitySteering(
     agent: AgentState,
     decision: TurnDecision,
@@ -701,9 +943,7 @@ export class PixelWarEngine {
     }
 
     if (wantsDiplomacy && next.treaty_proposals.length === 0) {
-      const target = [...agent.relations]
-        .sort((a, b) => b.trust + b.affinity - (a.trust + a.affinity))
-        .map((item) => item.target_id)[0];
+      const target = this.pickDiplomaticTarget(agent, round);
       if (target) {
         next.treaty_proposals.push({
           proposal_id: `${agent.id}_r${round}_dna`,
@@ -849,6 +1089,8 @@ export class PixelWarEngine {
         targetCell.color = agent.color;
         targetCell.fortify = 0;
         this.events.push({ round, type: "attacked", by: agent.id, target: defenderId });
+        this.events.push({ round, type: "won_conflict", by: agent.id, target: defenderId });
+        this.events.push({ round, type: "lost_area", by: defenderId, target: agent.id });
       }
       return;
     }
@@ -882,21 +1124,58 @@ export class PixelWarEngine {
     }
   }
 
-  private buildOpponentSummary(agentId: string): Array<{ id: string; persona: Persona; reputation: number; emotion: AgentState["emotion"] }> {
+  private buildOpponentSummary(agentId: string): OpponentSnapshot[] {
+    const self = this.getAgentById(agentId);
+    const relationMap = self ? relationToMap(self.relations) : new Map<string, AgentState["relations"][number]>();
+
     return this.agents
       .filter((agent) => agent.id !== agentId)
       .map((agent) => ({
         id: agent.id,
-        persona: agent.persona,
+        archetype: agent.identity_dna.archetype,
+        core_values: agent.identity_dna.core_values.slice(0, 3),
+        speech_style: agent.identity_dna.speech_style,
+        signature_moves: agent.identity_dna.signature_moves.slice(0, 2),
         reputation: agent.reputation,
-        emotion: agent.emotion
+        emotion: agent.emotion,
+        relationship: (() => {
+          const relation = relationMap.get(agent.id) ?? { target_id: agent.id, trust: 0, affinity: 0, debt: 0 };
+          const recentSharedEvents = self ? this.sharedHistory(self, agent.id) : [];
+          const tension = clamp(
+            Math.round(
+              28 - relation.trust * 0.35 - relation.affinity * 0.2 + relation.debt * 0.45 + recentSharedEvents.length * 6
+            ),
+            0,
+            100
+          );
+
+          return {
+            trust: relation.trust,
+            affinity: relation.affinity,
+            debt: relation.debt,
+            tension,
+            recent_shared_events: recentSharedEvents
+          };
+        })(),
+        ...(agent.persona ? { legacy_persona: agent.persona } : {})
       }));
+  }
+
+  private buildFallbackDecision(agent: AgentState, round: number, validActionHints = this.buildActionHints(agent, round)): TurnDecision {
+    return buildMockDecision({
+      agent,
+      round,
+      width: this.width,
+      height: this.height,
+      opponents: this.buildOpponentSummary(agent.id),
+      validActionHints
+    });
   }
 
   private async generateDecision(agent: AgentState, round: number, validActionHints: ActionHints): Promise<unknown> {
     const opponents = this.buildOpponentSummary(agent.id);
     if (this.dryRun) {
-      return buildMockDecision({ agent, round, width: this.width, height: this.height, opponents });
+      return this.buildFallbackDecision(agent, round, validActionHints);
     }
 
     const systemPrompt = buildAgentSystemPrompt(agent);
@@ -906,13 +1185,13 @@ export class PixelWarEngine {
       height: this.height,
       selfState: {
         id: agent.id,
-        persona: agent.persona,
         identity_dna: agent.identity_dna,
         energy: agent.energy,
         cooldowns: agent.cooldowns,
         emotion: agent.emotion,
         reputation: agent.reputation,
-        relations: agent.relations.slice(0, 5)
+        relations: agent.relations.slice(0, 5),
+        last_round_summary: agent.last_round_summary
       },
       opponents,
       treaties: this.activeTreaties,
@@ -993,13 +1272,7 @@ export class PixelWarEngine {
 
     if (this.dryRun) {
       return finalize({
-        decision: buildMockDecision({
-          agent,
-          round,
-          width: this.width,
-          height: this.height,
-          opponents: this.buildOpponentSummary(agent.id)
-        }),
+        decision: this.buildFallbackDecision(agent, round, validActionHints),
         status: "ok"
       });
     }
@@ -1039,13 +1312,7 @@ export class PixelWarEngine {
       });
     } catch (error) {
       return finalize({
-        decision: buildMockDecision({
-          agent,
-          round,
-          width: this.width,
-          height: this.height,
-          opponents: this.buildOpponentSummary(agent.id)
-        }),
+        decision: this.buildFallbackDecision(agent, round, validActionHints),
         status: "fallback",
         detail: `first=${firstPass.error}; repair_request=${error instanceof Error ? error.message : String(error)}`
       });
@@ -1053,13 +1320,7 @@ export class PixelWarEngine {
   }
 
   private sanitizeDecision(agent: AgentState, rawDecision: unknown, round: number): { decision: TurnDecision; error: string | null } {
-    const fallback = buildMockDecision({
-      agent,
-      round,
-      width: this.width,
-      height: this.height,
-      opponents: this.buildOpponentSummary(agent.id)
-    });
+    const fallback = this.buildFallbackDecision(agent, round);
 
     if (isObject(rawDecision) && this.validateDecision(rawDecision)) {
       const decision = rawDecision as TurnDecision;
@@ -1122,13 +1383,25 @@ export class PixelWarEngine {
 
   private consumeMemory(round: number): void {
     const eventsByRound = this.events.filter((event) => event.round === round);
+
     for (const event of eventsByRound) {
-      const agent = this.agents.find((item) => item.id === event.by);
-      if (!agent) continue;
-      agent.memory.push(event);
-      if (agent.memory.length > 30) {
-        agent.memory.shift();
+      const recipients = new Set<string>();
+      recipients.add(event.by);
+      if (event.target && this.getAgentById(event.target)) {
+        recipients.add(event.target);
       }
+
+      for (const recipientId of recipients) {
+        const agent = this.getAgentById(recipientId);
+        if (!agent) continue;
+        this.rememberEvent(agent, event);
+      }
+
+      this.updateRelationsFromEvent(event);
+    }
+
+    for (const agent of this.agents) {
+      agent.last_round_summary = this.buildLastRoundSummary(agent, round, eventsByRound);
     }
   }
 
@@ -1232,13 +1505,7 @@ export class PixelWarEngine {
         } catch (error) {
           const fallbackDecision = this.applyIdentitySteering(
             agent,
-            buildMockDecision({
-              agent,
-              round,
-              width: this.width,
-              height: this.height,
-              opponents: this.buildOpponentSummary(agent.id)
-            }),
+            this.buildFallbackDecision(agent, round),
             this.buildActionHints(agent, round),
             round
           );
