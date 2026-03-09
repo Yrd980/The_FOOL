@@ -1,250 +1,106 @@
-# Findings
+# Findings & Decisions
 
-## 2026-03-04
-- Planning skill loaded and session catchup executed successfully (no carry-over output).
-- Current project directory started effectively empty.
-- `rg --files` returns non-zero in empty directory; this is expected.
-- User requirement expanded to include Git management in addition to DeepSeek-based AI simulation skeleton.
-- Node project initialized with ESM mode and scripts (`start`, `simulate`, `check`).
-- Dependencies installed successfully: `ajv`, `dotenv`.
-- User requested switching package/runtime management to Bun before core implementation.
-- Core scaffold files were created in JavaScript; user then requested TypeScript migration for stronger type checks.
-- Bun install succeeded and generated `bun.lock` (lockfile migrated from prior npm lock).
-- Typecheck currently fails at `src/engine.ts` due to TypeScript narrowing around Ajv validation path.
-- Type error fixed by avoiding `never` narrowing in Ajv-failed branch.
-- Runtime schema error fixed by switching to `Ajv2020` for draft-2020-12 compatibility.
-- Dry-run simulation now passes via `bun run check`.
-- Git repository initialized and project files are ready for first commit.
-- Current git status is cleanly untracked initial set (expected immediately after `git init`).
-- Live run with DeepSeek succeeded when loading key via `fish -c` bridge and exporting in shell.
-- Replay file generated: `output/replay-2026-03-04T10-44-30-365Z.json`.
-- Important: most live responses failed strict `TurnDecision` schema validation and fell back to mock decisions, indicating prompt-output mismatch.
-- Current `deepseekClient.ts` does not request JSON response format and performs only single-shot generation.
-- Current `engine.ts` validates once and immediately falls back to mock on mismatch (no repair retry / normalization).
-- Implemented live-conformance hardening:
-  - DeepSeek requests now prefer `response_format: { type: "json_object" }` with fallback when unsupported.
-  - Added decision normalization/mapping layer for common malformed keys (`action`, `target`, `message`, etc.).
-  - Added second-pass repair call when first response fails schema.
-- Added run-level `error_stats` summary in CLI output (`schema_validation`, `schema_repaired`, `decision_generation`).
-- Detected and fixed coordinate-normalization bug that accidentally defaulted missing coords to `(0,0)`.
-- Added coordinate-range prompt hints and action coordinate bounding in engine.
-- Latest live run (`output/replay-2026-03-04T11-01-35-501Z.json`) shows:
-- `error_stats` all zero
-- non-zero expansion events with multiple unique target coordinates.
-- Quantitative comparison:
-  - old live replay `output/replay-2026-03-04T10-44-30-365Z.json`: `schema_validation=18`
-  - new live replay `output/replay-2026-03-04T11-01-35-501Z.json`: `schema_validation=0`
-- New requirement: provide per-agent frontline action candidates in prompt (no human input) to reduce low-quality/random coordinate selection.
-- Current engine prompt input path has no explicit `valid_action_hints` field yet.
-- Current types file has no dedicated structure for action-candidate hints.
-- Added typed action-hint payload (`ActionHints`) and wired it into prompt input.
-- Engine now builds per-agent candidate points from owned frontier, enemy adjacency, and last-round contested hotspots.
-- Live run after hint integration: `output/replay-2026-03-04T11-08-56-797Z.json`
-  - `error_stats` remained zero
-  - expansion activity increased to `26` unique expansion targets across 3 rounds (previous comparable run had `6`).
-- New user priority: emphasize persistent personalized AI identity (digital twin style) over generic behavior.
-- Current model has persona labels but lacks explicit long-term identity DNA fields and replay-level personality rationale output.
-- User clarified that forced proactive behavior is not the goal; personality realism should override action-count pressure.
-- Implemented `identity_dna` as required state field in both TS types and JSON schema.
-- Reworked steering logic from persona-enum branching to DNA-weight branching (`risk/aggression/diplomacy/creativity + core_values`).
-- Added replay `persona_notes` with per-round personality rationale and activity score.
-- Live verification file: `output/replay-2026-03-04T11-24-33-198Z.json`
-  - `error_stats` all zero
-  - `persona_notes` present for all agents in each round.
-- Added crowd-scaling primitives for 10-30 digital twins:
-  - `--concurrency` option and engine-side concurrent decision collection.
-  - `--profiles` option to load batch digital-twin profiles from JSON.
-  - replay `round_metrics` for heat visualization (expanded/attacked/treaties/messages).
-- Added sample profile pack: `profiles/openclaw-sample.json` (10 twins).
-- Dry-run verification with profile pack:
-  - command used `--dry-run --rounds=3 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10`
-  - resulting replay reports `agent_count=10`, `max_concurrent_agents=10`, and zero schema/decision errors.
-- Live verification with profile pack:
-  - command used `--rounds=1 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10`
-  - replay `output/replay-2026-03-04T11-34-06-576Z.json` shows `agent_count=10`, `max_concurrent_agents=10`, zero decision/schema errors, and populated `persona_notes` + `round_metrics`.
-- New requirement: provide direct web visualization of current effect.
-- Latest replay currently available: `output/replay-2026-03-04T11-38-55-174Z.json`.
-- Replay structure confirmed for web UI needs:
-  - top-level: `config`, `ranking`, `final_highlights`, `replay`
-  - each round: `public_messages`, `private_messages`, `persona_notes`, `round_metrics`, `highlights`, `errors`.
-- Existing CLI already supports `--profiles` and `--concurrency`, so viewer only needs to consume replay JSON and animate it.
-- Web viewer implemented:
-  - static UI files: `viewer/index.html`, `viewer/styles.css`, `viewer/app.js`
-  - local server: `src/viewerServer.ts`
-  - package script: `bun run viewer`
-- Server API endpoints: `/api/replays`, `/api/latest`, `/api/replay/:name`, `/health`.
-- Added Bun typings (`@types/bun`) and updated `tsconfig` `types` to include `bun`.
-- Validation:
-  - `bun run typecheck` passes
-  - `bun run check` passes
-  - viewer endpoint smoke test returns `200` on `/` and valid JSON on `/api/latest`.
-- Re-inspected viewer frontend after partial patching concerns:
-  - `viewer/index.html` includes `watchState`, `followLatestToggle`, and `loopToggle` controls.
-  - `viewer/styles.css` has valid selectors (no malformed `.#roundRange` style token present).
-  - `viewer/app.js` replay polling + auto-follow + loop playback code is complete and syntactically intact.
-- Fresh smoke validation on port `4174`:
-  - `/health` returns `{ "ok": true }`.
-  - `/api/replays` and `/api/latest` return valid replay payloads.
-  - `/` returns `200` and contains latest watch-control DOM nodes.
-- README web-viewer section now explicitly documents “跟随最新” and “循环播放” controls.
+## Requirements
+- 用户希望“生成这个项目的 PRD 文件”
+- 需要基于当前仓库内容产出，而不是泛化模板
+- 最终交付物应直接落在项目内，便于后续继续维护
 
-## 2026-03-07
-- Review focus: whether current design truly delivers “human-like digital twins with vivid personalities” rather than mechanical proactive scripts.
-- Early review result:
-  - `identity_dna` is a real first-class state field and is required by schema.
-  - However, the engine still preserves a strong `persona` layer as a fallback/default generator and as an opponent-summary label.
-  - This means the system direction is correct, but the current implementation is not yet fully free from role-template framing.
-- `src/engine.ts` currently creates default twins by cycling through four fixed personas and generating DNA from persona presets.
-- `schemas/agent-state.schema.json` still requires `persona`, so the data model treats persona as a mandatory primitive rather than an optional legacy label.
-- `src/deepseekClient.ts` system prompt includes both `persona` and `identity_dna`, but still introduces the agent to the model with “你的人格: ${agent.persona}”, which keeps the four-role abstraction prominent.
-- `src/engine.ts` `applyIdentitySteering()` does use DNA fields directly (`risk_appetite`, `aggression_bias`, `diplomacy_bias`, `creativity_bias`, `core_values`) to reshape actions and diplomacy, which is the strongest evidence that live behavior is trending toward DNA-driven twins.
-- `src/mockAgent.ts` remains explicitly persona-scripted (`artist` => `art_focus`, `schemer` => `betray/cooperate`), so dry-run mode still presents a more role-template experience than live mode.
-- `src/engine.ts` opponent summaries expose only `persona`, `reputation`, and `emotion`, not opponent DNA/archetype/speech traits, so inter-agent reasoning still sees others through coarse role labels.
-- Refactor completed to reduce persona centrality:
-  - `AgentState.persona` is now optional in TS + JSON Schema.
-  - default twin generation now comes from a varied DNA library instead of cycling four personas.
-  - base `goal_weights` now derive from DNA signals and core values instead of persona buckets.
-  - dry-run / fallback decisions now use DNA, action hints, energy, cooldown, and opponent identity summaries.
-  - opponent summaries now expose `archetype`, `core_values`, `speech_style`, and `signature_moves`, with `legacy_persona` only as an optional compatibility hint.
-  - system prompt now frames persona as optional compatibility metadata instead of the main behavior anchor.
-- New dry-run replay sample `output/replay-2026-03-07T05-52-33-202Z.json` shows more identity-shaped public lines such as:
-  - `Let this border carry my name.`
-  - `Hold the line and trade nothing away.`
-  - `You will notice this move too late.`
-- During refactor, TypeScript widened mock action priorities to `string`; resolved with literal `as const` annotations.
+## Research Findings
+- 已确认仓库协作规范要求：复杂任务需启用 `planning-with-files`
+- 已确认当前会话没有可恢复的历史上下文输出
+- 项目根目录存在 `src`、`viewer`、`schemas`、`profiles`、`output` 等目录，说明仓库同时包含核心逻辑、前端查看器、数据结构约束和样例配置
+- 仓库技术栈以 Bun/TypeScript 为主，关键文件包括 `package.json`、`tsconfig.json` 和 `viewer/vite.config.ts`
+- 当前没有现成的 PRD 或 docs 目录，新增 PRD 放在项目根目录会更直接
+- 项目名为 `AI Pixel War`，README 将其定义为“全自动 AI 像素大战 MVP”
+- 核心体验由两部分组成：像素领地/作画对抗，以及 AI 角色之间的公开发言、私聊、结盟与情绪关系演化
+- 支持两种运行模式：`--dry-run` 的离线模拟，以及依赖 DeepSeek API 的实时决策模式
+- CLI 支持 `rounds / width / height / agents / concurrency / profiles / myth / model` 等参数，说明产品同时支持玩法配置、主题设定和角色档案接入
+- 前端 Viewer 用于回放 replay，能够展示像素画布、社交信息、人格注释、回合指标和关系透镜
+- README 明确将当前阶段定义为 MVP，PRD 需要区分“已实现能力”和“未来演进方向”
+- `src/types.ts` 显示产品核心实体包括 `AgentState`、`IdentityDNA`、`Emotion`、`Relation`、`Treaty`、`TurnDecision` 与 `ReplayRound`
+- 系统不只是“抢地盘”，还把情绪变化、记忆事件、盟约提案、私聊、公聊和艺术方向纳入统一回合决策
+- `PixelWarEngine` 负责完整 orchestration：初始化画布与角色、生成艺术方向、校验 schema、并发请求决策、执行动作、产出 replay 与最终排名
+- 回放数据包含 `art_phase`、`canvas_updates`、`action_steps`、`public_messages`、`private_messages`、`persona_notes`、`round_metrics`、`social_metrics`、`social_snapshot` 与 `highlights`
+- Viewer 前端不是静态结果页，而是具备轮询最新 replay、构建逐回合 frame、展示代理目录和关系信息的观战应用
+- `socialState` 模块会在事件发生后动态调整 `trust / affinity / debt`，并进一步推导 `tension`、最强联结、最热对立和社交指标
+- 社交指标已被产品化为 `alliance_links`、`rivalry_links`、`max_tension`、`avg_trust`、`avg_debt` 等可视化数据
+- `viewerServer` 暴露 `/api/replays`、`/api/latest`、`/api/replay/:name`、`/health`，说明产品已有基础数据服务层
+- Viewer 支持 API-only 模式和静态资源服务，意味着产品既能本地观战，也具备拆分前后端部署的基础能力
+- 在重新读取 `task_plan.md` 时，发现文件中保留了一段旧的发布跟进记录；它与本次 PRD 任务无直接冲突，当前保持原样不动
+- `profiles/openclaw-sample.json` 提供了 10 个示例数字分身档案，字段覆盖 `archetype`、价值观、表达风格、风险偏好、攻击/外交/创意倾向和 `goal_weights`
+- 样例分身证明本产品支持“人格可配置的角色池”，并且能把人格参数映射到行为和艺术偏好
+- `output/` 目录中已经积累大量 replay 文件，说明该项目具备持续跑模拟和保存结果的使用方式
+- 最新 replay 示例显示输出中包含 `config`、`art_direction`、`ranking`、`final_highlights` 和多轮 `replay` 数据，可支撑观战、分析和复盘
+- 最新示例采用 64x64、8 回合、6 个 agent 的 dry-run 配置，并自动生成神话主题、配色、motif 与分区说明
+- 已基于以上证据生成项目级 PRD，内容覆盖产品定位、用户、范围、功能需求、数据/API、非功能要求、指标、风险与路线图
+- 完成一次人工自检，确认 PRD 中“当前已实现范围”与仓库主干能力一致，新增建议项均被明确标识为后续方向
 
-## 2026-03-07 Interaction Review
-- Current person-specific interaction gap is structural, not cosmetic:
-  - `consumeMemory()` only appends round events to the acting agent (`event.by`), so the target of an attack/treaty/betrayal does not automatically remember that interaction.
-  - relation fields (`trust`, `affinity`, `debt`) are initialized but barely updated; aside from treaty-breaking penalty, the simulation does not yet let relationships evolve strongly from events.
-  - prompt-time opponent summaries currently expose identity traits, but not “my relationship with this specific twin” nor “our recent shared incidents”.
-- Consequence: agents can look distinctive in style, but they still do not fully negotiate as remembered individuals.
-- Implemented person-specific interaction memory:
-  - round events now propagate into memory for both the actor and the target (when the target is another agent).
-  - relations now evolve from `signed_treaty`, `broke_treaty`, and `attacked` events instead of staying mostly static.
-  - agents now receive `last_round_summary` plus opponent `relationship` snapshots (`trust`, `affinity`, `debt`, `tension`, `recent_shared_events`).
-  - successful invasions now also emit `won_conflict` / `lost_area` events for richer personal histories.
-- Dry-run verification after relationship refactor:
-  - `bun run typecheck` passes
-  - `bun run check` passes
-  - replay file: `output/replay-2026-03-07T06-12-30-634Z.json`
-- Live DeepSeek crowd validation after relationship refactor:
-  - command used `--rounds=2 --width=96 --height=96 --profiles=profiles/openclaw-sample.json --concurrency=10`
-  - replay file: `output/replay-2026-03-07T06-14-38-007Z.json`
-  - `error_stats` remained all zero
-  - round 2 now shows treaty-aware messages such as `Kai, our pact holds. Others, watch your edges.` and `Pact holding. Any insights on others' moves?`
-- Residual observation:
-  - diplomacy targets are now less “everyone to Ava”, but they still cluster in early rounds because starting relations are neutral and some identity profiles are naturally high-attraction diplomatic hubs.
-- Documentation was updated to match the new design:
-  - `README.md` now explicitly states that shared history affects behavior and that `persona` is only a compatibility label.
-  - `AGENTS.md` now tells future agents to prioritize relationship-specific memory and bidirectional event remembrance.
-- Pre-commit security / validation gate passed on 2026-03-07:
-  - `bun audit`
-  - `bun run typecheck`
-  - `bun run check`
+## Technical Decisions
+| Decision | Rationale |
+|----------|-----------|
+| 使用项目内 markdown 文件保存规划过程 | 符合仓库的 AGENTS.md 约束 |
+| 先从 README、`package.json` 和 `src/index.ts` 还原产品目标 | 这些文件通常最能代表项目定位、运行方式和功能入口 |
+| PRD 应围绕“模拟引擎 + 回放观战 + 数字分身配置”三大模块组织 | 这三个部分已经在 README 和脚本中形成稳定产品结构 |
+| PRD 需要把“叙事可视化”列为核心价值，而不只是技术展示 | 当前数据结构和前端设计明显强调过程可解释性与社交戏剧性 |
+| PRD 中应增加“数据输出与 API”章节 | Viewer server 已经形成可被产品消费的接口能力 |
+| PRD 文件命名为 `PRD.md` 并放在项目根目录 | 仓库目前没有 docs 目录，根目录放置最便于查找和协作 |
 
-## 2026-03-07 Viewer Social Visualization
-- Current replay format still lacks per-round social snapshots, so the viewer cannot yet render relationships directly.
-- Current viewer layout already has a metrics/ranking column and a 3-panel feed row, which is a good fit for adding one more “social graph / selected twin” panel without changing the overall navigation model.
-- Current viewer JS reconstructs territory from `highlights`, so the cleanest viewer enhancement is to extend `ReplayRound` with social snapshot data instead of inferring relationships on the frontend.
-- Viewer social visualization implemented:
-  - `ReplayRound` now carries `social_metrics` and `social_snapshot`.
-  - viewer metrics column now includes social heat cards (`alliances`, `rivalries`, `max_tension`, `avg_trust`, `avg_debt`).
-  - viewer feed now includes a `Twin Lens` panel with agent selector, last-round summary, emotion chips, strongest bonds, and hot rivalries.
-  - ranking rows and relation cards are clickable to retarget the current lens agent.
-- Smoke validation:
-  - `bun run typecheck` passes
-  - `bun run check` passes
-  - viewer smoke test on `4174` returns `200` on `/` and `/api/latest` includes `social_metrics` + `social_snapshot`
-- Neutral relations were initially surfacing as fake rivalries because base tension is `28`; fixed by tightening the rivalry threshold to `>= 40` or explicit debt / distrust.
+## Issues Encountered
+| Issue | Resolution |
+|-------|------------|
+| `task_plan.md` 中存在与本次任务无关的旧发布记录 | 保留原内容，避免覆盖潜在用户上下文；本次仅在相关区域继续更新 |
 
-## 2026-03-07 React Viewer Migration
-- Viewer architecture migrated from static DOM scripts to `React + Tailwind CSS + Vite`.
-- Bun server responsibility is now cleanly split:
-  - `src/viewerServer.ts` serves replay APIs
-  - the same server now serves built Vite assets from `viewer/dist`
-- Package scripts updated:
-  - `bun run viewer:build`
-  - `bun run viewer:serve`
-  - `bun run viewer` now builds then serves
-  - `bun run typecheck` now checks both root TS and `viewer/tsconfig.json`
-- Smoke validation:
-  - `bun run typecheck` passes
-  - `bun run viewer:build` passes
-  - `bun run viewer` serves `200` on `/` and `{"ok":true}` on `/health`
-- One shell-level validation command initially failed because of quote mismatch while extracting asset URLs; switched to a simpler `grep`-based approach.
-- Added frontend development workflow:
-  - `src/viewerServer.ts` now supports `--api-only` mode for API-only serving.
-  - `viewer/vite.config.ts` proxies `/api` and `/health` to the Bun API server on `4174`.
-  - `package.json` now includes `viewer:api` and `viewer:dev`.
-- Dev-mode smoke validation:
-  - `bun run viewer:dev` served `200` on `/`
-  - `http://localhost:4173/health` returned `{"ok":true}`
-  - `http://localhost:4173/api/latest` returned replay JSON via Vite proxy
+## Resources
+- `~/.codex/skills/planning-with-files/SKILL.md`
+- `task_plan.md`
+- `findings.md`
+- `progress.md`
+- `README.md`
+- `package.json`
+- `src/`
+- `viewer/`
+- `src/index.ts`
+- `src/types.ts`
+- `src/engine.ts`
+- `viewer/src/App.tsx`
+- `src/engine/socialState.ts`
+- `src/viewerServer.ts`
+- `profiles/openclaw-sample.json`
+- `output/replay-2026-03-09T14-36-35-930Z.json`
+- `PRD.md`
 
-## 2026-03-07 Mainline Pixel-Art Fix
-- Root cause of “看不到完整像素画” had two layers:
-  - territory growth was too sparse (`5` rounds on `64x64` previously produced only `15 / 4096` occupied cells, fill rate `0.0037`)
-  - viewer reconstructed the board from owner events only, so it could not replay exact per-cell color updates
-- Implemented mainline fix:
-  - `paint` now lays down a square brush stroke instead of a single pixel
-  - the engine records exact `canvas_updates` per round
-  - the last round runs a canvas-resolve pass to fill all remaining empty cells for a complete final image
-  - viewer now renders actual cell colors from `canvas_updates`
-  - dry-run paint colors now vary around each twin's base color instead of staying perfectly flat
-- Validation after the fix:
-  - `bun run typecheck` passes
-  - `bun run check` reports `occupied_cells: 4096`, `total_cells: 4096`, `fill_rate: 1`
-  - latest replay `output/replay-2026-03-07T07-01-35-399Z.json` contains `canvas_updates`
-  - viewer smoke test confirms `/api/latest` exposes the new round payload and `/` still loads normally
+## Visual/Browser Findings
+- 本任务暂无图片、PDF 或浏览器内容需要记录
 
-## 2026-03-07 Myth Mode Art Director
-- User clarified that the target aesthetic is closer to OpenClaw-like “shared mythic intent” than to copying real-world reference images.
-- Implemented `Myth Mode` as the new mainline art layer:
-  - the engine always builds a shared `art_direction`
-  - CLI can override the theme with `--myth=\"...\"` / `--theme=\"...\"`
-  - `art_direction` includes palette, forbidden colors, motifs, composition notes, and zone guides
-- Myth Mode now affects:
-  - default twin colors
-  - action hints (`paint_candidates`, `palette_candidates`, `motif_focus`)
-  - live prompts (`art_direction` + personal myth reading)
-  - fallback paint colors
-  - final canvas color harmonization
-  - art scoring
-- Validation:
-  - `bun run typecheck` passes
-  - `bun run check` passes with full coverage
-  - dry-run custom theme example:
-    - command: `--dry-run --rounds=6 --width=72 --height=72 --myth=\"a shattered throne blooming into a tidal cathedral, solemn but dangerous\"`
-    - replay: `output/replay-2026-03-07T07-20-41-703Z.json`
-    - result includes top-level `art_direction`
-    - resulting palette converged around a coherent red / ivory / gold mythic range
-- Validation note:
-  - `bun run viewer:serve --port=4174` did not forward the CLI arg as expected under Bun script execution; switched to direct `bun run src/viewerServer.ts --port=4174` for smoke verification instead of repeating the same failing invocation.
-- Validation note:
-  - a combined shell command that chained `viewer:build` and background server startup in one line caused an unstable smoke run; switched back to a small `set -euo pipefail` script block for reliable verification instead of repeating the same structure.
-- Visual artifact follow-up:
-  - The next weird-looking output came from two remaining issues:
-    - the myth surface was still too territory-driven instead of target-image-driven
-    - Myth Mode color fields still had too much local variation, which made the image read as block noise rather than a wall piece
-- Implemented stronger mainline correction:
-  - introduced a shared target artwork grid (`artTargetColors`) derived from the myth art direction
-  - target-guided action hints now prioritize cells that differ most from the target artwork
-  - myth painting now snaps to a finite render palette instead of producing thousands of near-random shades
-  - myth color selection now follows the shared target canvas first, with only a small twin-specific tint
-- Validation after retuning:
-  - replay `output/replay-2026-03-07T07-36-32-544Z.json` reduced effective colors to `8`
-  - replay `output/replay-2026-03-07T07-40-39-883Z.json` kept `fill_rate=1` while using target-guided painting
-  - viewer smoke verification still passes against `/api/latest` with the new payload structure
-- Readability follow-up:
-  - Even after noise reduction, output could still read as abstract blocks rather than a clear wall piece.
-  - Reworked the myth target builder to be silhouette-first instead of soft-zone-first.
-  - The target artwork now layers:
-    - background field
-    - halo field
-    - primary motif fill
-    - outline pass
-    - horizon / diagonal support forms
-- Validation after silhouette-first rebuild:
-  - replay `output/replay-2026-03-07T07-47-31-489Z.json` keeps `fill_rate=1`
-  - latest replay is now being served correctly through `/api/latest`
+## 2026-03-09 Publish Follow-up Findings
+
+- 当前功能主题是“像素画逐动作回放”，核心改动已经在代码里完成。
+- 发布前检查已通过：`bun audit`、`bun run typecheck`、`bun run check`、`bun run viewer:build`。
+- 已创建分支：`feat/pixel-replay-action-steps`。
+- 已配置远程：`origin -> git@github.com:Yrd980/The_FOOL.git`。
+- 已创建本地提交：`e6708a9 feat: add action-step pixel replay`。
+- 本次提交只包含功能代码文件：`src/engine.ts`、`src/engine/canvasRuntime.ts`、`src/types.ts`、`viewer/src/App.tsx`。
+- 未纳入提交的本地工作区项包括：`AGENTS.md` 删除、`task_plan.md`、`findings.md`、`progress.md`。
+- `git push` 首次尝试卡在 SSH 阶段；后续 `ssh -T github.com:22`、`ssh -T ssh.github.com:443`、`git ls-remote https://github.com/...` 均在超时窗口内无输出返回，说明当前环境到 GitHub 的出站连通性不可用。
+
+## 2026-03-09 Publish Rename Findings
+
+- 用户要求将分支名简化为 `pixel_war`，因为这只是系统的一部分内容，不适合用完整 feature 描述作为分支名。
+- 当前仓库状态包含额外未跟踪文件 `PRD.md`，本次仅处理 Git 分支名与网络连通性，不会动该文件。
+- 当前本地分支已成功重命名为 `pixel_war`。
+- GitHub 连通性已恢复：
+- `ssh -T git@github.com` 返回 “Hi Yrd980! You've successfully authenticated...”
+- `ssh -T -p 443 git@ssh.github.com` 也成功认证
+- `git ls-remote https://github.com/Yrd980/The_FOOL.git HEAD` 退出码为 `0`
+- 已成功执行 `git push -u origin pixel_war`。
+- 当前远程跟踪状态为 `pixel_war...origin/pixel_war`。
+- 推送后的工作区仍保留未提交项：`AGENTS.md` 删除、`task_plan.md`、`findings.md`、`progress.md`、`PRD.md`。
+
+## 2026-03-09 Unified Commit Findings
+
+- 当前剩余未提交内容全部是文档/协作文件层面的变更，而不是运行时代码。
+- 待统一提交的范围包括：新增 `PRD.md`，重写/更新 `task_plan.md`、`findings.md`、`progress.md`，以及删除 `AGENTS.md`。
+- `AGENTS.md` 删除会改变仓库未来的本地协作说明范围，因此本次统一提交不仅是文档新增，也包含仓库协作约束的移除。
+- 发布前检查结果：
+- `bun audit`：通过，无已知漏洞。
+- `bun run typecheck`：通过。

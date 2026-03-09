@@ -1,47 +1,106 @@
-# Task Plan
+# Task Plan: 为当前项目生成 PRD 文档
 
 ## Goal
-Build a runnable JavaScript MVP for AI pixel war using DeepSeek API, managed with Bun, including JSON-schema validation, round loop, and Git-friendly project setup.
+基于当前仓库中的代码、配置和文档，整理并输出一份可交付的中文 PRD 文件，准确描述项目定位、用户价值、核心功能、业务流程、非功能要求和后续规划。
 
-## Scope
-- Create minimal engine skeleton (state, turn loop, narration/judge placeholders)
-- Integrate DeepSeek chat-completions client via `DEEPSEEK_API_KEY`
-- Add JSON Schemas and runtime validation with Ajv
-- Use TypeScript for stronger compile-time checks
-- Add docs for fish shell env setup and run steps
-- Add Git project basics (`.gitignore`, clean structure)
+## Current Phase
+Phase 5
 
 ## Phases
-| Phase | Status | Notes |
-|---|---|---|
-| 1. Inspect workspace and recover context | completed | Session catchup run, workspace is empty |
-| 2. Scaffold Bun project and dependencies | completed | Bun direction set, dependencies initialized |
-| 3. Implement TypeScript core + DeepSeek client | completed | TS source, schema validation, DeepSeek client wired |
-| 4. Add docs and git management files | completed | Added README, `.gitignore`, and initialized git repo |
-| 5. Validate run and summarize | completed | `bun run typecheck` and `bun run check` pass |
-| 6. Harden live JSON conformance | completed | Added structured-output forcing, normalization, retry repair, and coordinate bounding |
-| 7. Add frontline action hints | completed | Added dynamic candidate generation and prompt wiring; live run verified |
-| 8. Add digital-twin personality system | completed | Introduced identity DNA, DNA-driven steering, and replay persona notes |
-| 9. Scale to 10-30 crowd mode | completed | Added profile loading, decision concurrency, and round heat metrics |
-| 10. Add web visualization | completed | Added browser viewer + local server + replay API; added follow-latest/loop watch controls and re-validated endpoint playback |
-| 11. Reduce persona-centered behavior | completed | Made persona optional, shifted defaults/mock behavior to DNA-driven logic, and expanded opponent identity summaries |
-| 12. Add person-specific interaction memory | completed | Shared events now propagate to both sides, relations evolve from incidents, and prompts/fallbacks can reason about shared history |
-| 13. Visualize social memory in viewer | completed | Added replay social snapshots/metrics and a viewer Twin Lens panel for bonds, rivalries, and last-round summaries |
-| 14. Migrate viewer to React + Tailwind | completed | Rebuilt viewer with Vite React/Tailwind, preserved Bun replay API flow, and validated build plus `bun run viewer` serving |
-| 15. Add viewer dev workflow | completed | Added Vite hot-reload mode with Bun API-only server and proxy-backed `bun run viewer:dev` |
-| 16. Ensure final canvas becomes full pixel art | completed | Added brush-style paint, exact canvas replay updates, and final-round canvas resolve so the last frame reaches full coverage |
-| 17. Add Myth Mode art director | completed | Added shared myth art direction, theme-driven palette/zone guidance, art-aware prompts, and aesthetic scoring |
-| 18. Reduce Myth Mode artifact noise | completed | Replaced noisy per-pixel myth coloring with a shared target canvas, quantized palette, and target-guided painting hints |
+### Phase 1: Requirements & Discovery
+- [x] Understand user intent
+- [x] Identify constraints and requirements
+- [x] Document findings in findings.md
+- **Status:** complete
+
+### Phase 2: Planning & Structure
+- [x] Define PRD structure based on repository context
+- [x] Decide document location and naming
+- [x] Document decisions with rationale
+- **Status:** complete
+
+### Phase 3: Draft PRD
+- [x] Extract product goals, personas, and features from the codebase
+- [x] Write the PRD content
+- [x] Save the PRD to the repository
+- **Status:** complete
+
+### Phase 4: Review & Verification
+- [x] Check the PRD against repository evidence
+- [x] Polish language and structure
+- [x] Record validation notes in progress.md
+- **Status:** complete
+
+### Phase 5: Delivery
+- [x] Review all output files
+- [x] Ensure deliverables are complete
+- [x] Deliver to user
+- **Status:** complete
+
+## Key Questions
+1. 这个项目的产品定位、目标用户和主要使用场景是什么？
+2. 代码里已经实现了哪些能力，哪些仍然属于规划项？
+3. PRD 最适合放在项目根目录的哪个文件名下，方便后续团队使用？
+
+## Decisions Made
+| Decision | Rationale |
+|----------|-----------|
+| 先从仓库结构、README、配置与核心代码反推产品信息 | 用户只给出“这个项目”，需要让 PRD 建立在真实实现之上 |
+| PRD 将使用中文撰写 | 与用户输入语言保持一致，方便直接交付 |
+| PRD 采用“产品概述 -> 用户与场景 -> 功能需求 -> 数据/API -> 非功能要求 -> 路线图”的结构 | 兼顾产品阅读性和对当前实现的可追溯性 |
+| PRD 文件命名为 `PRD.md` 并置于项目根目录 | 便于团队直接查看与后续迭代 |
+| PRD 中将“当前已实现范围”和“下一阶段建议范围”分开表述 | 避免把规划建议误写成现有能力 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
-|---|---:|---|
-| `rg --files` exited 1 in empty dir | 1 | Treated as expected for empty workspace |
-| Tooling direction changed npm → Bun mid-task | 1 | Adjusted plan and will migrate scripts/deps to Bun |
-| Combined shell command rejected by policy (`rm` + `bun install`) | 1 | Split into smaller safe commands and retry with non-destructive flow |
-| Ajv runtime error: draft-2020 schema not recognized | 1 | Switch engine validator from default Ajv to Ajv2020 |
-| Fish syntax failed under `/bin/sh` wrapper when sourcing secrets | 1 | Read env via `fish -c` and inject into bash command |
-| Coordinate normalization defaulted missing values to (0,0) | 1 | Made coordinate parsing strict and bounded coordinates to canvas |
-| Typecheck error for `Bun` global in viewer server | 1 | Add Bun types and include `bun` type in tsconfig |
-| TS widened mock action literals to `string` | 1 | Added `as const` on mock priority action literals |
-| Shell smoke test command hit quote mismatch while parsing asset path | 1 | Replaced fragile `rg` quote pattern with `grep`-based extraction |
+|-------|---------|------------|
+|       | 1       |            |
+
+## Notes
+- 在做结构性判断前重新阅读本计划文件
+- 每经过两次查看/检索动作就更新 findings.md
+- 若发现仓库信息不足，再在 PRD 中明确标注推断与假设
+
+## 2026-03-09 Publish Follow-up
+
+### Goal
+将已完成的像素画逐动作回放功能放到新的 feature branch，接入 `origin`，并在验证通过后发布。
+
+### Status Snapshot
+- 已完成：安全检查、分支创建、远程配置、本地提交
+- 未完成：推送到 GitHub
+
+### Current State
+- 分支：`feat/pixel-replay-action-steps`
+- 本地提交：`e6708a9 feat: add action-step pixel replay`
+- 远程：`origin -> git@github.com:Yrd980/The_FOOL.git`
+- 阻塞：当前环境到 GitHub 的 SSH `22/443` 与 HTTPS 请求均出现无输出超时，导致无法完成 `git push`
+
+### Publish Scope
+- 已提交代码文件：`src/engine.ts`、`src/engine/canvasRuntime.ts`、`src/types.ts`、`viewer/src/App.tsx`
+- 未提交的本地项：`AGENTS.md` 删除、`task_plan.md`、`findings.md`、`progress.md`
+
+## 2026-03-09 Publish Rename Follow-up
+
+### Goal
+将发布分支名从 `feat/pixel-replay-action-steps` 调整为 `pixel_war`，并重新测试当前环境到 GitHub 的连通性。
+
+### Plan
+- 重命名当前本地分支
+- 重新测试 GitHub SSH `22/443` 与 HTTPS 连通性
+- 若网络恢复，则继续尝试推送 `pixel_war`
+
+### Outcome
+- 已完成分支重命名：`pixel_war`
+- GitHub 连通性复测已通过
+- 已推送远程：`origin/pixel_war`
+- 当前提交仍为：`e6708a9 feat: add action-step pixel replay`
+
+## 2026-03-09 Unified Commit Follow-up
+
+### Goal
+将当前剩余的文档与仓库说明改动统一提交到 `pixel_war`，避免工作区继续分散未提交状态。
+
+### Status
+- 已完成：变更范围确认、发布前检查
+- 进行中：统一暂存并生成单个提交
