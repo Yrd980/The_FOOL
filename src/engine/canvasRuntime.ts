@@ -1,6 +1,6 @@
 import { ACTION_COST } from "./constants";
 import { hasNoAttackTreaty } from "./socialState";
-import type { AgentState, MemoryEvent, Point, ReplayRound, Treaty, TurnAction } from "../types";
+import type { AgentState, MemoryEvent, Point, ReplayCanvasUpdate, ReplayRound, Treaty, TurnAction } from "../types";
 
 export interface CanvasCell {
   owner: string | null;
@@ -95,7 +95,8 @@ export function recordCanvasUpdate({
   height,
   currentRoundUpdateMap,
   x,
-  y
+  y,
+  stepUpdateLog
 }: {
   board: CanvasCell[][];
   width: number;
@@ -103,15 +104,18 @@ export function recordCanvasUpdate({
   currentRoundUpdateMap: Map<string, ReplayRound["canvas_updates"][number]>;
   x: number;
   y: number;
+  stepUpdateLog?: ReplayCanvasUpdate[];
 }): void {
   if (!inBounds(width, height, x, y)) return;
   const cell = board[y][x];
-  currentRoundUpdateMap.set(`${x},${y}`, {
+  const update = {
     x,
     y,
     owner: cell.owner,
     color: cell.color
-  });
+  };
+  currentRoundUpdateMap.set(`${x},${y}`, update);
+  stepUpdateLog?.push(update);
 }
 
 export function setCellState({
@@ -123,7 +127,8 @@ export function setCellState({
   y,
   owner,
   color,
-  fortify
+  fortify,
+  stepUpdateLog
 }: {
   board: CanvasCell[][];
   width: number;
@@ -134,6 +139,7 @@ export function setCellState({
   owner: string | null;
   color: string;
   fortify?: number;
+  stepUpdateLog?: ReplayCanvasUpdate[];
 }): void {
   if (!inBounds(width, height, x, y)) return;
   board[y][x].owner = owner;
@@ -141,7 +147,7 @@ export function setCellState({
   if (typeof fortify === "number") {
     board[y][x].fortify = fortify;
   }
-  recordCanvasUpdate({ board, width, height, currentRoundUpdateMap, x, y });
+  recordCanvasUpdate({ board, width, height, currentRoundUpdateMap, x, y, stepUpdateLog });
 }
 
 export function currentFillRate(board: CanvasCell[][], width: number, height: number): number {
@@ -278,17 +284,19 @@ export function seedCurrentRoundWithBoard({
   board,
   width,
   height,
-  currentRoundUpdateMap
+  currentRoundUpdateMap,
+  stepUpdateLog
 }: {
   board: CanvasCell[][];
   width: number;
   height: number;
   currentRoundUpdateMap: Map<string, ReplayRound["canvas_updates"][number]>;
+  stepUpdateLog?: ReplayCanvasUpdate[];
 }): void {
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       if (!board[y][x].owner) continue;
-      recordCanvasUpdate({ board, width, height, currentRoundUpdateMap, x, y });
+      recordCanvasUpdate({ board, width, height, currentRoundUpdateMap, x, y, stepUpdateLog });
     }
   }
 }
@@ -303,7 +311,8 @@ export function applyActionToCanvas({
   currentRoundUpdateMap,
   activeTreaties,
   events,
-  mythColorForPoint
+  mythColorForPoint,
+  stepUpdateLog
 }: {
   agent: AgentState;
   action: TurnAction;
@@ -315,6 +324,7 @@ export function applyActionToCanvas({
   activeTreaties: Treaty[];
   events: MemoryEvent[];
   mythColorForPoint: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
+  stepUpdateLog?: ReplayCanvasUpdate[];
 }): void {
   const cost = ACTION_COST[action.action];
   if (cost > agent.energy) return;
@@ -339,6 +349,7 @@ export function applyActionToCanvas({
         width,
         height,
         currentRoundUpdateMap,
+        stepUpdateLog,
         x: point.x,
         y: point.y,
         owner: agent.id,
@@ -364,6 +375,7 @@ export function applyActionToCanvas({
         width,
         height,
         currentRoundUpdateMap,
+        stepUpdateLog,
         x: point.x,
         y: point.y,
         owner: agent.id,
@@ -413,6 +425,7 @@ export function applyActionToCanvas({
           width,
           height,
           currentRoundUpdateMap,
+          stepUpdateLog,
           x: point.x,
           y: point.y,
           owner: agent.id,
@@ -431,6 +444,7 @@ export function applyActionToCanvas({
           width,
           height,
           currentRoundUpdateMap,
+          stepUpdateLog,
           x: action.x,
           y: action.y,
           owner: agent.id,
@@ -468,6 +482,7 @@ export function applyActionToCanvas({
           width,
           height,
           currentRoundUpdateMap,
+          stepUpdateLog,
           x,
           y,
           owner: agent.id,
@@ -496,7 +511,8 @@ function fillTowardTarget({
   targetPriorityAt,
   targetMismatchAt,
   getAgentById,
-  mythColorForPoint
+  mythColorForPoint,
+  onStep
 }: {
   round: number;
   budget: number;
@@ -511,6 +527,7 @@ function fillTowardTarget({
   targetMismatchAt: (x: number, y: number) => number;
   getAgentById: (agentId: string) => AgentState | undefined;
   mythColorForPoint: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
+  onStep?: (updates: ReplayCanvasUpdate[]) => void;
 }): void {
   let remaining = budget;
   if (remaining <= 0) return;
@@ -548,6 +565,7 @@ function fillTowardTarget({
 
     const batch = [...candidates.values()].sort((left, right) => right.score - left.score).slice(0, remaining);
     if (batch.length === 0) break;
+    const stepUpdateLog: ReplayCanvasUpdate[] = [];
 
     for (const item of batch) {
       setCellState({
@@ -555,6 +573,7 @@ function fillTowardTarget({
         width,
         height,
         currentRoundUpdateMap,
+        stepUpdateLog,
         x: item.x,
         y: item.y,
         owner: item.owner,
@@ -562,6 +581,9 @@ function fillTowardTarget({
         fortify: 0
       });
       events.push({ round, type: "expanded", by: item.owner, target: `${item.x},${item.y}` });
+    }
+    if (stepUpdateLog.length > 0) {
+      onStep?.(stepUpdateLog);
     }
 
     remaining -= batch.length;
@@ -581,7 +603,8 @@ function harmonizeTowardTarget({
   targetPriorityAt,
   targetMismatchAt,
   getAgentById,
-  mythColorForPoint
+  mythColorForPoint,
+  onStep
 }: {
   round: number;
   budget: number;
@@ -595,6 +618,7 @@ function harmonizeTowardTarget({
   targetMismatchAt: (x: number, y: number) => number;
   getAgentById: (agentId: string) => AgentState | undefined;
   mythColorForPoint: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
+  onStep?: (updates: ReplayCanvasUpdate[]) => void;
 }): void {
   if (budget <= 0) return;
 
@@ -616,6 +640,7 @@ function harmonizeTowardTarget({
     }
   }
 
+  const stepUpdateLog: ReplayCanvasUpdate[] = [];
   for (const item of candidates.sort((left, right) => right.score - left.score).slice(0, budget)) {
     const ownerAgent = getAgentById(item.owner);
     if (!ownerAgent) continue;
@@ -626,6 +651,7 @@ function harmonizeTowardTarget({
         width,
         height,
         currentRoundUpdateMap,
+        stepUpdateLog,
         x: item.x,
         y: item.y,
         owner: item.owner,
@@ -633,6 +659,9 @@ function harmonizeTowardTarget({
         fortify: board[item.y][item.x].fortify
       });
     }
+  }
+  if (stepUpdateLog.length > 0) {
+    onStep?.(stepUpdateLog);
   }
 }
 
@@ -655,7 +684,8 @@ export function resolveCanvasProgressively({
   targetPriorityAt,
   targetMismatchAt,
   getAgentById,
-  mythColorForPoint
+  mythColorForPoint,
+  onStep
 }: {
   round: number;
   rounds: number;
@@ -671,6 +701,7 @@ export function resolveCanvasProgressively({
   targetMismatchAt: (x: number, y: number) => number;
   getAgentById: (agentId: string) => AgentState | undefined;
   mythColorForPoint: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
+  onStep?: (step: { kind: "resolve_fill" | "resolve_harmonize"; label: string; updates: ReplayCanvasUpdate[] }) => void;
 }): void {
   const totalCells = width * height;
   const targetCoverage = targetCoverageForRound(round, rounds);
@@ -708,7 +739,8 @@ export function resolveCanvasProgressively({
     targetPriorityAt,
     targetMismatchAt,
     getAgentById,
-    mythColorForPoint
+    mythColorForPoint,
+    onStep: (updates) => onStep?.({ kind: "resolve_fill", label: `Resolve Fill · ${phase.label}`, updates })
   });
   harmonizeTowardTarget({
     round,
@@ -722,6 +754,7 @@ export function resolveCanvasProgressively({
     targetPriorityAt,
     targetMismatchAt,
     getAgentById,
-    mythColorForPoint
+    mythColorForPoint,
+    onStep: (updates) => onStep?.({ kind: "resolve_harmonize", label: `Resolve Harmonize · ${phase.label}`, updates })
   });
 }

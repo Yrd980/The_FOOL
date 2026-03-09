@@ -8,6 +8,29 @@ type MemoryEvent = {
   note?: string;
 };
 
+type ReplayCanvasUpdate = {
+  x: number;
+  y: number;
+  owner: string | null;
+  color: string;
+};
+
+type ReplayAction =
+  | { action: "wait" }
+  | { action: "paint"; x: number; y: number; color: string }
+  | { action: "fortify"; x: number; y: number }
+  | { action: "invade"; x: number; y: number }
+  | { action: "burst"; center_x: number; center_y: number; radius: 1 };
+
+type ReplayActionStep = {
+  step_index: number;
+  kind: "seed" | "action" | "resolve_fill" | "resolve_harmonize";
+  actor_id: string;
+  label: string;
+  updates: ReplayCanvasUpdate[];
+  action?: ReplayAction;
+};
+
 type ReplayRound = {
   round: number;
   art_phase: {
@@ -15,7 +38,8 @@ type ReplayRound = {
     label: string;
     focus: string;
   };
-  canvas_updates: Array<{ x: number; y: number; owner: string | null; color: string }>;
+  canvas_updates: ReplayCanvasUpdate[];
+  action_steps?: ReplayActionStep[];
   public_messages: Array<{ agent_id: string; message: string }>;
   private_messages: Array<{ from: string; to: string; content: string }>;
   persona_notes: Array<{ agent_id: string; note: string; proactive_score: number }>;
@@ -62,6 +86,17 @@ type SocialRelation = {
   recent_shared_events: string[];
 };
 
+type ArtDirection = {
+  mode: string;
+  theme_prompt: string;
+  title: string;
+  mood_words: string[];
+  palette: string[];
+  forbidden_colors: string[];
+  motifs: string[];
+  composition_notes: string[];
+};
+
 type ReplayData = {
   config: {
     width: number;
@@ -72,7 +107,9 @@ type ReplayData = {
     dry_run: boolean;
     model: string;
     profile_path?: string;
+    myth_prompt?: string;
   };
+  art_direction: ArtDirection;
   ranking: Array<{
     agent_id: string;
     name: string;
@@ -110,6 +147,8 @@ type HydratedReplay = ReplayData & {
 
 const REPLAY_POLL_MS = 7000;
 const DEFAULT_SPEED = 900;
+const MAX_REVEAL_STEPS = 18;
+const MIN_REVEAL_TICK_MS = 45;
 const palette = [
   "#E63946",
   "#2A9D8F",
@@ -146,6 +185,26 @@ function parseCoord(target: string | undefined): { x: number; y: number } | null
   const match = target.match(/^(\d+),(\d+)$/);
   if (!match) return null;
   return { x: Number(match[1]), y: Number(match[2]) };
+}
+
+function revealChunkSize(totalUpdates: number): number {
+  if (totalUpdates <= 0) return 0;
+  return Math.max(1, Math.ceil(totalUpdates / MAX_REVEAL_STEPS));
+}
+
+function actionStepsForRound(round: ReplayRound | null | undefined): ReplayActionStep[] {
+  if (!round) return [];
+  if (round.action_steps?.length) return round.action_steps;
+  if (round.canvas_updates.length === 0) return [];
+  return [
+    {
+      step_index: 0,
+      kind: "resolve_fill",
+      actor_id: "system",
+      label: "Legacy Round Merge",
+      updates: round.canvas_updates
+    }
+  ];
 }
 
 function stableColorMap(replay: ReplayData): Map<string, string> {
@@ -290,6 +349,8 @@ export function App() {
   const [currentReplayName, setCurrentReplayName] = useState("");
   const [frames, setFrames] = useState<Frame[]>([]);
   const [roundIndex, setRoundIndex] = useState(0);
+  const [revealedStepCount, setRevealedStepCount] = useState(0);
+  const [revealedStepUpdateCount, setRevealedStepUpdateCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [speed, setSpeed] = useState(DEFAULT_SPEED);
   const [followLatest, setFollowLatest] = useState(true);
@@ -300,8 +361,32 @@ export function App() {
   const [errorText, setErrorText] = useState("");
 
   const frame = frames[roundIndex] ?? null;
-  const previousFrame = roundIndex > 0 ? frames[roundIndex - 1] : frame;
+  const previousFrame = roundIndex > 0 ? frames[roundIndex - 1] : null;
   const currentRound = frame?.source ?? null;
+  const currentActionSteps = useMemo(() => actionStepsForRound(currentRound), [currentRound]);
+  const totalStepUpdates = useMemo(
+    () => currentActionSteps.reduce((sum, step) => sum + step.updates.length, 0),
+    [currentActionSteps]
+  );
+  const revealedUpdateCount = useMemo(() => {
+    let total = 0;
+    for (let i = 0; i < Math.min(revealedStepCount, currentActionSteps.length); i += 1) {
+      total += currentActionSteps[i].updates.length;
+    }
+    if (revealedStepCount < currentActionSteps.length) {
+      total += Math.min(revealedStepUpdateCount, currentActionSteps[revealedStepCount].updates.length);
+    }
+    return total;
+  }, [currentActionSteps, revealedStepCount, revealedStepUpdateCount]);
+  const revealPercent = totalStepUpdates > 0 ? Math.round((revealedUpdateCount / totalStepUpdates) * 100) : 100;
+  const activePlaybackStep = currentActionSteps[revealedStepCount] ?? null;
+  const visibleStepCount = Math.min(
+    currentActionSteps.length,
+    revealedStepCount + (activePlaybackStep ? 1 : 0)
+  );
+  const totalActionSteps = currentActionSteps.length;
+  const activeStepLabel =
+    activePlaybackStep?.label ?? (totalActionSteps > 0 ? currentActionSteps[totalActionSteps - 1]?.label || "Round Complete" : "No Steps");
 
   const loadReplay = useCallback(
     async (name: string, options?: { autoPlay?: boolean; hint?: string }) => {
@@ -311,11 +396,16 @@ export function App() {
         colorMap: stableColorMap(data),
         agentDirectory: buildAgentDirectory(data)
       };
+      const builtFrames = buildFrames(data);
+      const shouldAutoPlay = options?.autoPlay ?? true;
+      const initialSteps = actionStepsForRound(builtFrames[0]?.source);
 
       setCurrentReplayName(name);
       setCurrentReplay(hydrated);
-      setFrames(buildFrames(data));
+      setFrames(builtFrames);
       setRoundIndex(0);
+      setRevealedStepCount(shouldAutoPlay ? 0 : initialSteps.length);
+      setRevealedStepUpdateCount(0);
       setErrorText("");
       setWatchHint(options?.hint ?? "");
       setSelectedLensAgentId((previous) => {
@@ -323,8 +413,10 @@ export function App() {
         return hydrated.ranking[0]?.agent_id ?? hydrated.agentDirectory[0]?.id ?? "";
       });
 
-      if (options?.autoPlay ?? true) {
+      if (shouldAutoPlay) {
         setIsPlaying(true);
+      } else {
+        setIsPlaying(false);
       }
     },
     []
@@ -386,21 +478,57 @@ export function App() {
   }, [followLatest, loadReplayList]);
 
   useEffect(() => {
-    if (!isPlaying || frames.length === 0) return undefined;
-    const handle = window.setInterval(() => {
-      setRoundIndex((current) => {
-        if (current >= frames.length - 1) {
-          if (!loop) {
-            setIsPlaying(false);
-            return current;
-          }
-          return 0;
+    if (!isPlaying || !frame) return undefined;
+
+    const totalUnits = currentActionSteps.reduce((sum, step) => {
+      if (step.updates.length === 0) return sum + 1;
+      return sum + Math.max(1, Math.ceil(step.updates.length / revealChunkSize(step.updates.length)));
+    }, 0);
+    const revealTickMs = Math.max(MIN_REVEAL_TICK_MS, Math.round(speed / (Math.max(1, totalUnits) + 2)));
+    const holdMs = Math.max(120, speed - revealTickMs * Math.max(1, totalUnits));
+    const currentStep = currentActionSteps[revealedStepCount] ?? null;
+    const delay = currentStep ? revealTickMs : holdMs;
+
+    const handle = window.setTimeout(() => {
+      if (currentStep) {
+        const totalUpdates = currentStep.updates.length;
+        if (totalUpdates === 0) {
+          setRevealedStepCount((current) => Math.min(currentActionSteps.length, current + 1));
+          setRevealedStepUpdateCount(0);
+          return;
         }
-        return current + 1;
-      });
-    }, speed);
-    return () => window.clearInterval(handle);
-  }, [frames.length, isPlaying, loop, speed]);
+
+        if (revealedStepUpdateCount < totalUpdates) {
+          const chunkSize = revealChunkSize(totalUpdates);
+          setRevealedStepUpdateCount((current) => Math.min(totalUpdates, current + chunkSize));
+          return;
+        }
+
+        setRevealedStepCount((current) => Math.min(currentActionSteps.length, current + 1));
+        setRevealedStepUpdateCount(0);
+        return;
+      }
+
+      if (roundIndex >= frames.length - 1) {
+        if (!loop) {
+          setIsPlaying(false);
+          setRevealedStepCount(currentActionSteps.length);
+          setRevealedStepUpdateCount(0);
+          return;
+        }
+        setRoundIndex(0);
+        setRevealedStepCount(0);
+        setRevealedStepUpdateCount(0);
+        return;
+      }
+
+      setRoundIndex(roundIndex + 1);
+      setRevealedStepCount(0);
+      setRevealedStepUpdateCount(0);
+    }, delay);
+
+    return () => window.clearTimeout(handle);
+  }, [currentActionSteps, frame, frames.length, isPlaying, loop, revealedStepCount, revealedStepUpdateCount, roundIndex, speed]);
 
   useEffect(() => {
     if (!currentReplay || !frame || !canvasRef.current) return;
@@ -416,11 +544,45 @@ export function App() {
 
     for (let y = 0; y < currentReplay.config.height; y += 1) {
       for (let x = 0; x < currentReplay.config.width; x += 1) {
-        const cell = frame.board[y][x];
-        if (!cell.owner) continue;
+        const cell = previousFrame?.board[y]?.[x];
+        if (!cell?.owner) continue;
         context.fillStyle = cell.color;
         context.fillRect(Math.floor(x * cellW), Math.floor(y * cellH), Math.ceil(cellW), Math.ceil(cellH));
       }
+    }
+
+    for (const step of currentActionSteps.slice(0, Math.min(revealedStepCount, currentActionSteps.length))) {
+      for (const update of step.updates) {
+        const px = Math.floor(update.x * cellW);
+        const py = Math.floor(update.y * cellH);
+        const pw = Math.ceil(cellW);
+        const ph = Math.ceil(cellH);
+
+        if (!update.owner) {
+          context.fillStyle = "#111";
+          context.fillRect(px, py, pw, ph);
+          continue;
+        }
+
+        context.fillStyle = update.color;
+        context.fillRect(px, py, pw, ph);
+      }
+    }
+
+    for (const update of activePlaybackStep?.updates.slice(0, revealedStepUpdateCount) ?? []) {
+      const px = Math.floor(update.x * cellW);
+      const py = Math.floor(update.y * cellH);
+      const pw = Math.ceil(cellW);
+      const ph = Math.ceil(cellH);
+
+      if (!update.owner) {
+        context.fillStyle = "#111";
+        context.fillRect(px, py, pw, ph);
+        continue;
+      }
+
+      context.fillStyle = update.color;
+      context.fillRect(px, py, pw, ph);
     }
 
     context.strokeStyle = "rgba(255,255,255,0.03)";
@@ -432,7 +594,7 @@ export function App() {
       context.lineTo(px, canvas.height);
       context.stroke();
     }
-  }, [currentReplay, frame]);
+  }, [activePlaybackStep, currentActionSteps, currentReplay, frame, previousFrame, revealedStepCount, revealedStepUpdateCount]);
 
   const watchStateText = useMemo(() => {
     const follow = followLatest ? "ON" : "OFF";
@@ -486,6 +648,46 @@ export function App() {
     return currentRound.social_snapshot.find((item) => item.agent_id === selectedLensAgentId) || currentRound.social_snapshot[0] || null;
   }, [currentRound, selectedLensAgentId]);
 
+  const aiShowcase = useMemo(() => {
+    if (!currentRound) {
+      return {
+        activeSpeakers: 0,
+        directThreads: 0,
+        personaVoices: 0,
+        topPublicSpeaker: "",
+        topPublicLine: ""
+      };
+    }
+
+    const speakerCounts = new Map<string, number>();
+    for (const message of currentRound.public_messages) {
+      speakerCounts.set(message.agent_id, (speakerCounts.get(message.agent_id) || 0) + 1);
+    }
+
+    const [topPublicSpeaker = "", topPublicCount = 0] =
+      [...speakerCounts.entries()].sort((left, right) => right[1] - left[1])[0] || [];
+
+    const topPublicLine =
+      currentRound.public_messages.find((message) => message.agent_id === topPublicSpeaker)?.message ||
+      currentRound.public_messages[0]?.message ||
+      "";
+
+    return {
+      activeSpeakers: new Set([
+        ...currentRound.public_messages.map((message) => message.agent_id),
+        ...currentRound.private_messages.flatMap((message) => [message.from, message.to]),
+        ...currentRound.persona_notes.map((note) => note.agent_id)
+      ]).size,
+      directThreads: currentRound.private_messages.length,
+      personaVoices: currentRound.persona_notes.length,
+      topPublicSpeaker: topPublicCount > 0 ? topPublicSpeaker : "",
+      topPublicLine
+    };
+  }, [currentRound]);
+
+  const themePrompt = currentReplay?.art_direction.theme_prompt || currentReplay?.config.myth_prompt || "";
+  const compositionNotes = currentReplay?.art_direction.composition_notes?.slice(0, 2) || [];
+
   useEffect(() => {
     if (!lensSnapshot) return;
     setSelectedLensAgentId(lensSnapshot.agent_id);
@@ -534,147 +736,262 @@ export function App() {
           </div>
         </header>
 
-        <section className="grid gap-4 xl:grid-cols-[minmax(420px,1.55fr)_minmax(320px,1fr)]">
-          <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold text-[#13232f]">Battle Canvas</h2>
-              <div className="rounded-full bg-[#13232f] px-3 py-1 font-mono text-xs text-[#f3f8fb]">
-                Round {frame?.round ?? 0} / {frames.length}
+        <section className="grid gap-4 xl:grid-cols-[minmax(420px,1.08fr)_minmax(360px,1fr)] xl:items-start">
+          <div className="space-y-4 xl:sticky xl:top-6">
+            <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold text-[#13232f]">AI Mission</h2>
+                <div className="rounded-full bg-[#13232f] px-3 py-1 font-mono text-xs text-[#f3f8fb]">
+                  {currentReplay?.config.dry_run ? "dry-run" : currentReplay?.config.model || "live"}
+                </div>
               </div>
-            </div>
 
-            <canvas
-              ref={canvasRef}
-              width={768}
-              height={768}
-              aria-label="battle canvas"
-              className="w-full rounded-2xl border border-[#c8bda5] bg-[#111] shadow-inner"
-            />
+              <div className="rounded-2xl border border-[#dbcfb4] bg-white/75 p-4 shadow-sm">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-[#0f7f78]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#0f7f78]">
+                    {currentReplay?.art_direction.title || "Theme"}
+                  </span>
+                  <span className="rounded-full bg-[#13232f]/8 px-3 py-1 text-[11px] font-mono text-[#5b6a71]">
+                    {currentRound?.art_phase ? `${currentRound.art_phase.label} · ${currentRound.art_phase.focus}` : "AI theatre"}
+                  </span>
+                </div>
+                <p className="text-sm leading-6 text-[#13232f]">
+                  {themePrompt || "当前 replay 未提供主题提示词。"}
+                </p>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[#5b6a71]">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPlaying(false);
-                  setRoundIndex((current) => Math.max(0, current - 1));
-                }}
-                className="rounded-xl border border-[#dbcfb4] bg-white/70 px-4 py-2 text-[#13232f] shadow-sm transition hover:-translate-y-0.5"
-              >
-                上一回合
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsPlaying((current) => !current)}
-                className="rounded-xl bg-gradient-to-br from-[#db5b3f] to-[#ec7d56] px-5 py-2 text-white shadow-sm transition hover:-translate-y-0.5"
-              >
-                {isPlaying ? "暂停" : "播放"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPlaying(false);
-                  setRoundIndex((current) => Math.min(frames.length - 1, current + 1));
-                }}
-                className="rounded-xl border border-[#dbcfb4] bg-white/70 px-4 py-2 text-[#13232f] shadow-sm transition hover:-translate-y-0.5"
-              >
-                下一回合
-              </button>
+                {currentReplay?.art_direction.mood_words?.length ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {currentReplay.art_direction.mood_words.map((word) => (
+                      <span key={word} className="rounded-full border border-[#dbcfb4] bg-white px-3 py-1 text-xs text-[#5b6a71]">
+                        {word}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
 
-              <label className="rounded-full border border-[#dbcfb4] bg-white/70 px-3 py-1 text-xs text-[#13232f]">
-                <input type="checkbox" className="mr-2" checked={followLatest} onChange={(event) => setFollowLatest(event.target.checked)} />
-                跟随最新
-              </label>
-              <label className="rounded-full border border-[#dbcfb4] bg-white/70 px-3 py-1 text-xs text-[#13232f]">
-                <input type="checkbox" className="mr-2" checked={loop} onChange={(event) => setLoop(event.target.checked)} />
-                循环播放
-              </label>
-
-              <label className="ml-auto flex items-center gap-2">
-                速度
-                <input type="range" min="300" max="1800" step="100" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} />
-              </label>
-            </div>
-
-            <input
-              className="mt-3 w-full"
-              type="range"
-              min={0}
-              max={Math.max(0, frames.length - 1)}
-              value={roundIndex}
-              onChange={(event) => {
-                setIsPlaying(false);
-                setRoundIndex(Number(event.target.value));
-              }}
-            />
-          </article>
-
-          <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold text-[#13232f]">Round Pulse</h2>
-              <span className="font-mono text-xs text-[#5b6a71]">
-                {currentRound?.art_phase ? `${currentRound.art_phase.label} · ${currentRound.art_phase.focus}` : "social + territory"}
-              </span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <MetricCard label="Expanded" value={metrics.expanded} />
-              <MetricCard label="Attacked" value={metrics.attacked} />
-              <MetricCard label="Treaties" value={metrics.treaties_signed} />
-              <MetricCard label="Public Msg" value={metrics.public_messages} />
-              <MetricCard label="Private Msg" value={metrics.private_messages} />
-              <MetricCard label="Occupied" value={frame ? [...frame.territory.values()].reduce((sum, value) => sum + value, 0) : 0} />
-            </div>
-
-            <h3 className="mt-5 text-sm font-semibold uppercase tracking-[0.16em] text-[#0f7f78]">Top Ranking</h3>
-            <ol className="mt-3 space-y-2">
-              {rankingItems.map((item) => {
-                const color = currentReplay?.colorMap.get(item.id) || "#999";
-                const deltaClass = item.delta > 0 ? "text-[#0f7f78]" : item.delta < 0 ? "text-[#db5b3f]" : "text-[#5b6a71]";
-                const deltaText = item.delta > 0 ? `+${item.delta}` : `${item.delta}`;
-                return (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedLensAgentId(item.id)}
-                      className={cn(
-                        "w-full rounded-2xl px-3 py-3 text-left transition",
-                        selectedLensAgentId === item.id ? "bg-[#0f7f78]/10 shadow-sm" : "hover:bg-white/70"
-                      )}
-                    >
-                      <div className="mb-2 flex items-center justify-between gap-3 font-mono text-xs">
-                        <span className="flex items-center gap-2 text-[#13232f]">
-                          <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
-                          {item.id}
+                {currentReplay?.art_direction.motifs?.length ? (
+                  <div className="mt-4">
+                    <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-[#5b6a71]">Motifs</div>
+                    <div className="flex flex-wrap gap-2">
+                      {currentReplay.art_direction.motifs.map((motif) => (
+                        <span key={motif} className="rounded-full bg-[#db5b3f]/10 px-3 py-1 text-xs text-[#db5b3f]">
+                          {motif}
                         </span>
-                        <span>
-                          <span className={deltaClass}>{deltaText}</span> · {item.cells}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-[#13232f]/10">
-                        <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.max(1, item.share).toFixed(2)}%`, background: color }} />
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
-            <h3 className="mt-5 text-sm font-semibold uppercase tracking-[0.16em] text-[#0f7f78]">Social Heat</h3>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <MetricCard label="Alliances" value={socialMetrics.alliance_links} />
-              <MetricCard label="Rivalries" value={socialMetrics.rivalry_links} />
-              <MetricCard label="Max Tension" value={socialMetrics.max_tension} />
-              <MetricCard label="Avg Trust" value={socialMetrics.avg_trust} />
-              <MetricCard label="Avg Debt" value={socialMetrics.avg_debt} />
-            </div>
-          </article>
-        </section>
+                {currentReplay?.art_direction.palette?.length ? (
+                  <div className="mt-4">
+                    <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-[#5b6a71]">Palette</div>
+                    <div className="flex flex-wrap gap-2">
+                      {currentReplay.art_direction.palette.map((color) => (
+                        <div key={color} className="flex items-center gap-2 rounded-full border border-[#dbcfb4] bg-white px-3 py-1 text-xs text-[#5b6a71]">
+                          <span className="h-3 w-3 rounded-full border border-black/10" style={{ background: color }} />
+                          {color}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
-        <section className="mt-4 grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+                {compositionNotes.length ? (
+                  <div className="mt-4 space-y-2">
+                    {compositionNotes.map((note) => (
+                      <div key={note} className="rounded-2xl bg-[#13232f]/5 px-3 py-2 text-sm text-[#3b4a51]">
+                        {note}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <MetricCard label="Active Voices" value={aiShowcase.activeSpeakers} />
+                <MetricCard label="Direct Threads" value={aiShowcase.directThreads} />
+                <MetricCard label="Persona Notes" value={aiShowcase.personaVoices} />
+                <MetricCard label="Model" value={currentReplay?.config.model || "-"} />
+              </div>
+
+              {aiShowcase.topPublicLine ? (
+                <div className="mt-3 rounded-2xl border border-[#dbcfb4] bg-white/70 p-4 shadow-sm">
+                  <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.18em] text-[#5b6a71]">
+                    Lead Voice · {aiShowcase.topPublicSpeaker}
+                  </div>
+                  <div className="text-sm leading-6 text-[#13232f]">{aiShowcase.topPublicLine}</div>
+                </div>
+              ) : null}
+            </article>
+
+            <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold text-[#13232f]">Battle Canvas</h2>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="rounded-full bg-[#13232f] px-3 py-1 font-mono text-xs text-[#f3f8fb]">
+                    Round {frame?.round ?? 0} / {frames.length}
+                  </div>
+                  <div className="rounded-full border border-[#dbcfb4] bg-white/85 px-3 py-1 font-mono text-xs text-[#5b6a71]">
+                    Step {visibleStepCount}/{totalActionSteps || 0} · Pixels {revealedUpdateCount}/{totalStepUpdates || 0} · {revealPercent}%
+                  </div>
+                </div>
+              </div>
+
+              <canvas
+                ref={canvasRef}
+                width={768}
+                height={768}
+                aria-label="battle canvas"
+                className="mx-auto w-full max-w-[620px] rounded-2xl border border-[#c8bda5] bg-[#111] shadow-inner"
+              />
+
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[#5b6a71]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPlaying(false);
+                    const nextIndex = Math.max(0, roundIndex - 1);
+                    setRoundIndex(nextIndex);
+                    setRevealedStepCount(actionStepsForRound(frames[nextIndex]?.source).length);
+                    setRevealedStepUpdateCount(0);
+                  }}
+                  className="rounded-xl border border-[#dbcfb4] bg-white/70 px-4 py-2 text-[#13232f] shadow-sm transition hover:-translate-y-0.5"
+                >
+                  上一回合
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setIsPlaying((current) => {
+                      if (!current && revealedStepCount >= currentActionSteps.length) {
+                        setRevealedStepCount(0);
+                        setRevealedStepUpdateCount(0);
+                      }
+                      if (current) return false;
+                      return true;
+                    })
+                  }
+                  className="rounded-xl bg-gradient-to-br from-[#db5b3f] to-[#ec7d56] px-5 py-2 text-white shadow-sm transition hover:-translate-y-0.5"
+                >
+                  {isPlaying ? "暂停" : "播放"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPlaying(false);
+                    const nextIndex = Math.min(frames.length - 1, roundIndex + 1);
+                    setRoundIndex(nextIndex);
+                    setRevealedStepCount(actionStepsForRound(frames[nextIndex]?.source).length);
+                    setRevealedStepUpdateCount(0);
+                  }}
+                  className="rounded-xl border border-[#dbcfb4] bg-white/70 px-4 py-2 text-[#13232f] shadow-sm transition hover:-translate-y-0.5"
+                >
+                  下一回合
+                </button>
+
+                <label className="rounded-full border border-[#dbcfb4] bg-white/70 px-3 py-1 text-xs text-[#13232f]">
+                  <input type="checkbox" className="mr-2" checked={followLatest} onChange={(event) => setFollowLatest(event.target.checked)} />
+                  跟随最新
+                </label>
+                <label className="rounded-full border border-[#dbcfb4] bg-white/70 px-3 py-1 text-xs text-[#13232f]">
+                  <input type="checkbox" className="mr-2" checked={loop} onChange={(event) => setLoop(event.target.checked)} />
+                  循环播放
+                </label>
+
+                <label className="ml-auto flex items-center gap-2">
+                  速度
+                  <input type="range" min="300" max="1800" step="100" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} />
+                </label>
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-[#dbcfb4] bg-white/70 px-3 py-2 text-xs text-[#5b6a71] shadow-sm">
+                当前步骤：{activeStepLabel}
+              </div>
+
+              <input
+                className="mt-3 w-full"
+                type="range"
+                min={0}
+                max={Math.max(0, frames.length - 1)}
+                value={roundIndex}
+                onChange={(event) => {
+                  setIsPlaying(false);
+                  const nextIndex = Number(event.target.value);
+                  setRoundIndex(nextIndex);
+                  setRevealedStepCount(actionStepsForRound(frames[nextIndex]?.source).length);
+                  setRevealedStepUpdateCount(0);
+                }}
+              />
+            </article>
+          </div>
+
+          <div className="space-y-4">
+            <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold text-[#13232f]">Round Pulse</h2>
+                <span className="font-mono text-xs text-[#5b6a71]">
+                  {currentRound?.art_phase ? `${currentRound.art_phase.label} · ${currentRound.art_phase.focus}` : "social + territory"}
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <MetricCard label="Expanded" value={metrics.expanded} />
+                <MetricCard label="Attacked" value={metrics.attacked} />
+                <MetricCard label="Treaties" value={metrics.treaties_signed} />
+                <MetricCard label="Public Msg" value={metrics.public_messages} />
+                <MetricCard label="Private Msg" value={metrics.private_messages} />
+                <MetricCard label="Occupied" value={frame ? [...frame.territory.values()].reduce((sum, value) => sum + value, 0) : 0} />
+              </div>
+
+              <h3 className="mt-5 text-sm font-semibold uppercase tracking-[0.16em] text-[#0f7f78]">Top Ranking</h3>
+              <ol className="mt-3 space-y-2">
+                {rankingItems.map((item) => {
+                  const color = currentReplay?.colorMap.get(item.id) || "#999";
+                  const deltaClass = item.delta > 0 ? "text-[#0f7f78]" : item.delta < 0 ? "text-[#db5b3f]" : "text-[#5b6a71]";
+                  const deltaText = item.delta > 0 ? `+${item.delta}` : `${item.delta}`;
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLensAgentId(item.id)}
+                        className={cn(
+                          "w-full rounded-2xl px-3 py-3 text-left transition",
+                          selectedLensAgentId === item.id ? "bg-[#0f7f78]/10 shadow-sm" : "hover:bg-white/70"
+                        )}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-3 font-mono text-xs">
+                          <span className="flex items-center gap-2 text-[#13232f]">
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+                            {item.id}
+                          </span>
+                          <span>
+                            <span className={deltaClass}>{deltaText}</span> · {item.cells}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-[#13232f]/10">
+                          <div className="h-full rounded-full transition-all duration-300" style={{ width: `${Math.max(1, item.share).toFixed(2)}%`, background: color }} />
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+
+              <h3 className="mt-5 text-sm font-semibold uppercase tracking-[0.16em] text-[#0f7f78]">Social Heat</h3>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <MetricCard label="Alliances" value={socialMetrics.alliance_links} />
+                <MetricCard label="Rivalries" value={socialMetrics.rivalry_links} />
+                <MetricCard label="Max Tension" value={socialMetrics.max_tension} />
+                <MetricCard label="Avg Trust" value={socialMetrics.avg_trust} />
+                <MetricCard label="Avg Debt" value={socialMetrics.avg_debt} />
+              </div>
+            </article>
+
+            <section className="grid gap-4 lg:grid-cols-2">
           <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-[#13232f]">Public Voice</h2>
             </div>
-            <ul className="space-y-2">
+            <ul className="space-y-2 lg:max-h-[320px] lg:overflow-y-auto lg:pr-1">
               {(currentRound?.public_messages.length ? currentRound.public_messages : [{ agent_id: "-", message: "暂无公开发言" }]).map((message, index) => (
                 <li key={`${message.agent_id}-${index}`} className="rounded-2xl border border-[#dbcfb4] bg-white/70 p-3 text-sm shadow-sm">
                   <div className="mb-1 font-mono text-[11px] text-[#5b6a71]">{message.agent_id}</div>
@@ -688,7 +1005,7 @@ export function App() {
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-[#13232f]">Private Wire</h2>
             </div>
-            <ul className="space-y-2">
+            <ul className="space-y-2 lg:max-h-[320px] lg:overflow-y-auto lg:pr-1">
               {(currentRound?.private_messages.length
                 ? currentRound.private_messages
                 : [{ from: "-", to: "-", content: "暂无私聊" }]
@@ -707,7 +1024,7 @@ export function App() {
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-[#13232f]">Persona Notes</h2>
             </div>
-            <ul className="space-y-2">
+            <ul className="space-y-2 lg:max-h-[320px] lg:overflow-y-auto lg:pr-1">
               {(currentRound?.persona_notes.length
                 ? currentRound.persona_notes
                 : [{ agent_id: "-", note: "暂无人格注释", proactive_score: 0 }]
@@ -721,7 +1038,7 @@ export function App() {
             </ul>
           </article>
 
-          <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md">
+          <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md lg:max-h-[680px] lg:overflow-y-auto">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-[#13232f]">Twin Lens</h2>
               <select
@@ -814,6 +1131,8 @@ export function App() {
               <div className="rounded-2xl border border-[#dbcfb4] bg-white/70 p-4 text-sm text-[#5b6a71] shadow-sm">当前 replay 不包含社交快照。</div>
             )}
           </article>
+            </section>
+          </div>
         </section>
       </main>
     </div>

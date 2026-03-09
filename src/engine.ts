@@ -24,8 +24,10 @@ import type {
   ArtDirection,
   EngineConfig,
   MemoryEvent,
+  ReplayActionStep,
   ReplayRound,
   SimulationResult,
+  TurnAction,
   TurnDecision,
   Treaty
 } from "./types";
@@ -61,6 +63,12 @@ function colorDistance(left: string, right: string): number {
   const a = hexToRgb(left);
   const b = hexToRgb(right);
   return Math.sqrt((a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2);
+}
+
+function formatReplayActionLabel(agentId: string, action: TurnAction): string {
+  if (action.action === "wait") return `${agentId} · wait`;
+  if (action.action === "burst") return `${agentId} · burst @ ${action.center_x},${action.center_y}`;
+  return `${agentId} · ${action.action} @ ${action.x},${action.y}`;
 }
 
 export class PixelWarEngine {
@@ -217,13 +225,42 @@ export class PixelWarEngine {
 
     for (let round = 1; round <= this.rounds; round += 1) {
       const artPhase = artPhaseForRound(round, this.rounds);
+      const actionSteps: ReplayActionStep[] = [];
+      let stepIndex = 0;
+      const pushActionStep = ({
+        kind,
+        actor_id,
+        label,
+        updates,
+        action
+      }: Omit<ReplayActionStep, "step_index">): void => {
+        if (kind !== "action" && updates.length === 0) return;
+        actionSteps.push({
+          step_index: stepIndex,
+          kind,
+          actor_id,
+          label,
+          updates,
+          ...(action ? { action } : {})
+        });
+        stepIndex += 1;
+      };
+
       this.currentRoundUpdateMap = new Map();
       if (round === 1) {
+        const seedUpdates: ReplayActionStep["updates"] = [];
         seedCurrentRoundWithBoard({
           board: this.board,
           width: this.width,
           height: this.height,
-          currentRoundUpdateMap: this.currentRoundUpdateMap
+          currentRoundUpdateMap: this.currentRoundUpdateMap,
+          stepUpdateLog: seedUpdates
+        });
+        pushActionStep({
+          kind: "seed",
+          actor_id: "system",
+          label: "Initial Seed",
+          updates: seedUpdates
         });
       }
       this.resetEnergy();
@@ -379,6 +416,7 @@ export class PixelWarEngine {
         const owner = this.agents.find((agent) => agent.id === decision.agent_id);
         if (!owner) continue;
         for (const action of decision.actions) {
+          const stepUpdateLog: ReplayActionStep["updates"] = [];
           applyActionToCanvas({
             agent: owner,
             action,
@@ -389,6 +427,7 @@ export class PixelWarEngine {
             currentRoundUpdateMap: this.currentRoundUpdateMap,
             activeTreaties: this.activeTreaties,
             events: this.events,
+            stepUpdateLog,
             mythColorForPoint: (inputAgent, x, y, requestedColor, inputRound) =>
               mythColorForPoint({
                 agent: inputAgent,
@@ -399,7 +438,14 @@ export class PixelWarEngine {
                 artTargetColors: this.artTargetColors,
                 artDirection: this.artDirection,
                 renderPalette: this.mythRenderPalette
-              })
+                  })
+          });
+          pushActionStep({
+            kind: "action",
+            actor_id: owner.id,
+            label: formatReplayActionLabel(owner.id, action),
+            updates: stepUpdateLog,
+            action
           });
         }
       }
@@ -432,6 +478,14 @@ export class PixelWarEngine {
           return distance;
         },
         getAgentById: (agentId) => this.getAgentById(agentId),
+        onStep: (step) => {
+          pushActionStep({
+            kind: step.kind,
+            actor_id: "system",
+            label: step.label,
+            updates: step.updates
+          });
+        },
         mythColorForPoint: (inputAgent, x, y, requestedColor, inputRound) =>
           mythColorForPoint({
             agent: inputAgent,
@@ -452,6 +506,7 @@ export class PixelWarEngine {
         round,
         art_phase: artPhase,
         canvas_updates: [...this.currentRoundUpdateMap.values()],
+        action_steps: actionSteps,
         public_messages: decisions.map((decision) => ({ agent_id: decision.agent_id, message: decision.public_message })),
         private_messages: decisions.flatMap((decision) =>
           decision.private_messages.map((message) => ({ from: decision.agent_id, to: message.target_id, content: message.content }))

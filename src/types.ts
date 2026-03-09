@@ -228,6 +228,22 @@ export interface ScoreItem {
   final_score: number;
 }
 
+export interface ReplayCanvasUpdate {
+  x: number;
+  y: number;
+  owner: string | null;
+  color: string;
+}
+
+export interface ReplayActionStep {
+  step_index: number;
+  kind: "seed" | "action" | "resolve_fill" | "resolve_harmonize";
+  actor_id: string;
+  label: string;
+  updates: ReplayCanvasUpdate[];
+  action?: TurnAction;
+}
+
 export interface ReplayRound {
   round: number;
   art_phase: {
@@ -235,12 +251,8 @@ export interface ReplayRound {
     label: string;
     focus: string;
   };
-  canvas_updates: Array<{
-    x: number;
-    y: number;
-    owner: string | null;
-    color: string;
-  }>;
+  canvas_updates: ReplayCanvasUpdate[];
+  action_steps: ReplayActionStep[];
   public_messages: Array<{ agent_id: string; message: string }>;
   private_messages: Array<{ from: string; to: string; content: string }>;
   persona_notes: Array<{ agent_id: string; note: string; proactive_score: number }>;
