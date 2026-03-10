@@ -380,3 +380,27 @@ export interface PixelBoard {
   caption: string;
   cells: PixelCell[];
 }
+
+export type OpenClawContestantState =
+  | "speaking"
+  | "listening"
+  | "muted"
+  | "queued"
+  | "raised-hand";
+
+export interface ContestantOpenClawPresence {
+  contestantId: string;
+  seatLabel: string;
+  connectionLabel: string;
+  roomX: number;
+  roomY: number;
+}
+
+export interface OpenClawConversation {
+  id: string;
+  title: string;
+  subtitle: string;
+  nearbyHint: string;
+  roomLabel: string;
+  hostLabel: string;
+}

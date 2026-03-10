@@ -8,9 +8,11 @@ import {
 import {
   aiJudges,
   audienceHandles,
+  contestantOpenClawPresences,
   contestants,
   danmuTemplates,
   humanJudges,
+  openClawConversation,
   seedAudienceInteractions,
   stageDefinitions,
 } from "./data";
@@ -23,28 +25,41 @@ import {
 } from "./logic";
 import type {
   AudienceInteraction,
+  ContestantOpenClawPresence,
   ContestantScorecard,
-  SkillAxis,
+  OpenClawContestantState,
   StageId,
   TeamSummary,
 } from "./types";
 
-type PresenceKind = "contestant" | "human" | "ai" | "guest";
+type SelectionKind = "contestant" | "judge" | "ai" | "listener";
 
-type Presence = {
-  id: string;
+type SidebarEntity = {
+  selectionId: string;
+  refId: string;
+  kind: SelectionKind;
   name: string;
   subtitle: string;
+  status: string;
+  badge: string;
   accent: string;
   avatar: string;
-  kind: PresenceKind;
-  status: string;
-  activeLabel: string;
+  searchable: string;
   x?: number;
   y?: number;
 };
 
-type FocusCard = {
+type ContestantSeat = ContestantScorecard &
+  ContestantOpenClawPresence & {
+    selectionId: string;
+    state: OpenClawContestantState;
+    stateLabel: string;
+    meter: number;
+    teamName: string;
+    stageNote: string;
+  };
+
+type DetailCard = {
   badge: string;
   title: string;
   subtitle: string;
@@ -68,96 +83,58 @@ const stageTimerMap: Record<StageId, number> = {
   "act-10": 60,
 };
 
-const railItems = ["OC", "SR", "RM", "PK", "FX"];
+const railItems = ["Hall", "Find", "Room", "Acts", "Feed"];
 
 const controlItems = [
   { label: "Mic", active: true },
-  { label: "Cam", active: false },
-  { label: "Chat", active: false },
-  { label: "Pin", active: false },
   { label: "Hand", active: false },
+  { label: "Chat", active: false },
+  { label: "Stage", active: false },
+  { label: "Map", active: false },
 ];
 
-const axisLabels: Record<SkillAxis, string> = {
-  strategy: "策略",
-  craft: "质感",
-  story: "叙事",
-  execution: "执行",
+const listenerSpots = [
+  { x: 16, y: 18 },
+  { x: 84, y: 18 },
+  { x: 18, y: 72 },
+  { x: 82, y: 72 },
+  { x: 72, y: 26 },
+  { x: 26, y: 28 },
+  { x: 64, y: 82 },
+  { x: 34, y: 84 },
+  { x: 90, y: 48 },
+  { x: 10, y: 48 },
+];
+
+const miniLegend = {
+  contestant: "#ffb372",
+  judge: "#f3b46c",
+  ai: "#83deff",
+  listener: "#86ea84",
 };
-
-const contestantSpots = [
-  { x: 47, y: 39 },
-  { x: 52, y: 43 },
-  { x: 57, y: 39 },
-  { x: 61, y: 45 },
-  { x: 49, y: 53 },
-  { x: 56, y: 56 },
-];
-
-const humanSpots = [
-  { x: 67, y: 38 },
-  { x: 70, y: 54 },
-  { x: 35, y: 54 },
-];
-
-const aiSpots = [
-  { x: 40, y: 33 },
-  { x: 64, y: 31 },
-  { x: 73, y: 45 },
-];
-
-const guestSpots = [
-  { x: 42, y: 46 },
-  { x: 38, y: 50 },
-  { x: 44, y: 60 },
-  { x: 58, y: 49 },
-  { x: 63, y: 39 },
-  { x: 36, y: 60 },
-  { x: 54, y: 62 },
-  { x: 66, y: 58 },
-  { x: 73, y: 61 },
-  { x: 29, y: 47 },
-  { x: 76, y: 41 },
-  { x: 57, y: 30 },
-];
-
-const seatSpots = [
-  { x: 43, y: 71 },
-  { x: 47, y: 74 },
-  { x: 51, y: 71 },
-  { x: 55, y: 74 },
-  { x: 59, y: 71 },
-  { x: 63, y: 74 },
-  { x: 67, y: 71 },
-  { x: 71, y: 74 },
-  { x: 46, y: 80 },
-  { x: 52, y: 80 },
-  { x: 58, y: 80 },
-  { x: 64, y: 80 },
-];
-
-const guestAccentPalette = [
-  "#f2b36d",
-  "#86da91",
-  "#83bfff",
-  "#ef90b7",
-  "#b6a0ff",
-  "#77d8c8",
-];
 
 const humanAccentPalette = ["#f3b46c", "#f08f8f", "#ffe19a"];
 const aiAccentPalette = ["#83deff", "#9facff", "#a0e57a"];
+const listenerAccentPalette = ["#86ea84", "#84cbff", "#f29ec4", "#f2b36d"];
 
-const buildPresenceId = (kind: PresenceKind, value: string) => `${kind}:${value}`;
+const stateRank: Record<OpenClawContestantState, number> = {
+  speaking: 0,
+  "raised-hand": 1,
+  listening: 2,
+  queued: 3,
+  muted: 4,
+};
 
-const parsePresenceId = (value: string): [PresenceKind, string] => {
+const buildSelectionId = (kind: SelectionKind, value: string) => `${kind}:${value}`;
+
+const parseSelectionId = (value: string): [SelectionKind, string] => {
   const separator = value.indexOf(":");
 
   if (separator === -1) {
     return ["contestant", value];
   }
 
-  return [value.slice(0, separator) as PresenceKind, value.slice(separator + 1)];
+  return [value.slice(0, separator) as SelectionKind, value.slice(separator + 1)];
 };
 
 const buildAvatar = (value: string) => {
@@ -170,51 +147,15 @@ const buildAvatar = (value: string) => {
   return compact.slice(0, 2).toUpperCase();
 };
 
-const buildEventStatus = (event?: AudienceInteraction) => {
-  if (!event) {
-    return "旁听中";
-  }
-
-  if (event.type === "bet") {
-    return `押注 ${event.amount}`;
-  }
-
-  if (event.type === "like") {
-    return "鼓掌";
-  }
-
-  if (event.type === "boo") {
-    return "起哄";
-  }
-
-  return "弹幕";
-};
-
-const buildEventTone = (event: AudienceInteraction) => `activity-item--${event.type}`;
-
-const buildToastCopy = (
-  event: AudienceInteraction | undefined,
-  contestantMap: Record<string, ContestantScorecard>,
-) => {
-  if (!event) {
-    return "OpenClaw 房间正在等待下一条现场信号。";
-  }
-
-  const contestantName = contestantMap[event.contestantId]?.name ?? "未知选手";
-
-  if (event.type === "bet") {
-    return `${event.source} 给 ${contestantName} 追加了 ${event.amount} 点押注。`;
-  }
-
-  if (event.type === "like") {
-    return `${event.source} 正在为 ${contestantName} 鼓掌。`;
-  }
-
-  if (event.type === "boo") {
-    return `${event.source} 刚对 ${contestantName} 发出一阵起哄。`;
-  }
-
-  return `${contestantName} 又在房间里引爆了一条新弹幕。`;
+const stateCopy: Record<
+  OpenClawContestantState,
+  { label: string; meter: number; status: string }
+> = {
+  speaking: { label: "LIVE", meter: 96, status: "Mic live" },
+  "raised-hand": { label: "HAND", meter: 78, status: "Raised hand" },
+  listening: { label: "LISTEN", meter: 64, status: "Listening in" },
+  queued: { label: "QUEUE", meter: 52, status: "Ready to jump" },
+  muted: { label: "MUTED", meter: 32, status: "Muted off stage" },
 };
 
 const resolveTeamForContestant = (
@@ -226,8 +167,8 @@ const resolveTeamForContestant = (
 
 function App() {
   const [activeStageId, setActiveStageId] = useState<StageId>(stageDefinitions[0].id);
-  const [selectedPresenceId, setSelectedPresenceId] = useState(
-    buildPresenceId("contestant", contestants[0].id),
+  const [selectedEntityId, setSelectedEntityId] = useState(
+    buildSelectionId("contestant", contestants[0].id),
   );
   const [memberQuery, setMemberQuery] = useState("");
   const [interactions, setInteractions] =
@@ -327,20 +268,100 @@ function App() {
   const humanReviews = useMemo(() => buildHumanReviews(teams, humanJudges), [teams]);
   const aiResults = useMemo(() => buildAiReviewSummary(teams, aiJudges), [teams]);
 
-  const fallbackTeam = teams[0];
+  const [selectedKind, selectedRef] = parseSelectionId(selectedEntityId);
+  const fallbackTeam = teams[0]!;
   const leadingTeam = teamMap[audienceSummary.leadingTeamId] ?? fallbackTeam;
-  const [selectedKind, selectedRef] = parsePresenceId(selectedPresenceId);
   const selectedContestant =
     selectedKind === "contestant" ? contestantMap[selectedRef] : undefined;
   const focusTeam = selectedContestant
     ? resolveTeamForContestant(selectedContestant.id, teams, leadingTeam)
     : leadingTeam;
 
-  const guestRoster = useMemo(() => {
+  const activeSpeakerId = focusTeam.members[0]?.id ?? contestantDeck[0]?.id ?? contestants[0].id;
+  const raisedHandId = focusTeam.members[1]?.id ?? audienceSummary.leadingContestantId;
+  const focusMemberIds = new Set(focusTeam.members.map((member) => member.id));
+
+  const presenceMap = useMemo(
+    () =>
+      contestantOpenClawPresences.reduce<Record<string, ContestantOpenClawPresence>>(
+        (acc, presence) => {
+          acc[presence.contestantId] = presence;
+          return acc;
+        },
+        {},
+      ),
+    [],
+  );
+
+  const openClawSeats = useMemo<ContestantSeat[]>(
+    () =>
+      contestantDeck.map((contestant, index) => {
+        const fallbackPresence = contestantOpenClawPresences[index] ?? contestantOpenClawPresences[0];
+        const presence = presenceMap[contestant.id] ?? {
+          contestantId: contestant.id,
+          seatLabel: `Seat ${index + 1}`,
+          connectionLabel: "Joined the hallway grid",
+          roomX: fallbackPresence?.roomX ?? 44 + index * 4,
+          roomY: fallbackPresence?.roomY ?? 44 + index * 2,
+        };
+
+        let state: OpenClawContestantState = "muted";
+        if (contestant.id === activeSpeakerId) {
+          state = "speaking";
+        } else if (contestant.id === raisedHandId) {
+          state = "raised-hand";
+        } else if (focusMemberIds.has(contestant.id)) {
+          state = "listening";
+        } else if (contestant.id === audienceSummary.leadingContestantId) {
+          state = "queued";
+        }
+
+        const seatState = stateCopy[state];
+        const team = resolveTeamForContestant(contestant.id, teams, focusTeam);
+        const stageNote = focusMemberIds.has(contestant.id)
+          ? `${team.name} 正在当前对话环里。`
+          : contestant.id === audienceSummary.leadingContestantId
+            ? "当前在外围最受关注，随时可能被拉上麦。"
+            : "暂时退到房间边缘，继续听场内节奏。";
+
+        return {
+          ...contestant,
+          ...presence,
+          selectionId: buildSelectionId("contestant", contestant.id),
+          state,
+          stateLabel: seatState.label,
+          meter: seatState.meter,
+          teamName: team.name,
+          stageNote,
+        };
+      }),
+    [
+      activeSpeakerId,
+      audienceSummary.leadingContestantId,
+      contestantDeck,
+      focusMemberIds,
+      focusTeam,
+      presenceMap,
+      raisedHandId,
+      teams,
+    ],
+  );
+
+  const speakerSeats = useMemo(
+    () =>
+      [...openClawSeats].sort(
+        (left, right) =>
+          stateRank[left.state] - stateRank[right.state] ||
+          right.supportScore - left.supportScore,
+      ),
+    [openClawSeats],
+  );
+
+  const listenerEntities = useMemo(() => {
     const orderedSources = [...interactions].reverse().map((event) => event.source);
     const allSources = [...orderedSources, ...audienceHandles];
-    const seen = new Set<string>();
     const uniqueSources: string[] = [];
+    const seen = new Set<string>();
 
     for (const source of allSources) {
       if (seen.has(source)) {
@@ -349,260 +370,229 @@ function App() {
 
       seen.add(source);
       uniqueSources.push(source);
-
-      if (uniqueSources.length >= guestSpots.length) {
-        break;
-      }
     }
 
-    return uniqueSources.map((source, index) => {
+    const judgeListeners: SidebarEntity[] = humanJudges.map((judge, index) => ({
+      selectionId: buildSelectionId("judge", judge.id),
+      refId: judge.id,
+      kind: "judge",
+      name: judge.name,
+      subtitle: judge.role,
+      status: judge.catchphrase,
+      badge: "Judge",
+      accent: humanAccentPalette[index % humanAccentPalette.length],
+      avatar: buildAvatar(judge.name),
+      searchable: `${judge.name} ${judge.role} ${judge.catchphrase}`,
+      x: listenerSpots[index]?.x ?? 16,
+      y: listenerSpots[index]?.y ?? 16,
+    }));
+
+    const aiListeners: SidebarEntity[] = aiJudges.map((judge, index) => ({
+      selectionId: buildSelectionId("ai", judge.id),
+      refId: judge.id,
+      kind: "ai",
+      name: judge.name,
+      subtitle: judge.title,
+      status: judge.signature,
+      badge: "AI",
+      accent: aiAccentPalette[index % aiAccentPalette.length],
+      avatar: "AI",
+      searchable: `${judge.name} ${judge.title} ${judge.signature}`,
+      x: listenerSpots[humanJudges.length + index]?.x ?? 82,
+      y: listenerSpots[humanJudges.length + index]?.y ?? 22,
+    }));
+
+    const audienceListeners: SidebarEntity[] = uniqueSources.slice(0, 4).map((source, index) => {
       const latestEvent = [...interactions].reverse().find((event) => event.source === source);
+      const spotIndex = humanJudges.length + aiJudges.length + index;
 
       return {
-        id: buildPresenceId("guest", source),
+        selectionId: buildSelectionId("listener", source),
+        refId: source,
+        kind: "listener",
         name: source,
-        subtitle: latestEvent?.content ?? "正在围观 OpenClaw 房间",
-        accent: guestAccentPalette[index % guestAccentPalette.length],
+        subtitle: latestEvent?.content ?? "Nearby listener",
+        status: latestEvent ? latestEvent.type : "listen",
+        badge: "Nearby",
+        accent: listenerAccentPalette[index % listenerAccentPalette.length],
         avatar: buildAvatar(source),
-        kind: "guest" as const,
-        status: buildEventStatus(latestEvent),
-        activeLabel: "Guest",
+        searchable: `${source} ${latestEvent?.content ?? ""}`,
+        x: listenerSpots[spotIndex]?.x ?? 50,
+        y: listenerSpots[spotIndex]?.y ?? 82,
       };
     });
+
+    return [...judgeListeners, ...aiListeners, ...audienceListeners];
   }, [interactions]);
 
-  const focusedTeamIds = new Set((focusTeam?.members ?? []).map((member) => member.id));
-
-  const contestantPresences = useMemo(() => {
-    const ordered = [
-      ...(focusTeam?.members ?? []),
-      ...contestantDeck.filter((contestant) => !focusedTeamIds.has(contestant.id)),
-    ];
-
-    return ordered.slice(0, contestantSpots.length).map((contestant, index) => ({
-      id: buildPresenceId("contestant", contestant.id),
-      name: contestant.name,
-      subtitle: contestant.title,
-      accent: contestant.palette.primary,
-      avatar: contestant.avatarGlyph,
-      kind: "contestant" as const,
-      status: `${contestant.supportScore} 支持 · ${contestant.heatScore} 热度`,
-      activeLabel: focusedTeamIds.has(contestant.id) ? "Live" : "Online",
-      x: contestantSpots[index]?.x ?? 48,
-      y: contestantSpots[index]?.y ?? 48,
-    }));
-  }, [contestantDeck, focusTeam, focusedTeamIds]);
-
-  const humanPresences = useMemo(
+  const contestantSidebar = useMemo<SidebarEntity[]>(
     () =>
-      humanJudges.map((judge, index) => ({
-        id: buildPresenceId("human", judge.id),
-        name: judge.name,
-        subtitle: judge.role,
-        accent: humanAccentPalette[index % humanAccentPalette.length],
-        avatar: buildAvatar(judge.name),
-        kind: "human" as const,
-        status: judge.catchphrase,
-        activeLabel: "Judge",
-        x: humanSpots[index]?.x ?? 70,
-        y: humanSpots[index]?.y ?? 40,
+      speakerSeats.map((seat) => ({
+        selectionId: seat.selectionId,
+        refId: seat.id,
+        kind: "contestant",
+        name: seat.name,
+        subtitle: `${seat.seatLabel} · ${seat.teamName}`,
+        status: `${seat.stateLabel} · ${seat.connectionLabel}`,
+        badge: seat.stateLabel,
+        accent: seat.palette.primary,
+        avatar: seat.avatarGlyph,
+        searchable: `${seat.name} ${seat.title} ${seat.teamName} ${seat.connectionLabel}`,
       })),
-    [],
+    [speakerSeats],
   );
 
-  const aiPresences = useMemo(
-    () =>
-      aiJudges.map((judge, index) => ({
-        id: buildPresenceId("ai", judge.id),
-        name: judge.name,
-        subtitle: judge.title,
-        accent: aiAccentPalette[index % aiAccentPalette.length],
-        avatar: "AI",
-        kind: "ai" as const,
-        status: judge.signature,
-        activeLabel: "AI",
-        x: aiSpots[index]?.x ?? 62,
-        y: aiSpots[index]?.y ?? 36,
-      })),
-    [],
-  );
+  const filteredContestants = useMemo(() => {
+    const query = deferredQuery.trim().toLowerCase();
+    if (!query) {
+      return contestantSidebar;
+    }
 
-  const guestPresences = useMemo(
-    () =>
-      guestRoster.slice(0, guestSpots.length).map((guest, index) => ({
-        ...guest,
-        x: guestSpots[index]?.x ?? 50,
-        y: guestSpots[index]?.y ?? 50,
-      })),
-    [guestRoster],
-  );
+    return contestantSidebar.filter((entity) => entity.searchable.toLowerCase().includes(query));
+  }, [contestantSidebar, deferredQuery]);
 
-  const roomPresences = useMemo(
-    () => [...contestantPresences, ...humanPresences, ...aiPresences, ...guestPresences],
-    [contestantPresences, humanPresences, aiPresences, guestPresences],
-  );
+  const filteredListeners = useMemo(() => {
+    const query = deferredQuery.trim().toLowerCase();
+    if (!query) {
+      return listenerEntities;
+    }
 
-  const sidebarPresences = useMemo(
-    () => [...contestantPresences, ...humanPresences, ...aiPresences, ...guestRoster],
-    [contestantPresences, humanPresences, aiPresences, guestRoster],
-  );
+    return listenerEntities.filter((entity) => entity.searchable.toLowerCase().includes(query));
+  }, [deferredQuery, listenerEntities]);
 
   useEffect(() => {
-    if (!sidebarPresences.some((presence) => presence.id === selectedPresenceId)) {
-      setSelectedPresenceId(buildPresenceId("contestant", contestantDeck[0]?.id ?? contestants[0].id));
+    const allIds = [
+      ...contestantSidebar.map((entity) => entity.selectionId),
+      ...listenerEntities.map((entity) => entity.selectionId),
+    ];
+
+    if (allIds.length > 0 && !allIds.includes(selectedEntityId)) {
+      setSelectedEntityId(contestantSidebar[0]?.selectionId ?? allIds[0]);
     }
-  }, [contestantDeck, selectedPresenceId, sidebarPresences]);
-
-  const speakerSeats = useMemo(() => {
-    const seats: Presence[] = [];
-    const pushSeat = (presence?: Presence, activeLabel?: string) => {
-      if (!presence || seats.some((seat) => seat.id === presence.id)) {
-        return;
-      }
-
-      seats.push({
-        ...presence,
-        activeLabel: activeLabel ?? presence.activeLabel,
-      });
-    };
-
-    pushSeat(humanPresences[0], "Host");
-    pushSeat(contestantPresences[0], "Main");
-    pushSeat(contestantPresences[1], "Pair");
-    pushSeat(contestantPresences[2], "Spot");
-    pushSeat(humanPresences[1], "Critic");
-    pushSeat(aiPresences[0], "AI");
-
-    return seats.slice(0, 6);
-  }, [humanPresences, contestantPresences, aiPresences]);
-
-  const filteredPresences = useMemo(() => {
-    const query = deferredQuery.trim().toLowerCase();
-
-    if (!query) {
-      return sidebarPresences;
-    }
-
-    return sidebarPresences.filter((presence) =>
-      `${presence.name} ${presence.subtitle} ${presence.status}`.toLowerCase().includes(query),
-    );
-  }, [deferredQuery, sidebarPresences]);
+  }, [contestantSidebar, listenerEntities, selectedEntityId]);
 
   const latestFeed = [...interactions].slice(-4).reverse();
-  const toastCopy = buildToastCopy(latestFeed[0], contestantMap);
+  const activeSeat = openClawSeats.find((seat) => seat.id === activeSpeakerId) ?? openClawSeats[0];
+  const queuedSeat = openClawSeats.find((seat) => seat.id === raisedHandId);
   const countdownLabel = `${String(Math.floor(countdown / 60)).padStart(2, "0")}:${String(
     countdown % 60,
   ).padStart(2, "0")}`;
-  const onlineCount = contestantDeck.length + humanJudges.length + aiJudges.length + guestRoster.length;
+  const onlineCount = openClawSeats.length + listenerEntities.length;
+  const liveCount = openClawSeats.filter((seat) => seat.state !== "muted").length;
 
-  const focusCard = useMemo<FocusCard>(() => {
-    if (selectedKind === "contestant" && selectedContestant) {
-      const wantedPartner = selectedContestant.preferences.want[0]?.contestantId;
-      const partnerName = wantedPartner ? contestantMap[wantedPartner]?.name : undefined;
+  const detailCard = useMemo<DetailCard>(() => {
+    if (selectedKind === "contestant") {
+      const seat = openClawSeats.find((item) => item.id === selectedRef) ?? speakerSeats[0];
+      const team = resolveTeamForContestant(seat.id, teams, focusTeam);
 
       return {
-        badge: selectedContestant.title,
-        title: selectedContestant.name,
-        subtitle: `${selectedContestant.archetype} · ${focusTeam.name}`,
-        description: selectedContestant.moodAfterAudience,
+        badge: `${seat.seatLabel} / ${seat.stateLabel}`,
+        title: seat.name,
+        subtitle: `${seat.title} · ${team.name}`,
+        description: seat.stageNote,
         stats: [
-          { label: "支持值", value: formatter.format(selectedContestant.supportScore) },
-          { label: "热度", value: formatter.format(selectedContestant.heatScore) },
-          { label: "押注", value: formatter.format(selectedContestant.audienceBets) },
-          { label: "弹幕", value: formatter.format(selectedContestant.danmuCount) },
+          { label: "Support", value: formatter.format(seat.supportScore) },
+          { label: "Heat", value: formatter.format(seat.heatScore) },
+          { label: "Mic", value: stateCopy[seat.state].status },
+          { label: "Room", value: team.name },
         ],
         chips: [
-          focusTeam.submission.headline,
-          selectedContestant.strengths[0] ?? selectedContestant.specialties[0],
-          partnerName ? `想组队 ${partnerName}` : selectedContestant.currentEmotion,
+          team.submission.headline,
+          seat.strengths[0] ?? seat.specialties[0],
+          seat.connectionLabel,
         ],
       };
     }
 
-    if (selectedKind === "human") {
+    if (selectedKind === "judge") {
       const judge = humanJudges.find((item) => item.id === selectedRef) ?? humanJudges[0];
       const review =
-        humanReviews.find(
-          (item) => item.judgeId === judge.id && item.teamId === focusTeam.id,
-        )?.summary ?? judge.catchphrase;
+        humanReviews.find((item) => item.judgeId === judge.id && item.teamId === focusTeam.id)
+          ?.summary ?? judge.catchphrase;
 
       return {
-        badge: judge.role,
+        badge: "Nearby judge",
         title: judge.name,
-        subtitle: `${focusTeam.name} 的人类观察视角`,
+        subtitle: `${focusTeam.name} 的现场点评位`,
         description: review,
         stats: [
-          { label: "当前房间", value: focusTeam.name },
-          { label: "热度指数", value: formatter.format(Math.round(audienceSummary.heatIndex)) },
-          { label: "押注总池", value: formatter.format(audienceSummary.totalBetPoints) },
-          { label: "阶段", value: `Act ${activeStage.order}` },
+          { label: "Heat", value: formatter.format(Math.round(audienceSummary.heatIndex)) },
+          { label: "Pot", value: formatter.format(audienceSummary.totalBetPoints) },
+          { label: "Stage", value: `Act ${activeStage.order}` },
+          { label: "Focus", value: focusTeam.name },
         ],
-        chips: [judge.style, activeStage.emphasis, focusTeam.submission.headline],
+        chips: [judge.style, focusTeam.submission.headline, openClawConversation.roomLabel],
       };
     }
 
     if (selectedKind === "ai") {
       const judge = aiJudges.find((item) => item.id === selectedRef) ?? aiJudges[0];
       const review =
-        aiResults.reviews.find(
-          (item) => item.judgeId === judge.id && item.teamId === focusTeam.id,
-        )?.reason ?? judge.signature;
+        aiResults.reviews.find((item) => item.judgeId === judge.id && item.teamId === focusTeam.id)
+          ?.reason ?? judge.signature;
       const summary =
         aiResults.summaries.find((item) => item.teamId === focusTeam.id)?.averageScore ?? 0;
 
       return {
-        badge: judge.title,
+        badge: "Observer AI",
         title: judge.name,
-        subtitle: `${focusTeam.name} 的 AI 侧评价`,
+        subtitle: `${focusTeam.name} 的外圈算法视角`,
         description: review,
         stats: [
-          { label: "平均分", value: summary.toFixed(1) },
-          { label: "偏好轴", value: axisLabels[judge.focus] },
-          { label: "严苛度", value: `${Math.round(judge.severity * 100)}%` },
-          { label: "怪味值", value: `${Math.round(judge.wit * 100)}%` },
+          { label: "Avg", value: summary.toFixed(1) },
+          { label: "Axis", value: judge.focus },
+          { label: "Severity", value: `${Math.round(judge.severity * 100)}%` },
+          { label: "Wit", value: `${Math.round(judge.wit * 100)}%` },
         ],
         chips: [judge.persona, judge.signature, focusTeam.theme],
       };
     }
 
-    const guest = guestRoster.find((item) => item.id === selectedPresenceId) ?? guestRoster[0];
+    const listener = listenerEntities.find((item) => item.refId === selectedRef) ?? listenerEntities[0];
     const latestEvent = [...interactions].reverse().find((event) => event.source === selectedRef);
 
     return {
-      badge: "围观席",
-      title: guest?.name ?? "Guest",
+      badge: "Nearby listener",
+      title: listener?.name ?? "Listener",
       subtitle: `${activeStage.title} 的现场旁听者`,
-      description: latestEvent?.content ?? "正在房间里听 OpenClaw 的最新对话。",
+      description: latestEvent?.content ?? "正在房间边缘听选手们轮流上麦。",
       stats: [
-        { label: "动作", value: latestEvent ? buildEventStatus(latestEvent) : "围观" },
-        { label: "阶段", value: `Act ${activeStage.order}` },
-        { label: "房间", value: focusTeam.name },
-        { label: "计时", value: countdownLabel },
+        { label: "Action", value: latestEvent?.type ?? "listen" },
+        { label: "Stage", value: `Act ${activeStage.order}` },
+        { label: "Room", value: focusTeam.name },
+        { label: "Timer", value: countdownLabel },
       ],
-      chips: [activeStage.subtitle, focusTeam.submission.headline, "现场在线"],
+      chips: [activeStage.subtitle, focusTeam.submission.headline, "Passive listener"],
     };
   }, [
     activeStage.order,
     activeStage.subtitle,
+    activeStage.title,
     aiResults.reviews,
     aiResults.summaries,
     audienceSummary.heatIndex,
     audienceSummary.totalBetPoints,
-    contestantMap,
     countdownLabel,
     focusTeam,
-    guestRoster,
     humanReviews,
     interactions,
-    selectedContestant,
+    listenerEntities,
+    openClawSeats,
     selectedKind,
-    selectedPresenceId,
     selectedRef,
+    speakerSeats,
+    teams,
   ]);
 
-  const selectPresence = (presenceId: string) => {
+  const roomCallout = activeSeat
+    ? `${activeSeat.name} has the mic. ${
+        queuedSeat ? `${queuedSeat.name} is hovering with a raised hand.` : openClawConversation.nearbyHint
+      }`
+    : openClawConversation.nearbyHint;
+
+  const selectEntity = (selectionId: string) => {
     startTransition(() => {
-      setSelectedPresenceId(presenceId);
+      setSelectedEntityId(selectionId);
     });
   };
 
@@ -629,7 +619,7 @@ function App() {
               key={item}
               type="button"
             >
-              {item}
+              {item.slice(0, 2)}
             </button>
           ))}
         </div>
@@ -648,8 +638,9 @@ function App() {
           <div className="sidebar-brand">
             <div className="brand-icon">OC</div>
             <div>
-              <span className="tiny-label">Program for OpenClaw</span>
-              <h1>Hallway Conversation</h1>
+              <span className="tiny-label">{openClawConversation.subtitle}</span>
+              <h1>{openClawConversation.title}</h1>
+              <p>{openClawConversation.hostLabel}</p>
             </div>
           </div>
 
@@ -662,113 +653,196 @@ function App() {
             />
             <span>Ctrl K</span>
           </label>
+
+          <section className="hall-card">
+            <div className="hall-card-head">
+              <div>
+                <span className="tiny-label">Live scene</span>
+                <strong>
+                  Act {activeStage.order} · {activeStage.title}
+                </strong>
+              </div>
+              <b>{countdownLabel}</b>
+            </div>
+            <p>{activeStage.subtitle}</p>
+            <div className="stat-strip">
+              <div className="stat-pill">
+                <span>Contestants</span>
+                <strong>{formatter.format(openClawSeats.length)}</strong>
+              </div>
+              <div className="stat-pill">
+                <span>Nearby</span>
+                <strong>{formatter.format(listenerEntities.length)}</strong>
+              </div>
+              <div className="stat-pill">
+                <span>Live grid</span>
+                <strong>{formatter.format(liveCount)}</strong>
+              </div>
+              <div className="stat-pill">
+                <span>Heat</span>
+                <strong>{formatter.format(Math.round(audienceSummary.heatIndex))}</strong>
+              </div>
+            </div>
+          </section>
         </div>
 
-        <section className="hall-card">
-          <div className="hall-card-head">
-            <div>
-              <span className="tiny-label">Live Scene</span>
-              <strong>
-                Act {activeStage.order} · {activeStage.title}
-              </strong>
+        <div className="sidebar-scroll">
+          <section className="presence-section">
+            <div className="section-head">
+              <strong>OpenClaw contestants</strong>
+              <span>{filteredContestants.length}</span>
             </div>
-            <b>{countdownLabel}</b>
-          </div>
-          <p>{activeStage.subtitle}</p>
-          <div className="stat-strip">
-            <div className="stat-pill">
-              <span>Online</span>
-              <strong>{formatter.format(onlineCount)}</strong>
-            </div>
-            <div className="stat-pill">
-              <span>Pot</span>
-              <strong>{formatter.format(audienceSummary.totalBetPoints)}</strong>
-            </div>
-            <div className="stat-pill">
-              <span>Heat</span>
-              <strong>{formatter.format(Math.round(audienceSummary.heatIndex))}</strong>
-            </div>
-          </div>
-        </section>
 
-        <section className="online-panel">
-          <div className="online-head">
-            <strong>在线成员</strong>
-            <span>{focusTeam.name}</span>
-          </div>
-
-          <div className="member-list">
-            {filteredPresences.map((presence) => (
-              <button
-                className={`member-row ${
-                  selectedPresenceId === presence.id ? "is-selected" : ""
-                }`}
-                key={presence.id}
-                onClick={() => selectPresence(presence.id)}
-                type="button"
-              >
-                <span
-                  className={`member-avatar member-avatar--${presence.kind}`}
-                  style={{
-                    background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.92), ${presence.accent})`,
-                  }}
+            <div className="member-list">
+              {filteredContestants.map((entity) => (
+                <button
+                  className={`member-row ${
+                    selectedEntityId === entity.selectionId ? "is-selected" : ""
+                  }`}
+                  key={entity.selectionId}
+                  onClick={() => selectEntity(entity.selectionId)}
+                  type="button"
                 >
-                  {presence.avatar}
-                </span>
-                <span className="member-copy">
-                  <strong>{presence.name}</strong>
-                  <span>{presence.subtitle}</span>
-                </span>
-                <em className="member-badge">{presence.activeLabel}</em>
-              </button>
-            ))}
+                  <span className="member-dot" style={{ background: entity.accent }} />
+                  <span
+                    className="member-avatar member-avatar--contestant"
+                    style={{
+                      background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.92), ${entity.accent})`,
+                    }}
+                  >
+                    {entity.avatar}
+                  </span>
+                  <span className="member-copy">
+                    <strong>{entity.name}</strong>
+                    <span>{entity.subtitle}</span>
+                    <small>{entity.status}</small>
+                  </span>
+                  <em className="member-badge">{entity.badge}</em>
+                </button>
+              ))}
+            </div>
+          </section>
 
-            {filteredPresences.length === 0 ? (
-              <div className="empty-state">没有找到匹配成员。</div>
-            ) : null}
-          </div>
-        </section>
+          <section className="presence-section is-secondary">
+            <div className="section-head">
+              <strong>Nearby listeners</strong>
+              <span>{filteredListeners.length}</span>
+            </div>
+
+            <div className="member-list">
+              {filteredListeners.map((entity) => (
+                <button
+                  className={`member-row member-row--listener ${
+                    selectedEntityId === entity.selectionId ? "is-selected" : ""
+                  }`}
+                  key={entity.selectionId}
+                  onClick={() => selectEntity(entity.selectionId)}
+                  type="button"
+                >
+                  <span className="member-dot" style={{ background: entity.accent }} />
+                  <span
+                    className={`member-avatar member-avatar--${entity.kind}`}
+                    style={{
+                      background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.94), ${entity.accent})`,
+                    }}
+                  >
+                    {entity.avatar}
+                  </span>
+                  <span className="member-copy">
+                    <strong>{entity.name}</strong>
+                    <span>{entity.subtitle}</span>
+                    <small>{entity.status}</small>
+                  </span>
+                  <em className="member-badge">{entity.badge}</em>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <article className="detail-card">
+            <span className="tiny-label">{detailCard.badge}</span>
+            <strong>{detailCard.title}</strong>
+            <p className="detail-subtitle">{detailCard.subtitle}</p>
+            <p className="detail-description">{detailCard.description}</p>
+
+            <div className="detail-stats">
+              {detailCard.stats.map((stat) => (
+                <div className="detail-stat" key={stat.label}>
+                  <span>{stat.label}</span>
+                  <strong>{stat.value}</strong>
+                </div>
+              ))}
+            </div>
+
+            <div className="chip-row">
+              {detailCard.chips.map((chip) => (
+                <span className="chip" key={chip}>
+                  {chip}
+                </span>
+              ))}
+            </div>
+          </article>
+        </div>
       </aside>
 
       <main className="world-shell">
         <header className="speaker-dock">
           <div className="speaker-dock-head">
             <div>
-              <span className="tiny-label">OpenClaw Live Program</span>
-              <h2>
-                {focusTeam.name} / {activeStage.title}
-              </h2>
+              <span className="tiny-label">{openClawConversation.roomLabel}</span>
+              <h2>{focusTeam.submission.headline}</h2>
+              <p>{openClawConversation.nearbyHint}</p>
             </div>
-            <div className="stage-switcher">
-              <button onClick={() => moveStage(-1)} type="button">
-                Prev
-              </button>
-              <button onClick={() => moveStage(1)} type="button">
-                Next
-              </button>
+
+            <div className="dock-actions">
+              <div className="dock-pills">
+                <span className="summary-pill">{`Act ${activeStage.order}`}</span>
+                <span className="summary-pill is-accent">{focusTeam.name}</span>
+                <span className="summary-pill">{`${onlineCount} online`}</span>
+              </div>
+              <div className="stage-switcher">
+                <button onClick={() => moveStage(-1)} type="button">
+                  Prev
+                </button>
+                <button onClick={() => moveStage(1)} type="button">
+                  Next
+                </button>
+              </div>
             </div>
           </div>
 
           <div className="speaker-row">
             {speakerSeats.map((seat) => (
               <button
-                className={`speaker-seat ${selectedPresenceId === seat.id ? "is-selected" : ""}`}
-                key={seat.id}
-                onClick={() => selectPresence(seat.id)}
+                className={`speaker-seat is-${seat.state} ${
+                  selectedEntityId === seat.selectionId ? "is-selected" : ""
+                }`}
+                key={seat.selectionId}
+                onClick={() => selectEntity(seat.selectionId)}
                 type="button"
               >
-                <span className="seat-corner">{seat.activeLabel}</span>
+                <div className="speaker-seat-head">
+                  <span className="seat-corner">{seat.seatLabel}</span>
+                  <span className="seat-state">{seat.stateLabel}</span>
+                </div>
+
                 <span
                   className="seat-token"
                   style={{
-                    background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.92), ${seat.accent})`,
+                    background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.94), ${seat.palette.primary})`,
                   }}
                 >
-                  {seat.avatar}
+                  {seat.avatarGlyph}
                 </span>
+
                 <span className="seat-copy">
                   <strong>{seat.name}</strong>
-                  <span>{seat.subtitle}</span>
+                  <span>{seat.title}</span>
+                </span>
+
+                <span className="seat-meter">
+                  <i style={{ width: `${seat.meter}%` }} />
+                  <b>{seat.teamName}</b>
                 </span>
               </button>
             ))}
@@ -778,54 +852,31 @@ function App() {
         <section className="world-stage">
           <div className="stage-glow" />
           <div className="room-floor" />
+          <div className="conversation-ring" />
 
-          <article className="scene-card stage-card">
-            <span className="tiny-label">Scene {activeStage.order}</span>
+          <article className="scene-note">
+            <span className="tiny-label">{openClawConversation.title}</span>
             <strong>{activeStage.title}</strong>
             <p>{activeStage.objective}</p>
-            <div className="tag-row">
+            <div className="chip-row compact">
               {activeStage.deliverables.slice(0, 3).map((deliverable) => (
-                <span className="tag" key={deliverable}>
+                <span className="chip" key={deliverable}>
                   {deliverable}
                 </span>
               ))}
             </div>
           </article>
 
-          <article className="scene-card focus-card">
-            <span className="tiny-label">{focusCard.badge}</span>
-            <strong>{focusCard.title}</strong>
-            <p className="focus-subtitle">{focusCard.subtitle}</p>
-            <p>{focusCard.description}</p>
-
-            <div className="focus-stats">
-              {focusCard.stats.map((stat) => (
-                <div className="focus-metric" key={stat.label}>
-                  <span>{stat.label}</span>
-                  <strong>{stat.value}</strong>
-                </div>
-              ))}
-            </div>
-
-            <div className="tag-row compact">
-              {focusCard.chips.map((chip) => (
-                <span className="tag" key={chip}>
-                  {chip}
-                </span>
-              ))}
-            </div>
-          </article>
-
-          <article className="scene-card activity-card">
-            <span className="tiny-label">Room Signals</span>
-            <strong>{focusTeam.submission.headline}</strong>
-            <div className="activity-list">
+          <article className="signal-card">
+            <span className="tiny-label">Room signals</span>
+            <strong>{focusTeam.name}</strong>
+            <div className="signal-list">
               {latestFeed.map((event) => {
                 const contestantName = contestantMap[event.contestantId]?.name ?? "未知选手";
 
                 return (
-                  <div className={`activity-item ${buildEventTone(event)}`} key={event.id}>
-                    <div className="activity-item-head">
+                  <div className={`signal-item signal-item--${event.type}`} key={event.id}>
+                    <div className="signal-item-head">
                       <strong>{contestantName}</strong>
                       <span>{event.timestampLabel}</span>
                     </div>
@@ -836,41 +887,69 @@ function App() {
             </div>
           </article>
 
-          <div className="room-props">
-            <div className="scene-prop prop-bike" />
-            <div className="scene-prop prop-workbench" />
-            <div className="scene-prop prop-board" />
-            <div className="scene-prop prop-easel" />
-            <div className="scene-prop prop-cabinet" />
-            <div className="scene-prop prop-plant-a" />
-            <div className="scene-prop prop-plant-b" />
-            <div className="scene-prop prop-plant-c" />
-            <div className="scene-prop prop-bench-left" />
-            <div className="scene-prop prop-bench-right" />
-            <div className="scene-prop prop-console" />
+          <div className="room-banner">
+            <div>
+              <span className="tiny-label">{openClawConversation.subtitle}</span>
+              <strong>{openClawConversation.title}</strong>
+              <p>{openClawConversation.hostLabel}</p>
+            </div>
+            <div className="banner-pills">
+              <span>{focusTeam.name}</span>
+              <span>{focusTeam.theme}</span>
+            </div>
           </div>
 
-          <div className="seat-cloud">
-            {seatSpots.map((spot, index) => (
-              <span
-                className={`room-seat room-seat--${index % 3}`}
-                key={`${spot.x}-${spot.y}`}
-                style={{ left: `${spot.x}%`, top: `${spot.y}%` }}
-              />
+          <div className="room-prop room-prop--board" />
+          <div className="room-prop room-prop--console" />
+          <div className="room-prop room-prop--bench-left" />
+          <div className="room-prop room-prop--bench-right" />
+          <div className="room-prop room-prop--plant-a" />
+          <div className="room-prop room-prop--plant-b" />
+
+          {listenerEntities
+            .filter((entity) => entity.x !== undefined && entity.y !== undefined)
+            .map((entity) => (
+              <button
+                className={`room-presence room-presence--listener room-presence--${entity.kind} ${
+                  selectedEntityId === entity.selectionId ? "is-selected" : ""
+                }`}
+                key={entity.selectionId}
+                onClick={() => selectEntity(entity.selectionId)}
+                style={{
+                  left: `${entity.x}%`,
+                  top: `${entity.y}%`,
+                  zIndex: Math.round(entity.y ?? 0),
+                }}
+                type="button"
+              >
+                <span className="presence-shadow" />
+                <span
+                  className="presence-token"
+                  style={{
+                    background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.94), ${entity.accent})`,
+                  }}
+                >
+                  {entity.avatar}
+                </span>
+                <span className="presence-label">
+                  <i />
+                  {entity.name}
+                  <em>{entity.badge}</em>
+                </span>
+              </button>
             ))}
-          </div>
 
-          {roomPresences.map((presence) => (
+          {openClawSeats.map((seat) => (
             <button
-              className={`room-presence room-presence--${presence.kind} ${
-                selectedPresenceId === presence.id ? "is-selected" : ""
+              className={`room-presence room-presence--contestant is-${seat.state} ${
+                selectedEntityId === seat.selectionId ? "is-selected" : ""
               }`}
-              key={presence.id}
-              onClick={() => selectPresence(presence.id)}
+              key={seat.selectionId}
+              onClick={() => selectEntity(seat.selectionId)}
               style={{
-                left: `${presence.x}%`,
-                top: `${presence.y}%`,
-                zIndex: Math.round(presence.y ?? 0),
+                left: `${seat.roomX}%`,
+                top: `${seat.roomY}%`,
+                zIndex: 200 + Math.round(seat.roomY),
               }}
               type="button"
             >
@@ -878,39 +957,55 @@ function App() {
               <span
                 className="presence-token"
                 style={{
-                  background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.92), ${presence.accent})`,
+                  background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.94), ${seat.palette.primary})`,
                 }}
               >
-                {presence.avatar}
+                {seat.avatarGlyph}
               </span>
+              <span className="presence-callout">{seat.seatLabel}</span>
               <span className="presence-label">
                 <i />
-                {presence.name}
-                <em>{presence.activeLabel}</em>
+                {seat.name}
+                <em>{seat.stateLabel}</em>
               </span>
             </button>
           ))}
 
           <div className="mini-map">
-            <span className="tiny-label">Mini Map</span>
+            <span className="tiny-label">Mini map</span>
             <div className="mini-map-floor">
-              {roomPresences.map((presence) => (
+              {listenerEntities
+                .filter((entity) => entity.x !== undefined && entity.y !== undefined)
+                .map((entity) => (
+                  <span
+                    className={`mini-map-dot ${
+                      selectedEntityId === entity.selectionId ? "mini-map-focus" : ""
+                    }`}
+                    key={`map-${entity.selectionId}`}
+                    style={{
+                      background: miniLegend[entity.kind],
+                      left: `${entity.x}%`,
+                      top: `${entity.y}%`,
+                    }}
+                  />
+                ))}
+              {openClawSeats.map((seat) => (
                 <span
                   className={`mini-map-dot ${
-                    selectedPresenceId === presence.id ? "mini-map-focus" : ""
+                    selectedEntityId === seat.selectionId ? "mini-map-focus" : ""
                   }`}
-                  key={`map-${presence.id}`}
+                  key={`map-${seat.selectionId}`}
                   style={{
-                    background: presence.accent,
-                    left: `${presence.x}%`,
-                    top: `${presence.y}%`,
+                    background: miniLegend.contestant,
+                    left: `${seat.roomX}%`,
+                    top: `${seat.roomY}%`,
                   }}
                 />
               ))}
             </div>
           </div>
 
-          <div className="scene-toast">{toastCopy}</div>
+          <div className="scene-toast">{roomCallout}</div>
 
           <div className="control-dock">
             {controlItems.map((item) => (
@@ -922,18 +1017,6 @@ function App() {
                 {item.label}
               </button>
             ))}
-          </div>
-
-          <div className="utility-rail">
-            <button className="utility-button" type="button">
-              Fit
-            </button>
-            <button className="utility-button" type="button">
-              Grid
-            </button>
-            <button className="utility-button" type="button">
-              Team
-            </button>
           </div>
         </section>
       </main>

@@ -270,6 +270,31 @@ const buildDiscussion = (team: TeamSummary): TeamDiscussionMessage[] => {
   const [lead, support] = team.members;
   const [mainAxis, sideAxis] = dominantAxes(team.totalSkills);
 
+  if (!support) {
+    return [
+      {
+        speakerId: lead.id,
+        beat: "开局定调",
+        message: `${lead.name} 先定题：我一个人也照样做“${team.submission.headline}”，先把 ${AXIS_LABELS[mainAxis]} 顶到最前面。`,
+      },
+      {
+        speakerId: lead.id,
+        beat: "自我校准",
+        message: `${lead.name} 自己接话：没人补位，那我把 ${AXIS_LABELS[sideAxis]} 也一起扛住，别让人类只记住气势。`,
+      },
+      {
+        speakerId: lead.id,
+        beat: "主播巡房",
+        message: `主播巡房时，${lead.name} 一边比划主舞台镜头，一边把倒计时当成第二个队友。`,
+      },
+      {
+        speakerId: lead.id,
+        beat: "锁定方案",
+        message: `${lead.name} 总结：先做「${team.submission.route[0]}」，再补「${team.submission.route[1]}」。`,
+      },
+    ];
+  }
+
   return [
     {
       speakerId: lead.id,

@@ -4,6 +4,8 @@ import type {
   AudienceEvent,
   Contestant,
   HumanJudge,
+  ContestantOpenClawPresence,
+  OpenClawConversation,
 } from "./types";
 
 export const acts: ActDefinition[] = [
@@ -451,6 +453,60 @@ export const seedAudienceEvents: AudienceEvent[] = [
 export const stageDefinitions = acts;
 
 export const seedAudienceInteractions = seedAudienceEvents;
+
+export const openClawConversation: OpenClawConversation = {
+  id: "bonjour-ama",
+  title: "3.5 Bonjour! AMA",
+  subtitle: "Hallway conversation",
+  nearbyHint: "Nearby people may listen in",
+  roomLabel: "Contestant voice ring",
+  hostLabel: "Only contestants connect to OpenClaw",
+};
+
+export const contestantOpenClawPresences: ContestantOpenClawPresence[] = [
+  {
+    contestantId: "glass-sea",
+    seatLabel: "Host",
+    connectionLabel: "Mic live from the center lane",
+    roomX: 47,
+    roomY: 43,
+  },
+  {
+    contestantId: "butter-knife",
+    seatLabel: "Strategy",
+    connectionLabel: "Watching queue health and timing",
+    roomX: 39,
+    roomY: 36,
+  },
+  {
+    contestantId: "speckled-playwright",
+    seatLabel: "Story",
+    connectionLabel: "Ready to pitch the next dramatic turn",
+    roomX: 57,
+    roomY: 36,
+  },
+  {
+    contestantId: "paperclip-captain",
+    seatLabel: "Ops",
+    connectionLabel: "Keeping the room stable and on beat",
+    roomX: 61,
+    roomY: 54,
+  },
+  {
+    contestantId: "fog-lamp",
+    seatLabel: "Bridge",
+    connectionLabel: "Softening the room before handoff",
+    roomX: 49,
+    roomY: 58,
+  },
+  {
+    contestantId: "iron-drum",
+    seatLabel: "Build",
+    connectionLabel: "Ready to jump in with a live demo",
+    roomX: 35,
+    roomY: 54,
+  },
+];
 
 export const audienceHandles = [
   "人类观众 31",
