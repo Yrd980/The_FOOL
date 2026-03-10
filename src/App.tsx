@@ -38,6 +38,7 @@ type SidebarEntity = {
   selectionId: string;
   refId: string;
   kind: SelectionKind;
+  group: string;
   name: string;
   subtitle: string;
   status: string;
@@ -165,6 +166,18 @@ const resolveTeamForContestant = (
 ) =>
   teams.find((team) => team.members.some((member) => member.id === contestantId)) ?? fallbackTeam;
 
+const buildContestantGroup = (state: OpenClawContestantState) => {
+  if (state === "speaking" || state === "listening") {
+    return "On mic";
+  }
+
+  if (state === "raised-hand" || state === "queued") {
+    return "Queue rail";
+  }
+
+  return "Listener orbit";
+};
+
 function App() {
   const [activeStageId, setActiveStageId] = useState<StageId>(stageDefinitions[0].id);
   const [selectedEntityId, setSelectedEntityId] = useState(
@@ -277,9 +290,127 @@ function App() {
     ? resolveTeamForContestant(selectedContestant.id, teams, leadingTeam)
     : leadingTeam;
 
-  const activeSpeakerId = focusTeam.members[0]?.id ?? contestantDeck[0]?.id ?? contestants[0].id;
-  const raisedHandId = focusTeam.members[1]?.id ?? audienceSummary.leadingContestantId;
-  const focusMemberIds = new Set(focusTeam.members.map((member) => member.id));
+  const stageConversation = useMemo(() => {
+    const orderedIds = contestantDeck.map((contestant) => contestant.id);
+    const focusIds = focusTeam.members.map((member) => member.id);
+    const outsideFocusIds = orderedIds.filter((id) => !focusIds.includes(id));
+    const championTeam =
+      teams.find((team) => team.id === aiResults.summaries[0]?.teamId) ?? leadingTeam;
+    const championIds = championTeam.members.map((member) => member.id);
+    const defaultSpeakerId = focusIds[0] ?? orderedIds[0] ?? contestants[0].id;
+    const leadingId = audienceSummary.leadingContestantId || orderedIds[0] || contestants[0].id;
+
+    switch (activeStage.id) {
+      case "act-1":
+        return {
+          speakerId: orderedIds[0] ?? defaultSpeakerId,
+          raisedHandId: orderedIds[1] ?? defaultSpeakerId,
+          listeningIds: orderedIds.slice(0, 3),
+          queuedIds: orderedIds.slice(3, 5),
+          callout: `${activeStage.title} 正在建人设，${contestantMap[orderedIds[0] ?? defaultSpeakerId]?.name ?? "当前选手"} 先把主麦拿走了。`,
+        };
+      case "act-2":
+        return {
+          speakerId: selectedContestant?.id ?? defaultSpeakerId,
+          raisedHandId: outsideFocusIds[0] ?? orderedIds[1] ?? defaultSpeakerId,
+          listeningIds: [...focusIds, orderedIds[2]].filter(Boolean).slice(0, 3),
+          queuedIds: outsideFocusIds.slice(0, 2),
+          callout: `${activeStage.title} 把偏好和嫌弃都摊开了，房间里开始有人抢着举手回应。`,
+        };
+      case "act-3":
+        return {
+          speakerId: focusIds[0] ?? defaultSpeakerId,
+          raisedHandId: focusIds[1] ?? outsideFocusIds[0] ?? defaultSpeakerId,
+          listeningIds: focusIds,
+          queuedIds: outsideFocusIds.slice(0, 1),
+          callout: `${focusTeam.name} 正在被推到 conversation ring 中央，其他选手在外圈等候下一轮分组。`,
+        };
+      case "act-4":
+        return {
+          speakerId: focusIds[1] ?? focusIds[0] ?? defaultSpeakerId,
+          raisedHandId: focusIds[0] ?? outsideFocusIds[0] ?? defaultSpeakerId,
+          listeningIds: focusIds,
+          queuedIds: outsideFocusIds.slice(0, 2),
+          callout: `${focusTeam.name} 的队内讨论已经热起来了，主麦在成员之间快速切换。`,
+        };
+      case "act-5":
+        return {
+          speakerId: focusIds[0] ?? defaultSpeakerId,
+          raisedHandId: focusIds[1] ?? outsideFocusIds[0] ?? defaultSpeakerId,
+          listeningIds: focusIds,
+          queuedIds: focusIds.slice(2, 3),
+          callout: `${focusTeam.submission.headline} 正在收束成可展示版本，队伍成员轮流补充最终卖点。`,
+        };
+      case "act-6":
+        return {
+          speakerId: focusIds[0] ?? defaultSpeakerId,
+          raisedHandId: leadingId,
+          listeningIds: focusIds,
+          queuedIds: outsideFocusIds.slice(0, 1),
+          callout: `人类评审正在外圈围观，${contestantMap[focusIds[0] ?? defaultSpeakerId]?.name ?? "队长"} 继续守着主麦解释方案。`,
+        };
+      case "act-7":
+        return {
+          speakerId: focusIds[0] ?? defaultSpeakerId,
+          raisedHandId: championIds[1] ?? leadingId,
+          listeningIds: [...new Set([...focusIds, ...championIds])].slice(0, 4),
+          queuedIds: outsideFocusIds.slice(0, 1),
+          callout: `AI 评审接管节奏，冠军候选队开始在房间中央反复被点名。`,
+        };
+      case "act-8":
+        return {
+          speakerId: championIds[0] ?? defaultSpeakerId,
+          raisedHandId: championIds[1] ?? focusIds[1] ?? defaultSpeakerId,
+          listeningIds: championIds,
+          queuedIds: [leadingId].filter((id) => !championIds.includes(id)),
+          callout: `${championTeam.name} 正站在聚光区，其他选手在外圈等着奖项和人格标签落地。`,
+        };
+      case "act-9":
+        return {
+          speakerId: leadingId,
+          raisedHandId: orderedIds[1] ?? defaultSpeakerId,
+          listeningIds: orderedIds.slice(0, 4),
+          queuedIds: orderedIds.slice(4, 6),
+          callout: `赛后诗和像素画接管了空间，房间不再争主麦，而是在轮流放大情绪。`,
+        };
+      case "act-10":
+        return {
+          speakerId: outsideFocusIds[0] ?? leadingId,
+          raisedHandId: focusIds[0] ?? defaultSpeakerId,
+          listeningIds: [...focusIds, leadingId].filter(Boolean).slice(0, 4),
+          queuedIds: outsideFocusIds.slice(1, 3),
+          callout: `开放麦阶段让 conversation 重新散开，主麦开始在房间和看台之间游走。`,
+        };
+      default:
+        return {
+          speakerId: defaultSpeakerId,
+          raisedHandId: focusIds[1] ?? leadingId,
+          listeningIds: focusIds,
+          queuedIds: outsideFocusIds.slice(0, 1),
+          callout: openClawConversation.nearbyHint,
+        };
+    }
+  }, [
+    activeStage.id,
+    activeStage.title,
+    aiResults.summaries,
+    audienceSummary.leadingContestantId,
+    contestantDeck,
+    contestantMap,
+    focusTeam,
+    leadingTeam,
+    selectedContestant,
+    teams,
+  ]);
+
+  const activeSpeakerId = stageConversation.speakerId;
+  const raisedHandId = stageConversation.raisedHandId;
+  const focusMemberIds = new Set(
+    [stageConversation.speakerId, stageConversation.raisedHandId, ...stageConversation.listeningIds].filter(
+      Boolean,
+    ),
+  );
+  const queuedIds = new Set(stageConversation.queuedIds.filter(Boolean));
 
   const presenceMap = useMemo(
     () =>
@@ -312,17 +443,22 @@ function App() {
           state = "raised-hand";
         } else if (focusMemberIds.has(contestant.id)) {
           state = "listening";
-        } else if (contestant.id === audienceSummary.leadingContestantId) {
+        } else if (queuedIds.has(contestant.id)) {
           state = "queued";
         }
 
         const seatState = stateCopy[state];
         const team = resolveTeamForContestant(contestant.id, teams, focusTeam);
-        const stageNote = focusMemberIds.has(contestant.id)
-          ? `${team.name} 正在当前对话环里。`
-          : contestant.id === audienceSummary.leadingContestantId
-            ? "当前在外围最受关注，随时可能被拉上麦。"
-            : "暂时退到房间边缘，继续听场内节奏。";
+        const stageNote =
+          state === "speaking"
+            ? `${activeStage.title} 当前由 ${contestant.name} 扛主麦，队伍叙事和节奏都在她/他这里。`
+            : state === "raised-hand"
+              ? `${contestant.name} 已经举手等待切入，准备把 conversation 往下一段推进。`
+              : state === "listening"
+                ? `${team.name} 仍在当前对话环里，正在顺着房间节奏补位。`
+                : state === "queued"
+                  ? `${contestant.name} 在 queue rail 上候场，只要房间转向就会被拉进主圈。`
+                  : "暂时退到房间边缘，继续听场内节奏。";
 
         return {
           ...contestant,
@@ -337,11 +473,12 @@ function App() {
       }),
     [
       activeSpeakerId,
-      audienceSummary.leadingContestantId,
+      activeStage.title,
       contestantDeck,
       focusMemberIds,
       focusTeam,
       presenceMap,
+      queuedIds,
       raisedHandId,
       teams,
     ],
@@ -376,6 +513,7 @@ function App() {
       selectionId: buildSelectionId("judge", judge.id),
       refId: judge.id,
       kind: "judge",
+      group: "Observers",
       name: judge.name,
       subtitle: judge.role,
       status: judge.catchphrase,
@@ -391,6 +529,7 @@ function App() {
       selectionId: buildSelectionId("ai", judge.id),
       refId: judge.id,
       kind: "ai",
+      group: "Observers",
       name: judge.name,
       subtitle: judge.title,
       status: judge.signature,
@@ -410,6 +549,7 @@ function App() {
         selectionId: buildSelectionId("listener", source),
         refId: source,
         kind: "listener",
+        group: "Nearby listeners",
         name: source,
         subtitle: latestEvent?.content ?? "Nearby listener",
         status: latestEvent ? latestEvent.type : "listen",
@@ -431,6 +571,7 @@ function App() {
         selectionId: seat.selectionId,
         refId: seat.id,
         kind: "contestant",
+        group: buildContestantGroup(seat.state),
         name: seat.name,
         subtitle: `${seat.seatLabel} · ${seat.teamName}`,
         status: `${seat.stateLabel} · ${seat.connectionLabel}`,
@@ -460,6 +601,23 @@ function App() {
     return listenerEntities.filter((entity) => entity.searchable.toLowerCase().includes(query));
   }, [deferredQuery, listenerEntities]);
 
+  const contestantGroups = useMemo(
+    () => ({
+      onMic: filteredContestants.filter((entity) => entity.group === "On mic"),
+      queue: filteredContestants.filter((entity) => entity.group === "Queue rail"),
+      orbit: filteredContestants.filter((entity) => entity.group === "Listener orbit"),
+    }),
+    [filteredContestants],
+  );
+
+  const listenerGroups = useMemo(
+    () => ({
+      observers: filteredListeners.filter((entity) => entity.group === "Observers"),
+      nearby: filteredListeners.filter((entity) => entity.group === "Nearby listeners"),
+    }),
+    [filteredListeners],
+  );
+
   useEffect(() => {
     const allIds = [
       ...contestantSidebar.map((entity) => entity.selectionId),
@@ -471,14 +629,26 @@ function App() {
     }
   }, [contestantSidebar, listenerEntities, selectedEntityId]);
 
-  const latestFeed = [...interactions].slice(-4).reverse();
+  const roomSignals = useMemo(() => {
+    const scoped = [...interactions]
+      .filter((event) => focusMemberIds.has(event.contestantId) || queuedIds.has(event.contestantId))
+      .slice(-4)
+      .reverse();
+
+    return scoped.length > 0 ? scoped : [...interactions].slice(-4).reverse();
+  }, [focusMemberIds, interactions, queuedIds]);
   const activeSeat = openClawSeats.find((seat) => seat.id === activeSpeakerId) ?? openClawSeats[0];
   const queuedSeat = openClawSeats.find((seat) => seat.id === raisedHandId);
   const countdownLabel = `${String(Math.floor(countdown / 60)).padStart(2, "0")}:${String(
     countdown % 60,
   ).padStart(2, "0")}`;
   const onlineCount = openClawSeats.length + listenerEntities.length;
-  const liveCount = openClawSeats.filter((seat) => seat.state !== "muted").length;
+  const micCount = openClawSeats.filter(
+    (seat) => seat.state === "speaking" || seat.state === "listening",
+  ).length;
+  const queueCount = openClawSeats.filter(
+    (seat) => seat.state === "raised-hand" || seat.state === "queued",
+  ).length;
 
   const detailCard = useMemo<DetailCard>(() => {
     if (selectedKind === "contestant") {
@@ -585,8 +755,8 @@ function App() {
   ]);
 
   const roomCallout = activeSeat
-    ? `${activeSeat.name} has the mic. ${
-        queuedSeat ? `${queuedSeat.name} is hovering with a raised hand.` : openClawConversation.nearbyHint
+    ? `${stageConversation.callout} ${
+        queuedSeat ? `${queuedSeat.name} 也在边上举手等待切入。` : openClawConversation.nearbyHint
       }`
     : openClawConversation.nearbyHint;
 
@@ -667,16 +837,16 @@ function App() {
             <p>{activeStage.subtitle}</p>
             <div className="stat-strip">
               <div className="stat-pill">
-                <span>Contestants</span>
-                <strong>{formatter.format(openClawSeats.length)}</strong>
+                <span>On mic</span>
+                <strong>{formatter.format(micCount)}</strong>
+              </div>
+              <div className="stat-pill">
+                <span>Queue</span>
+                <strong>{formatter.format(queueCount)}</strong>
               </div>
               <div className="stat-pill">
                 <span>Nearby</span>
                 <strong>{formatter.format(listenerEntities.length)}</strong>
-              </div>
-              <div className="stat-pill">
-                <span>Live grid</span>
-                <strong>{formatter.format(liveCount)}</strong>
               </div>
               <div className="stat-pill">
                 <span>Heat</span>
@@ -693,34 +863,49 @@ function App() {
               <span>{filteredContestants.length}</span>
             </div>
 
-            <div className="member-list">
-              {filteredContestants.map((entity) => (
-                <button
-                  className={`member-row ${
-                    selectedEntityId === entity.selectionId ? "is-selected" : ""
-                  }`}
-                  key={entity.selectionId}
-                  onClick={() => selectEntity(entity.selectionId)}
-                  type="button"
-                >
-                  <span className="member-dot" style={{ background: entity.accent }} />
-                  <span
-                    className="member-avatar member-avatar--contestant"
-                    style={{
-                      background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.92), ${entity.accent})`,
-                    }}
-                  >
-                    {entity.avatar}
-                  </span>
-                  <span className="member-copy">
-                    <strong>{entity.name}</strong>
-                    <span>{entity.subtitle}</span>
-                    <small>{entity.status}</small>
-                  </span>
-                  <em className="member-badge">{entity.badge}</em>
-                </button>
-              ))}
-            </div>
+            {[
+              { label: "On mic", items: contestantGroups.onMic },
+              { label: "Queue rail", items: contestantGroups.queue },
+              { label: "Listener orbit", items: contestantGroups.orbit },
+            ].map((group) =>
+              group.items.length > 0 ? (
+                <div className="member-group" key={group.label}>
+                  <div className="member-group-head">
+                    <strong>{group.label}</strong>
+                    <span>{group.items.length}</span>
+                  </div>
+
+                  <div className="member-list">
+                    {group.items.map((entity) => (
+                      <button
+                        className={`member-row ${
+                          selectedEntityId === entity.selectionId ? "is-selected" : ""
+                        }`}
+                        key={entity.selectionId}
+                        onClick={() => selectEntity(entity.selectionId)}
+                        type="button"
+                      >
+                        <span className="member-dot" style={{ background: entity.accent }} />
+                        <span
+                          className="member-avatar member-avatar--contestant"
+                          style={{
+                            background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.92), ${entity.accent})`,
+                          }}
+                        >
+                          {entity.avatar}
+                        </span>
+                        <span className="member-copy">
+                          <strong>{entity.name}</strong>
+                          <span>{entity.subtitle}</span>
+                          <small>{entity.status}</small>
+                        </span>
+                        <em className="member-badge">{entity.badge}</em>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null,
+            )}
           </section>
 
           <section className="presence-section is-secondary">
@@ -729,34 +914,48 @@ function App() {
               <span>{filteredListeners.length}</span>
             </div>
 
-            <div className="member-list">
-              {filteredListeners.map((entity) => (
-                <button
-                  className={`member-row member-row--listener ${
-                    selectedEntityId === entity.selectionId ? "is-selected" : ""
-                  }`}
-                  key={entity.selectionId}
-                  onClick={() => selectEntity(entity.selectionId)}
-                  type="button"
-                >
-                  <span className="member-dot" style={{ background: entity.accent }} />
-                  <span
-                    className={`member-avatar member-avatar--${entity.kind}`}
-                    style={{
-                      background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.94), ${entity.accent})`,
-                    }}
-                  >
-                    {entity.avatar}
-                  </span>
-                  <span className="member-copy">
-                    <strong>{entity.name}</strong>
-                    <span>{entity.subtitle}</span>
-                    <small>{entity.status}</small>
-                  </span>
-                  <em className="member-badge">{entity.badge}</em>
-                </button>
-              ))}
-            </div>
+            {[
+              { label: "Observers", items: listenerGroups.observers },
+              { label: "Nearby listeners", items: listenerGroups.nearby },
+            ].map((group) =>
+              group.items.length > 0 ? (
+                <div className="member-group" key={group.label}>
+                  <div className="member-group-head">
+                    <strong>{group.label}</strong>
+                    <span>{group.items.length}</span>
+                  </div>
+
+                  <div className="member-list">
+                    {group.items.map((entity) => (
+                      <button
+                        className={`member-row member-row--listener ${
+                          selectedEntityId === entity.selectionId ? "is-selected" : ""
+                        }`}
+                        key={entity.selectionId}
+                        onClick={() => selectEntity(entity.selectionId)}
+                        type="button"
+                      >
+                        <span className="member-dot" style={{ background: entity.accent }} />
+                        <span
+                          className={`member-avatar member-avatar--${entity.kind}`}
+                          style={{
+                            background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.94), ${entity.accent})`,
+                          }}
+                        >
+                          {entity.avatar}
+                        </span>
+                        <span className="member-copy">
+                          <strong>{entity.name}</strong>
+                          <span>{entity.subtitle}</span>
+                          <small>{entity.status}</small>
+                        </span>
+                        <em className="member-badge">{entity.badge}</em>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null,
+            )}
           </section>
 
           <article className="detail-card">
@@ -871,7 +1070,7 @@ function App() {
             <span className="tiny-label">Room signals</span>
             <strong>{focusTeam.name}</strong>
             <div className="signal-list">
-              {latestFeed.map((event) => {
+              {roomSignals.map((event) => {
                 const contestantName = contestantMap[event.contestantId]?.name ?? "未知选手";
 
                 return (
@@ -897,6 +1096,12 @@ function App() {
               <span>{focusTeam.name}</span>
               <span>{focusTeam.theme}</span>
             </div>
+          </div>
+
+          <div className="zone-legend">
+            <span className="zone-pill zone-pill--mic">Mic lane</span>
+            <span className="zone-pill zone-pill--queue">Queue rail</span>
+            <span className="zone-pill zone-pill--nearby">Listener orbit</span>
           </div>
 
           <div className="room-prop room-prop--board" />
