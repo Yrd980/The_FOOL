@@ -488,6 +488,41 @@ p {
   gap: 8px;
 }
 
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.detail-action {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #f7ecde;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.detail-action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(132, 203, 255, 0.24);
+}
+
+.detail-action.is-active {
+  border-color: rgba(134, 234, 132, 0.24);
+  background: rgba(134, 234, 132, 0.12);
+  color: #e4ffe4;
+}
+
+.detail-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .chip-row.compact {
   margin-top: 12px;
 }
@@ -852,6 +887,14 @@ p {
   font-size: 0.86rem;
 }
 
+.signal-empty {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  color: var(--text-soft);
+  text-align: center;
+}
+
 .room-prop {
   position: absolute;
   z-index: 2;
@@ -1148,6 +1191,23 @@ p {
   border-color: rgba(134, 234, 132, 0.24);
   background: rgba(134, 234, 132, 0.12);
   color: #e3ffe5;
+}
+
+.openclaw-app.is-simplified .scene-note,
+.openclaw-app.is-simplified .signal-card,
+.openclaw-app.is-simplified .zone-legend,
+.openclaw-app.is-simplified .mini-map,
+.openclaw-app.is-simplified .room-prop,
+.openclaw-app.is-simplified .scene-toast {
+  display: none;
+}
+
+.openclaw-app.is-simplified .room-banner {
+  top: 24px;
+}
+
+.openclaw-app.is-simplified .room-floor {
+  inset: 104px 28px 98px;
 }
 
 @media (max-width: 1360px) {

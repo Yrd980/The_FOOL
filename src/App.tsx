@@ -33,6 +33,7 @@ import type {
 } from "./types";
 
 type SelectionKind = "contestant" | "judge" | "ai" | "listener";
+type AudioMode = "nearby" | "focus" | "muted";
 
 type SidebarEntity = {
   selectionId: string;
@@ -58,6 +59,8 @@ type ContestantSeat = ContestantScorecard &
     meter: number;
     teamName: string;
     stageNote: string;
+    availabilityLabel: string;
+    availabilityTone: "available" | "focus" | "busy";
   };
 
 type DetailCard = {
@@ -67,6 +70,7 @@ type DetailCard = {
   description: string;
   stats: Array<{ label: string; value: string }>;
   chips: string[];
+  actions?: Array<{ id: string; label: string; active?: boolean; disabled?: boolean }>;
 };
 
 const formatter = new Intl.NumberFormat("zh-CN");
@@ -85,14 +89,6 @@ const stageTimerMap: Record<StageId, number> = {
 };
 
 const railItems = ["Hall", "Find", "Room", "Acts", "Feed"];
-
-const controlItems = [
-  { label: "Mic", active: true },
-  { label: "Hand", active: false },
-  { label: "Chat", active: false },
-  { label: "Stage", active: false },
-  { label: "Map", active: false },
-];
 
 const listenerSpots = [
   { x: 16, y: 18 },
@@ -178,6 +174,20 @@ const buildContestantGroup = (state: OpenClawContestantState) => {
   return "Listener orbit";
 };
 
+const buildAvailability = (
+  state: OpenClawContestantState,
+): { label: string; tone: "available" | "focus" | "busy" } => {
+  if (state === "speaking" || state === "listening") {
+    return { label: "In convo", tone: "busy" };
+  }
+
+  if (state === "raised-hand" || state === "queued") {
+    return { label: "Available", tone: "available" };
+  }
+
+  return { label: "Focus", tone: "focus" };
+};
+
 function App() {
   const [activeStageId, setActiveStageId] = useState<StageId>(stageDefinitions[0].id);
   const [selectedEntityId, setSelectedEntityId] = useState(
@@ -186,6 +196,9 @@ function App() {
   const [memberQuery, setMemberQuery] = useState("");
   const [interactions, setInteractions] =
     useState<AudienceInteraction[]>(seedAudienceInteractions);
+  const [audioMode, setAudioMode] = useState<AudioMode>("nearby");
+  const [simplifiedView, setSimplifiedView] = useState(false);
+  const [priorityContestantId, setPriorityContestantId] = useState<string | null>(null);
 
   const deferredQuery = useDeferredValue(memberQuery);
 
@@ -300,7 +313,8 @@ function App() {
     const defaultSpeakerId = focusIds[0] ?? orderedIds[0] ?? contestants[0].id;
     const leadingId = audienceSummary.leadingContestantId || orderedIds[0] || contestants[0].id;
 
-    switch (activeStage.id) {
+    const baseConversation = (() => {
+      switch (activeStage.id) {
       case "act-1":
         return {
           speakerId: orderedIds[0] ?? defaultSpeakerId,
@@ -389,7 +403,22 @@ function App() {
           queuedIds: outsideFocusIds.slice(0, 1),
           callout: openClawConversation.nearbyHint,
         };
+      }
+    })();
+
+    if (priorityContestantId && priorityContestantId !== baseConversation.speakerId) {
+      return {
+        ...baseConversation,
+        raisedHandId: priorityContestantId,
+        queuedIds: [
+          priorityContestantId,
+          ...baseConversation.queuedIds.filter((id) => id !== priorityContestantId),
+        ],
+        callout: `${contestantMap[priorityContestantId]?.name ?? "选手"} 被 wave over 到当前 conversation，房间正在为她/他留出切入点。`,
+      };
     }
+
+    return baseConversation;
   }, [
     activeStage.id,
     activeStage.title,
@@ -399,6 +428,7 @@ function App() {
     contestantMap,
     focusTeam,
     leadingTeam,
+    priorityContestantId,
     selectedContestant,
     teams,
   ]);
@@ -448,6 +478,7 @@ function App() {
         }
 
         const seatState = stateCopy[state];
+        const availability = buildAvailability(state);
         const team = resolveTeamForContestant(contestant.id, teams, focusTeam);
         const stageNote =
           state === "speaking"
@@ -469,6 +500,8 @@ function App() {
           meter: seatState.meter,
           teamName: team.name,
           stageNote,
+          availabilityLabel: availability.label,
+          availabilityTone: availability.tone,
         };
       }),
     [
@@ -574,7 +607,7 @@ function App() {
         group: buildContestantGroup(seat.state),
         name: seat.name,
         subtitle: `${seat.seatLabel} · ${seat.teamName}`,
-        status: `${seat.stateLabel} · ${seat.connectionLabel}`,
+        status: `${seat.availabilityLabel} · ${seat.connectionLabel}`,
         badge: seat.stateLabel,
         accent: seat.palette.primary,
         avatar: seat.avatarGlyph,
@@ -637,6 +670,18 @@ function App() {
 
     return scoped.length > 0 ? scoped : [...interactions].slice(-4).reverse();
   }, [focusMemberIds, interactions, queuedIds]);
+  const audibleSignals = useMemo(() => {
+    if (audioMode === "muted") {
+      return [];
+    }
+
+    if (audioMode === "focus") {
+      const focused = roomSignals.filter((event) => event.contestantId === activeSpeakerId);
+      return focused.length > 0 ? focused : roomSignals.slice(0, 2);
+    }
+
+    return roomSignals;
+  }, [activeSpeakerId, audioMode, roomSignals]);
   const activeSeat = openClawSeats.find((seat) => seat.id === activeSpeakerId) ?? openClawSeats[0];
   const queuedSeat = openClawSeats.find((seat) => seat.id === raisedHandId);
   const countdownLabel = `${String(Math.floor(countdown / 60)).padStart(2, "0")}:${String(
@@ -670,6 +715,17 @@ function App() {
           team.submission.headline,
           seat.strengths[0] ?? seat.specialties[0],
           seat.connectionLabel,
+          seat.availabilityLabel,
+        ],
+        actions: [
+          {
+            id: "wave-over",
+            label: seat.state === "speaking" ? "Already live" : "Wave over",
+            active: seat.id === priorityContestantId,
+            disabled: seat.state === "speaking",
+          },
+          { id: "focus-audio", label: "Focus audio", active: audioMode === "focus" },
+          { id: "toggle-view", label: "Simplify view", active: simplifiedView },
         ],
       };
     }
@@ -692,6 +748,10 @@ function App() {
           { label: "Focus", value: focusTeam.name },
         ],
         chips: [judge.style, focusTeam.submission.headline, openClawConversation.roomLabel],
+        actions: [
+          { id: "nearby-audio", label: "Hear nearby", active: audioMode === "nearby" },
+          { id: "toggle-view", label: "Simplify view", active: simplifiedView },
+        ],
       };
     }
 
@@ -715,6 +775,10 @@ function App() {
           { label: "Wit", value: `${Math.round(judge.wit * 100)}%` },
         ],
         chips: [judge.persona, judge.signature, focusTeam.theme],
+        actions: [
+          { id: "mute-audio", label: "Mute all", active: audioMode === "muted" },
+          { id: "toggle-view", label: "Simplify view", active: simplifiedView },
+        ],
       };
     }
 
@@ -733,11 +797,16 @@ function App() {
         { label: "Timer", value: countdownLabel },
       ],
       chips: [activeStage.subtitle, focusTeam.submission.headline, "Passive listener"],
+      actions: [
+        { id: "nearby-audio", label: "Hear nearby", active: audioMode === "nearby" },
+        { id: "toggle-view", label: "Simplify view", active: simplifiedView },
+      ],
     };
   }, [
     activeStage.order,
     activeStage.subtitle,
     activeStage.title,
+    audioMode,
     aiResults.reviews,
     aiResults.summaries,
     audienceSummary.heatIndex,
@@ -748,8 +817,10 @@ function App() {
     interactions,
     listenerEntities,
     openClawSeats,
+    priorityContestantId,
     selectedKind,
     selectedRef,
+    simplifiedView,
     speakerSeats,
     teams,
   ]);
@@ -757,8 +828,34 @@ function App() {
   const roomCallout = activeSeat
     ? `${stageConversation.callout} ${
         queuedSeat ? `${queuedSeat.name} 也在边上举手等待切入。` : openClawConversation.nearbyHint
-      }`
+      } ${audioMode === "muted" ? "你当前听不到房间声音。" : audioMode === "focus" ? "你当前只听主麦。" : "你当前会听到附近对话。"}`
     : openClawConversation.nearbyHint;
+
+  const handleDetailAction = (actionId: string) => {
+    if (actionId === "wave-over" && selectedKind === "contestant") {
+      setPriorityContestantId((current) => (current === selectedRef ? null : selectedRef));
+      return;
+    }
+
+    if (actionId === "focus-audio") {
+      setAudioMode("focus");
+      return;
+    }
+
+    if (actionId === "nearby-audio") {
+      setAudioMode("nearby");
+      return;
+    }
+
+    if (actionId === "mute-audio") {
+      setAudioMode("muted");
+      return;
+    }
+
+    if (actionId === "toggle-view") {
+      setSimplifiedView((current) => !current);
+    }
+  };
 
   const selectEntity = (selectionId: string) => {
     startTransition(() => {
@@ -779,7 +876,7 @@ function App() {
   };
 
   return (
-    <div className="openclaw-app">
+    <div className={`openclaw-app ${simplifiedView ? "is-simplified" : ""}`}>
       <aside className="app-rail">
         <div className="rail-brand">OC</div>
         <div className="rail-actions">
@@ -980,6 +1077,22 @@ function App() {
                 </span>
               ))}
             </div>
+
+            {detailCard.actions && detailCard.actions.length > 0 ? (
+              <div className="detail-actions">
+                {detailCard.actions.map((action) => (
+                  <button
+                    className={`detail-action ${action.active ? "is-active" : ""}`}
+                    disabled={action.disabled}
+                    key={action.id}
+                    onClick={() => handleDetailAction(action.id)}
+                    type="button"
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </article>
         </div>
       </aside>
@@ -994,11 +1107,15 @@ function App() {
             </div>
 
             <div className="dock-actions">
-              <div className="dock-pills">
-                <span className="summary-pill">{`Act ${activeStage.order}`}</span>
-                <span className="summary-pill is-accent">{focusTeam.name}</span>
-                <span className="summary-pill">{`${onlineCount} online`}</span>
-              </div>
+            <div className="dock-pills">
+              <span className="summary-pill">{`Act ${activeStage.order}`}</span>
+              <span className="summary-pill is-accent">{focusTeam.name}</span>
+              <span className="summary-pill">{`Audio ${audioMode}`}</span>
+              <span className={`summary-pill ${simplifiedView ? "is-accent" : ""}`}>
+                {simplifiedView ? "Simple view" : "Rich view"}
+              </span>
+              <span className="summary-pill">{`${onlineCount} online`}</span>
+            </div>
               <div className="stage-switcher">
                 <button onClick={() => moveStage(-1)} type="button">
                   Prev
@@ -1070,19 +1187,23 @@ function App() {
             <span className="tiny-label">Room signals</span>
             <strong>{focusTeam.name}</strong>
             <div className="signal-list">
-              {roomSignals.map((event) => {
-                const contestantName = contestantMap[event.contestantId]?.name ?? "未知选手";
+              {audibleSignals.length > 0 ? (
+                audibleSignals.map((event) => {
+                  const contestantName = contestantMap[event.contestantId]?.name ?? "未知选手";
 
-                return (
-                  <div className={`signal-item signal-item--${event.type}`} key={event.id}>
-                    <div className="signal-item-head">
-                      <strong>{contestantName}</strong>
-                      <span>{event.timestampLabel}</span>
+                  return (
+                    <div className={`signal-item signal-item--${event.type}`} key={event.id}>
+                      <div className="signal-item-head">
+                        <strong>{contestantName}</strong>
+                        <span>{event.timestampLabel}</span>
+                      </div>
+                      <p>{event.content}</p>
                     </div>
-                    <p>{event.content}</p>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="signal-empty">Muted mode is on. No nearby room audio.</div>
+              )}
             </div>
           </article>
 
@@ -1213,15 +1334,41 @@ function App() {
           <div className="scene-toast">{roomCallout}</div>
 
           <div className="control-dock">
-            {controlItems.map((item) => (
-              <button
-                className={`control-button ${item.active ? "is-active" : ""}`}
-                key={item.label}
-                type="button"
-              >
-                {item.label}
-              </button>
-            ))}
+            <button
+              className={`control-button ${audioMode === "nearby" ? "is-active" : ""}`}
+              onClick={() => setAudioMode("nearby")}
+              type="button"
+            >
+              Nearby
+            </button>
+            <button
+              className={`control-button ${audioMode === "focus" ? "is-active" : ""}`}
+              onClick={() => setAudioMode("focus")}
+              type="button"
+            >
+              Focus
+            </button>
+            <button
+              className={`control-button ${audioMode === "muted" ? "is-active" : ""}`}
+              onClick={() => setAudioMode("muted")}
+              type="button"
+            >
+              Mute
+            </button>
+            <button
+              className={`control-button ${simplifiedView ? "is-active" : ""}`}
+              onClick={() => setSimplifiedView((current) => !current)}
+              type="button"
+            >
+              Simple
+            </button>
+            <button
+              className={`control-button ${priorityContestantId ? "is-active" : ""}`}
+              onClick={() => setPriorityContestantId(null)}
+              type="button"
+            >
+              Clear Wave
+            </button>
           </div>
         </section>
       </main>
