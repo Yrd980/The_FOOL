@@ -1,4 +1,4 @@
-import type { ActDefinition } from "../types";
+import type { ActDefinition, AudienceInteraction, OpenClawContestantState } from "../types";
 
 export interface ConversationState {
   speakerId: string | null;
@@ -22,4 +22,38 @@ export interface DeriveConversationStateInput {
   nearbyHint: string;
   contestantNameById: Record<string, string>;
   priorityContestantId: string | null;
+}
+
+export type AudioMode = "nearby" | "focus" | "muted";
+
+export interface RoomSeat {
+  id: string;
+  state: OpenClawContestantState;
+}
+
+export interface BuildRoomViewModelInput {
+  conversationState: ConversationState;
+  orderedContestantIds: string[];
+  interactions: AudienceInteraction[];
+  audioMode: AudioMode;
+  nearbyHint: string;
+  contestantNameById: Record<string, string>;
+}
+
+export interface RoomViewModel {
+  openClawSeats: RoomSeat[];
+  activeSpeakerId: string | null;
+  raisedHandId: string | null;
+  micCount: number;
+  queueCount: number;
+  roomSignals: AudienceInteraction[];
+  audibleSignals: AudienceInteraction[];
+  roomCallout: string;
+}
+
+export interface AppendSeedInteractionInput {
+  current: AudienceInteraction[];
+  contestants: ReadonlyArray<{ id: string; name: string }>;
+  audienceHandles: readonly string[];
+  danmuTemplates: readonly string[];
 }
