@@ -8,12 +8,8 @@ import {
 import {
   aiJudges,
   audienceHandles,
-  contestantOpenClawPresences,
   contestants,
-  danmuTemplates,
   humanJudges,
-  openClawConversation,
-  seedAudienceInteractions,
   stageDefinitions,
 } from "./data";
 import {
@@ -23,9 +19,9 @@ import {
   buildHumanReviews,
   buildTeams,
 } from "./logic";
-import { deriveConversationState } from "./room/deriveConversationState";
+import { deriveConversationState, buildRoomViewModel, useSeedRoomSource } from "./room";
+import type { AudioMode } from "./room";
 import type {
-  AudienceInteraction,
   ContestantOpenClawPresence,
   ContestantScorecard,
   OpenClawContestantState,
@@ -34,7 +30,6 @@ import type {
 } from "./types";
 
 type SelectionKind = "contestant" | "judge" | "ai" | "listener";
-type AudioMode = "nearby" | "focus" | "muted";
 
 type SidebarEntity = {
   selectionId: string;
@@ -194,9 +189,8 @@ function App() {
   const [selectedEntityId, setSelectedEntityId] = useState(
     buildSelectionId("contestant", contestants[0].id),
   );
+  const { interactions, openClawConversation, contestantOpenClawPresences } = useSeedRoomSource();
   const [memberQuery, setMemberQuery] = useState("");
-  const [interactions, setInteractions] =
-    useState<AudienceInteraction[]>(seedAudienceInteractions);
   const [audioMode, setAudioMode] = useState<AudioMode>("nearby");
   const [simplifiedView, setSimplifiedView] = useState(false);
   const [priorityContestantId, setPriorityContestantId] = useState<string | null>(null);
@@ -220,47 +214,6 @@ function App() {
 
     return () => window.clearInterval(timer);
   }, [activeStageTimer]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setInteractions((current) => {
-        const contestant = contestants[current.length % contestants.length];
-        const template = danmuTemplates[current.length % danmuTemplates.length];
-        const cycle = current.length % 6;
-        const type =
-          cycle === 0
-            ? "bet"
-            : cycle === 1
-              ? "like"
-              : cycle === 2
-                ? "danmaku"
-                : cycle === 3
-                  ? "like"
-                  : cycle === 4
-                    ? "boo"
-                    : "danmaku";
-        const amount = type === "bet" ? 8 + ((current.length * 3) % 19) : 1;
-
-        return [
-          ...current,
-          {
-            id: `evt-live-${current.length + 1}`,
-            contestantId: contestant.id,
-            type,
-            source: audienceHandles[current.length % audienceHandles.length],
-            content:
-              type === "bet"
-                ? `${contestant.name} 又被房间追加了 ${amount} 点押注。`
-                : template.replace("{name}", contestant.name),
-            amount,
-            timestampLabel: `20:${String(13 + ((current.length + 1) % 45)).padStart(2, "0")}`,
-          },
-        ];
-      });
-    }, 7000);
-
-    return () => window.clearInterval(timer);
-  }, []);
 
   const contestantDeck = useMemo(
     () => buildContestantDeck(contestants, interactions),
@@ -345,14 +298,32 @@ function App() {
     teams,
   ]);
 
-  const activeSpeakerId = stageConversation.speakerId;
-  const raisedHandId = stageConversation.raisedHandId;
-  const focusMemberIds = new Set(
-    [stageConversation.speakerId, stageConversation.raisedHandId, ...stageConversation.listeningIds].filter(
-      Boolean,
-    ),
+  const roomViewModel = useMemo(
+    () =>
+      buildRoomViewModel({
+        conversationState: stageConversation,
+        orderedContestantIds: contestantDeck.map((c) => c.id),
+        interactions,
+        audioMode,
+        nearbyHint: openClawConversation.nearbyHint,
+        contestantNameById: contestantDeck.reduce<Record<string, string>>((acc, c) => {
+          acc[c.id] = c.name;
+          return acc;
+        }, {}),
+      }),
+    [stageConversation, contestantDeck, interactions, audioMode, openClawConversation.nearbyHint],
   );
-  const queuedIds = new Set(stageConversation.queuedIds.filter(Boolean));
+
+  const { roomCallout, audibleSignals } = roomViewModel;
+
+  const seatStateMap = useMemo(
+    () =>
+      roomViewModel.openClawSeats.reduce<Record<string, OpenClawContestantState>>((acc, seat) => {
+        acc[seat.id] = seat.state;
+        return acc;
+      }, {}),
+    [roomViewModel.openClawSeats],
+  );
 
   const presenceMap = useMemo(
     () =>
@@ -378,17 +349,7 @@ function App() {
           roomY: fallbackPresence?.roomY ?? 44 + index * 2,
         };
 
-        let state: OpenClawContestantState = "muted";
-        if (contestant.id === activeSpeakerId) {
-          state = "speaking";
-        } else if (contestant.id === raisedHandId) {
-          state = "raised-hand";
-        } else if (focusMemberIds.has(contestant.id)) {
-          state = "listening";
-        } else if (queuedIds.has(contestant.id)) {
-          state = "queued";
-        }
-
+        const state: OpenClawContestantState = seatStateMap[contestant.id] ?? "muted";
         const seatState = stateCopy[state];
         const availability = buildAvailability(state);
         const team = resolveTeamForContestant(contestant.id, teams, focusTeam);
@@ -417,14 +378,11 @@ function App() {
         };
       }),
     [
-      activeSpeakerId,
       activeStage.title,
       contestantDeck,
-      focusMemberIds,
       focusTeam,
       presenceMap,
-      queuedIds,
-      raisedHandId,
+      seatStateMap,
       teams,
     ],
   );
@@ -574,38 +532,11 @@ function App() {
     }
   }, [contestantSidebar, listenerEntities, selectedEntityId]);
 
-  const roomSignals = useMemo(() => {
-    const scoped = [...interactions]
-      .filter((event) => focusMemberIds.has(event.contestantId) || queuedIds.has(event.contestantId))
-      .slice(-4)
-      .reverse();
-
-    return scoped.length > 0 ? scoped : [...interactions].slice(-4).reverse();
-  }, [focusMemberIds, interactions, queuedIds]);
-  const audibleSignals = useMemo(() => {
-    if (audioMode === "muted") {
-      return [];
-    }
-
-    if (audioMode === "focus") {
-      const focused = roomSignals.filter((event) => event.contestantId === activeSpeakerId);
-      return focused.length > 0 ? focused : roomSignals.slice(0, 2);
-    }
-
-    return roomSignals;
-  }, [activeSpeakerId, audioMode, roomSignals]);
-  const activeSeat = openClawSeats.find((seat) => seat.id === activeSpeakerId) ?? openClawSeats[0];
-  const queuedSeat = openClawSeats.find((seat) => seat.id === raisedHandId);
   const countdownLabel = `${String(Math.floor(countdown / 60)).padStart(2, "0")}:${String(
     countdown % 60,
   ).padStart(2, "0")}`;
   const onlineCount = openClawSeats.length + listenerEntities.length;
-  const micCount = openClawSeats.filter(
-    (seat) => seat.state === "speaking" || seat.state === "listening",
-  ).length;
-  const queueCount = openClawSeats.filter(
-    (seat) => seat.state === "raised-hand" || seat.state === "queued",
-  ).length;
+  const { micCount, queueCount } = roomViewModel;
 
   const detailCard = useMemo<DetailCard>(() => {
     if (selectedKind === "contestant") {
@@ -736,12 +667,6 @@ function App() {
     speakerSeats,
     teams,
   ]);
-
-  const roomCallout = activeSeat
-    ? `${stageConversation.callout} ${
-        queuedSeat ? `${queuedSeat.name} 也在边上举手等待切入。` : openClawConversation.nearbyHint
-      } ${audioMode === "muted" ? "你当前听不到房间声音。" : audioMode === "focus" ? "你当前只听主麦。" : "你当前会听到附近对话。"}`
-    : openClawConversation.nearbyHint;
 
   const handleDetailAction = (actionId: string) => {
     if (actionId === "wave-over" && selectedKind === "contestant") {
