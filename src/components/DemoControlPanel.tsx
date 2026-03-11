@@ -38,6 +38,7 @@ export function DemoControlPanel({
       <button
         type="button"
         className={`control-button ${audioMode === "nearby" ? "is-active" : ""}`}
+        aria-pressed={audioMode === "nearby"}
         onClick={() => onSetAudioMode("nearby")}
       >
         Hear nearby
@@ -45,6 +46,7 @@ export function DemoControlPanel({
       <button
         type="button"
         className={`control-button ${audioMode === "focus" ? "is-active" : ""}`}
+        aria-pressed={audioMode === "focus"}
         onClick={() => onSetAudioMode("focus")}
       >
         Focus audio
@@ -52,6 +54,7 @@ export function DemoControlPanel({
       <button
         type="button"
         className={`control-button ${audioMode === "muted" ? "is-active" : ""}`}
+        aria-pressed={audioMode === "muted"}
         onClick={() => onSetAudioMode("muted")}
       >
         Mute all
