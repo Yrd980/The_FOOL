@@ -57,3 +57,31 @@ export interface AppendSeedInteractionInput {
   audienceHandles: readonly string[];
   danmuTemplates: readonly string[];
 }
+
+export type RoomKind = "main-stage" | "team-room" | "quiet-orbit";
+
+export interface RoomListItem {
+  id: string;
+  name: string;
+  kind: RoomKind;
+  teamId?: string;
+  memberIds: string[];
+  memberCount: number;
+  audibleSummary: string;
+  statusLabel: string;
+  active: boolean;
+}
+
+export interface RoomDirectory {
+  currentRoom: RoomListItem;
+  rooms: RoomListItem[];
+  switchTargets: Array<{ id: string; name: string }>;
+}
+
+export interface BuildRoomDirectoryInput {
+  currentRoomId: string;
+  conversationState: ConversationState;
+  teams: ReadonlyArray<{ id: string; name: string; members: ReadonlyArray<{ id: string }> }>;
+  orderedContestantIds: string[];
+  listenerEntityIds: string[];
+}
