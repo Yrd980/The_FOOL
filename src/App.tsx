@@ -305,38 +305,33 @@ function App() {
     : leadingTeam;
 
   const stageConversation = useMemo(() => {
-    const roomContestants = contestantDeck.map(({ id, name }) => ({ id, name }));
-    const roomTeams = teams.map(({ id, name, members, submission }) => ({
-      id,
-      name,
-      memberIds: members.map((member) => member.id),
-      submissionHeadline: submission.headline,
-    }));
-    const roomFocusTeam = {
-      id: focusTeam.id,
-      name: focusTeam.name,
-      memberIds: focusTeam.members.map((member) => member.id),
-      submissionHeadline: focusTeam.submission.headline,
-    };
-    const roomLeadingTeam = {
-      id: leadingTeam.id,
-      name: leadingTeam.name,
-      memberIds: leadingTeam.members.map((member) => member.id),
-      submissionHeadline: leadingTeam.submission.headline,
-    };
+    const orderedContestantIds = contestantDeck.map((contestant) => contestant.id);
+    const focusIds = focusTeam.members.map((member) => member.id);
+    const championTeam = teams.find((team) => team.id === aiResults.summaries[0]?.teamId);
+    const championIds = championTeam?.members.map((member) => member.id) ?? [];
+    const contestantNameById = contestantDeck.reduce<Record<string, string>>((acc, contestant) => {
+      acc[contestant.id] = contestant.name;
+      return acc;
+    }, {});
+    const stageFocusTeamName =
+      activeStage.id === "act-8" && championIds.length > 0
+        ? championTeam?.name ?? focusTeam.name
+        : focusTeam.name;
 
     return deriveConversationState({
-      activeStage,
-      contestants: roomContestants,
-      focusTeam: roomFocusTeam,
-      teams: roomTeams,
-      leadingTeam: roomLeadingTeam,
-      championTeamId: aiResults.summaries[0]?.teamId,
-      leadingContestantId: audienceSummary.leadingContestantId,
-      selectedContestantId: selectedContestant?.id,
-      priorityContestantId,
-      fallbackContestantId: contestants[0].id,
+      activeStageId: activeStage.id,
+      activeStageTitle: activeStage.title,
+      orderedContestantIds,
+      focusIds,
+      championIds,
+      leadingContestantId: audienceSummary.leadingContestantId ?? null,
+      defaultSpeakerId: focusIds[0] ?? orderedContestantIds[0] ?? contestants[0]?.id ?? null,
+      selectedContestantId: selectedContestant?.id ?? null,
+      focusTeamName: stageFocusTeamName,
+      focusHeadline: focusTeam.submission.headline,
       nearbyHint: openClawConversation.nearbyHint,
+      contestantNameById,
+      priorityContestantId,
     });
   }, [
     activeStage.id,
@@ -345,7 +340,6 @@ function App() {
     audienceSummary.leadingContestantId,
     contestantDeck,
     focusTeam,
-    leadingTeam,
     priorityContestantId,
     selectedContestant?.id,
     teams,

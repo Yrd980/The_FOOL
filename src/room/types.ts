@@ -1,35 +1,25 @@
 import type { ActDefinition } from "../types";
 
 export interface ConversationState {
-  speakerId: string;
-  raisedHandId: string;
+  speakerId: string | null;
+  raisedHandId: string | null;
   listeningIds: string[];
   queuedIds: string[];
   callout: string;
 }
 
-export interface RoomConversationContestant {
-  id: string;
-  name: string;
-}
-
-export interface RoomConversationTeam {
-  id: string;
-  name: string;
-  memberIds: string[];
-  submissionHeadline: string;
-}
-
 export interface DeriveConversationStateInput {
-  activeStage: Pick<ActDefinition, "id" | "title">;
-  contestants: RoomConversationContestant[];
-  focusTeam: RoomConversationTeam;
-  teams: RoomConversationTeam[];
-  leadingTeam: RoomConversationTeam;
-  championTeamId?: string | null;
-  leadingContestantId?: string;
-  selectedContestantId?: string;
-  priorityContestantId?: string | null;
-  fallbackContestantId: string;
+  activeStageId: ActDefinition["id"];
+  activeStageTitle: string;
+  orderedContestantIds: string[];
+  focusIds: string[];
+  championIds: string[];
+  leadingContestantId: string | null;
+  defaultSpeakerId: string | null;
+  selectedContestantId: string | null;
+  focusTeamName: string;
+  focusHeadline: string;
   nearbyHint: string;
+  contestantNameById: Record<string, string>;
+  priorityContestantId: string | null;
 }

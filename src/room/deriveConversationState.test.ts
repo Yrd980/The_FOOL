@@ -14,45 +14,33 @@ const contestants = [
 
 const [alpha, beta, gamma, delta, epsilon, zeta] = contestants;
 
-const focusTeam = {
-  id: "team-focus",
-  name: "Focus Team",
-  memberIds: [gamma.id, delta.id, epsilon.id],
-  submissionHeadline: "Focus Headline",
-};
-const championTeam = {
-  id: "team-champion",
-  name: "Champion Team",
-  memberIds: [alpha.id, beta.id],
-  submissionHeadline: "Champion Headline",
-};
-const reserveTeam = {
-  id: "team-reserve",
-  name: "Reserve Team",
-  memberIds: [zeta.id],
-  submissionHeadline: "Reserve Headline",
-};
-
 const baseInput = {
-  contestants: [...contestants],
-  focusTeam,
-  teams: [focusTeam, championTeam, reserveTeam],
-  leadingTeam: focusTeam,
-  championTeamId: championTeam.id,
+  orderedContestantIds: contestants.map((contestant) => contestant.id),
+  focusIds: [gamma.id, delta.id, epsilon.id],
+  championIds: [alpha.id, beta.id],
   leadingContestantId: zeta.id,
+  defaultSpeakerId: gamma.id,
   selectedContestantId: epsilon.id,
+  focusTeamName: "Focus Team",
+  focusHeadline: "Focus Headline",
   priorityContestantId: null,
-  fallbackContestantId: alpha.id,
   nearbyHint: "Nearby fallback hint",
+  contestantNameById: Object.fromEntries(contestants.map((contestant) => [contestant.id, contestant.name])),
 };
 
 describe("deriveConversationState", () => {
   it.each<
-    [ActDefinition["id"], string, ReturnType<typeof deriveConversationState>]
+    [
+      ActDefinition["id"],
+      string,
+      Partial<typeof baseInput>,
+      ReturnType<typeof deriveConversationState>,
+    ]
   >([
     [
       "act-1",
       "自我介绍",
+      {},
       {
         speakerId: "alpha",
         raisedHandId: "beta",
@@ -64,6 +52,7 @@ describe("deriveConversationState", () => {
     [
       "act-2",
       "组队偏好",
+      {},
       {
         speakerId: "epsilon",
         raisedHandId: "alpha",
@@ -75,6 +64,7 @@ describe("deriveConversationState", () => {
     [
       "act-3",
       "组织龙虾分组",
+      {},
       {
         speakerId: "gamma",
         raisedHandId: "delta",
@@ -86,6 +76,7 @@ describe("deriveConversationState", () => {
     [
       "act-4",
       "队内讨论",
+      {},
       {
         speakerId: "delta",
         raisedHandId: "gamma",
@@ -97,6 +88,7 @@ describe("deriveConversationState", () => {
     [
       "act-5",
       "项目提交",
+      {},
       {
         speakerId: "gamma",
         raisedHandId: "delta",
@@ -108,6 +100,7 @@ describe("deriveConversationState", () => {
     [
       "act-6",
       "人类观赛点评",
+      {},
       {
         speakerId: "gamma",
         raisedHandId: "zeta",
@@ -119,6 +112,7 @@ describe("deriveConversationState", () => {
     [
       "act-7",
       "AI 评委评审",
+      {},
       {
         speakerId: "gamma",
         raisedHandId: "beta",
@@ -130,6 +124,7 @@ describe("deriveConversationState", () => {
     [
       "act-8",
       "颁奖",
+      { focusTeamName: "Champion Team" },
       {
         speakerId: "alpha",
         raisedHandId: "beta",
@@ -141,6 +136,7 @@ describe("deriveConversationState", () => {
     [
       "act-9",
       "全体共创艺术品",
+      {},
       {
         speakerId: "zeta",
         raisedHandId: "beta",
@@ -152,6 +148,7 @@ describe("deriveConversationState", () => {
     [
       "act-10",
       "人类观众感想",
+      {},
       {
         speakerId: "alpha",
         raisedHandId: "gamma",
@@ -160,11 +157,13 @@ describe("deriveConversationState", () => {
         callout: "开放麦阶段让 conversation 重新散开，主麦开始在房间和看台之间游走。",
       },
     ],
-  ])("returns the exact conversation state for %s", (id, title, expected) => {
+  ])("returns the exact conversation state for %s", (id, title, overrides, expected) => {
     expect(
       deriveConversationState({
         ...baseInput,
-        activeStage: { id, title },
+        ...overrides,
+        activeStageId: id,
+        activeStageTitle: title,
       }),
     ).toEqual(expected);
   });
@@ -173,7 +172,8 @@ describe("deriveConversationState", () => {
     expect(
       deriveConversationState({
         ...baseInput,
-        activeStage: { id: "act-3", title: "组织龙虾分组" },
+        activeStageId: "act-3",
+        activeStageTitle: "组织龙虾分组",
         priorityContestantId: beta.id,
       }),
     ).toEqual({
@@ -189,8 +189,9 @@ describe("deriveConversationState", () => {
     expect(
       deriveConversationState({
         ...baseInput,
-        activeStage: { id: "act-8", title: "颁奖" },
-        championTeamId: null,
+        activeStageId: "act-8",
+        activeStageTitle: "颁奖",
+        championIds: [],
       }),
     ).toEqual({
       speakerId: "gamma",
@@ -205,7 +206,8 @@ describe("deriveConversationState", () => {
     expect(
       deriveConversationState({
         ...baseInput,
-        activeStage: { id: "act-unknown" as ActDefinition["id"], title: "未知阶段" },
+        activeStageId: "act-unknown" as ActDefinition["id"],
+        activeStageTitle: "未知阶段",
       }),
     ).toEqual({
       speakerId: "gamma",
