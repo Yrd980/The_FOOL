@@ -6,6 +6,9 @@ import {
   useRef,
   useState,
 } from "react";
+import ConversationDock from "./components/ConversationDock";
+import PresenceSidebar from "./components/PresenceSidebar";
+import SpatialRoomFloor from "./components/SpatialRoomFloor";
 import {
   aiJudges,
   audienceHandles,
@@ -741,477 +744,70 @@ function App() {
         </div>
       </aside>
 
-      <aside className="member-sidebar">
-        <div className="sidebar-top">
-          <div className="sidebar-brand">
-            <div className="brand-icon">OC</div>
-            <div>
-              <span className="tiny-label">{openClawConversation.subtitle}</span>
-              <h1>{openClawConversation.title}</h1>
-              <p>{openClawConversation.hostLabel}</p>
-            </div>
-          </div>
-
-          <label className="search-box">
-            <input
-              onChange={(event) => setMemberQuery(event.target.value)}
-              placeholder="Search people"
-              type="search"
-              value={memberQuery}
-            />
-            <span>Ctrl K</span>
-          </label>
-
-          <section className="hall-card">
-            <div className="hall-card-head">
-              <div>
-                <span className="tiny-label">Live scene</span>
-                <strong>
-                  Act {activeStage.order} · {activeStage.title}
-                </strong>
-              </div>
-              <b>{countdownLabel}</b>
-            </div>
-            <p>{activeStage.subtitle}</p>
-            <div className="stat-strip">
-              <div className="stat-pill">
-                <span>On mic</span>
-                <strong>{formatter.format(micCount)}</strong>
-              </div>
-              <div className="stat-pill">
-                <span>Queue</span>
-                <strong>{formatter.format(queueCount)}</strong>
-              </div>
-              <div className="stat-pill">
-                <span>Nearby</span>
-                <strong>{formatter.format(listenerEntities.length)}</strong>
-              </div>
-              <div className="stat-pill">
-                <span>Heat</span>
-                <strong>{formatter.format(Math.round(audienceSummary.heatIndex))}</strong>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        <div className="sidebar-scroll">
-          <section className="presence-section">
-            <div className="section-head">
-              <strong>OpenClaw contestants</strong>
-              <span>{filteredContestants.length}</span>
-            </div>
-
-            {[
-              { label: "On mic", items: contestantGroups.onMic },
-              { label: "Queue rail", items: contestantGroups.queue },
-              { label: "Listener orbit", items: contestantGroups.orbit },
-            ].map((group) =>
-              group.items.length > 0 ? (
-                <div className="member-group" key={group.label}>
-                  <div className="member-group-head">
-                    <strong>{group.label}</strong>
-                    <span>{group.items.length}</span>
-                  </div>
-
-                  <div className="member-list">
-                    {group.items.map((entity) => (
-                      <button
-                        className={`member-row ${
-                          selectedEntityId === entity.selectionId ? "is-selected" : ""
-                        }`}
-                        key={entity.selectionId}
-                        onClick={() => selectEntity(entity.selectionId)}
-                        type="button"
-                      >
-                        <span className="member-dot" style={{ background: entity.accent }} />
-                        <span
-                          className="member-avatar member-avatar--contestant"
-                          style={{
-                            background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.92), ${entity.accent})`,
-                          }}
-                        >
-                          {entity.avatar}
-                        </span>
-                        <span className="member-copy">
-                          <strong>{entity.name}</strong>
-                          <span>{entity.subtitle}</span>
-                          <small>{entity.status}</small>
-                        </span>
-                        <em className="member-badge">{entity.badge}</em>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null,
-            )}
-          </section>
-
-          <section className="presence-section is-secondary">
-            <div className="section-head">
-              <strong>Nearby listeners</strong>
-              <span>{filteredListeners.length}</span>
-            </div>
-
-            {[
-              { label: "Observers", items: listenerGroups.observers },
-              { label: "Nearby listeners", items: listenerGroups.nearby },
-            ].map((group) =>
-              group.items.length > 0 ? (
-                <div className="member-group" key={group.label}>
-                  <div className="member-group-head">
-                    <strong>{group.label}</strong>
-                    <span>{group.items.length}</span>
-                  </div>
-
-                  <div className="member-list">
-                    {group.items.map((entity) => (
-                      <button
-                        className={`member-row member-row--listener ${
-                          selectedEntityId === entity.selectionId ? "is-selected" : ""
-                        }`}
-                        key={entity.selectionId}
-                        onClick={() => selectEntity(entity.selectionId)}
-                        type="button"
-                      >
-                        <span className="member-dot" style={{ background: entity.accent }} />
-                        <span
-                          className={`member-avatar member-avatar--${entity.kind}`}
-                          style={{
-                            background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.94), ${entity.accent})`,
-                          }}
-                        >
-                          {entity.avatar}
-                        </span>
-                        <span className="member-copy">
-                          <strong>{entity.name}</strong>
-                          <span>{entity.subtitle}</span>
-                          <small>{entity.status}</small>
-                        </span>
-                        <em className="member-badge">{entity.badge}</em>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null,
-            )}
-          </section>
-
-          <article className="detail-card">
-            <span className="tiny-label">{detailCard.badge}</span>
-            <strong>{detailCard.title}</strong>
-            <p className="detail-subtitle">{detailCard.subtitle}</p>
-            <p className="detail-description">{detailCard.description}</p>
-
-            <div className="detail-stats">
-              {detailCard.stats.map((stat) => (
-                <div className="detail-stat" key={stat.label}>
-                  <span>{stat.label}</span>
-                  <strong>{stat.value}</strong>
-                </div>
-              ))}
-            </div>
-
-            <div className="chip-row">
-              {detailCard.chips.map((chip) => (
-                <span className="chip" key={chip}>
-                  {chip}
-                </span>
-              ))}
-            </div>
-
-            {detailCard.actions && detailCard.actions.length > 0 ? (
-              <div className="detail-actions">
-                {detailCard.actions.map((action) => (
-                  <button
-                    className={`detail-action ${action.active ? "is-active" : ""}`}
-                    disabled={action.disabled}
-                    key={action.id}
-                    onClick={() => handleDetailAction(action.id)}
-                    type="button"
-                  >
-                    {action.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </article>
-        </div>
-      </aside>
+      <PresenceSidebar
+        conversationSubtitle={openClawConversation.subtitle}
+        conversationTitle={openClawConversation.title}
+        conversationHostLabel={openClawConversation.hostLabel}
+        memberQuery={memberQuery}
+        onMemberQueryChange={setMemberQuery}
+        activeStageOrder={activeStage.order}
+        activeStageTitle={activeStage.title}
+        activeStageSubtitle={activeStage.subtitle}
+        countdownLabel={countdownLabel}
+        micCount={micCount}
+        queueCount={queueCount}
+        listenerCount={listenerEntities.length}
+        heatIndex={audienceSummary.heatIndex}
+        filteredContestantCount={filteredContestants.length}
+        filteredListenerCount={filteredListeners.length}
+        contestantGroups={contestantGroups}
+        listenerGroups={listenerGroups}
+        selectedEntityId={selectedEntityId}
+        onSelectEntity={selectEntity}
+        detailCard={detailCard}
+        onDetailAction={handleDetailAction}
+        formatter={formatter}
+      />
 
       <main className="world-shell">
-        <header className="speaker-dock">
-          <div className="speaker-dock-head">
-            <div>
-              <span className="tiny-label">{openClawConversation.roomLabel}</span>
-              <h2>{focusTeam.submission.headline}</h2>
-              <p>{openClawConversation.nearbyHint}</p>
-            </div>
-
-            <div className="dock-actions">
-            <div className="dock-pills">
-              <span className="summary-pill">{`Act ${activeStage.order}`}</span>
-              <span className="summary-pill is-accent">{focusTeam.name}</span>
-              <span className="summary-pill">{`Audio ${audioMode}`}</span>
-              <span className={`summary-pill ${simplifiedView ? "is-accent" : ""}`}>
-                {simplifiedView ? "Simple view" : "Rich view"}
-              </span>
-              <span className="summary-pill">{`${onlineCount} online`}</span>
-            </div>
-              <div className="stage-switcher">
-                <button onClick={() => moveStage(-1)} type="button">
-                  Prev
-                </button>
-                <button onClick={() => moveStage(1)} type="button">
-                  Next
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="speaker-row">
-            {speakerSeats.map((seat) => (
-              <button
-                className={`speaker-seat is-${seat.state} ${
-                  selectedEntityId === seat.selectionId ? "is-selected" : ""
-                }`}
-                key={seat.selectionId}
-                onClick={() => selectEntity(seat.selectionId)}
-                type="button"
-              >
-                <div className="speaker-seat-head">
-                  <span className="seat-corner">{seat.seatLabel}</span>
-                  <span className="seat-state">{seat.stateLabel}</span>
-                </div>
-
-                <span
-                  className="seat-token"
-                  style={{
-                    background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.94), ${seat.palette.primary})`,
-                  }}
-                >
-                  {seat.avatarGlyph}
-                </span>
-
-                <span className="seat-copy">
-                  <strong>{seat.name}</strong>
-                  <span>{seat.title}</span>
-                </span>
-
-                <span className="seat-meter">
-                  <i style={{ width: `${seat.meter}%` }} />
-                  <b>{seat.teamName}</b>
-                </span>
-              </button>
-            ))}
-          </div>
-        </header>
-
-        <section className="world-stage">
-          <div className="stage-glow" />
-          <div className="room-floor" />
-          <div className="conversation-ring" />
-
-          <article className="scene-note">
-            <span className="tiny-label">{openClawConversation.title}</span>
-            <strong>{activeStage.title}</strong>
-            <p>{activeStage.objective}</p>
-            <div className="chip-row compact">
-              {activeStage.deliverables.slice(0, 3).map((deliverable) => (
-                <span className="chip" key={deliverable}>
-                  {deliverable}
-                </span>
-              ))}
-            </div>
-          </article>
-
-          <article className="signal-card">
-            <span className="tiny-label">Room signals</span>
-            <strong>{focusTeam.name}</strong>
-            <div className="signal-list">
-              {audibleSignals.length > 0 ? (
-                audibleSignals.map((event) => {
-                  const contestantName = contestantMap[event.contestantId]?.name ?? "未知选手";
-
-                  return (
-                    <div className={`signal-item signal-item--${event.type}`} key={event.id}>
-                      <div className="signal-item-head">
-                        <strong>{contestantName}</strong>
-                        <span>{event.timestampLabel}</span>
-                      </div>
-                      <p>{event.content}</p>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="signal-empty">Muted mode is on. No nearby room audio.</div>
-              )}
-            </div>
-          </article>
-
-          <div className="room-banner">
-            <div>
-              <span className="tiny-label">{openClawConversation.subtitle}</span>
-              <strong>{openClawConversation.title}</strong>
-              <p>{openClawConversation.hostLabel}</p>
-            </div>
-            <div className="banner-pills">
-              <span>{focusTeam.name}</span>
-              <span>{focusTeam.theme}</span>
-            </div>
-          </div>
-
-          <div className="zone-legend">
-            <span className="zone-pill zone-pill--mic">Mic lane</span>
-            <span className="zone-pill zone-pill--queue">Queue rail</span>
-            <span className="zone-pill zone-pill--nearby">Listener orbit</span>
-          </div>
-
-          <div className="room-prop room-prop--board" />
-          <div className="room-prop room-prop--console" />
-          <div className="room-prop room-prop--bench-left" />
-          <div className="room-prop room-prop--bench-right" />
-          <div className="room-prop room-prop--plant-a" />
-          <div className="room-prop room-prop--plant-b" />
-
-          {listenerEntities
-            .filter((entity) => entity.x !== undefined && entity.y !== undefined)
-            .map((entity) => (
-              <button
-                className={`room-presence room-presence--listener room-presence--${entity.kind} ${
-                  selectedEntityId === entity.selectionId ? "is-selected" : ""
-                }`}
-                key={entity.selectionId}
-                onClick={() => selectEntity(entity.selectionId)}
-                style={{
-                  left: `${entity.x}%`,
-                  top: `${entity.y}%`,
-                  zIndex: Math.round(entity.y ?? 0),
-                }}
-                type="button"
-              >
-                <span className="presence-shadow" />
-                <span
-                  className="presence-token"
-                  style={{
-                    background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.94), ${entity.accent})`,
-                  }}
-                >
-                  {entity.avatar}
-                </span>
-                <span className="presence-label">
-                  <i />
-                  {entity.name}
-                  <em>{entity.badge}</em>
-                </span>
-              </button>
-            ))}
-
-          {openClawSeats.map((seat) => (
-            <button
-              className={`room-presence room-presence--contestant is-${seat.state} ${
-                selectedEntityId === seat.selectionId ? "is-selected" : ""
-              }`}
-              key={seat.selectionId}
-              onClick={() => selectEntity(seat.selectionId)}
-              style={{
-                left: `${seat.roomX}%`,
-                top: `${seat.roomY}%`,
-                zIndex: 200 + Math.round(seat.roomY),
-              }}
-              type="button"
-            >
-              <span className="presence-shadow" />
-              <span
-                className="presence-token"
-                style={{
-                  background: `radial-gradient(circle at 30% 25%, rgba(255,255,255,0.94), ${seat.palette.primary})`,
-                }}
-              >
-                {seat.avatarGlyph}
-              </span>
-              <span className="presence-callout">{seat.seatLabel}</span>
-              <span className="presence-label">
-                <i />
-                {seat.name}
-                <em>{seat.stateLabel}</em>
-              </span>
-            </button>
-          ))}
-
-          <div className="mini-map">
-            <span className="tiny-label">Mini map</span>
-            <div className="mini-map-floor">
-              {listenerEntities
-                .filter((entity) => entity.x !== undefined && entity.y !== undefined)
-                .map((entity) => (
-                  <span
-                    className={`mini-map-dot ${
-                      selectedEntityId === entity.selectionId ? "mini-map-focus" : ""
-                    }`}
-                    key={`map-${entity.selectionId}`}
-                    style={{
-                      background: miniLegend[entity.kind],
-                      left: `${entity.x}%`,
-                      top: `${entity.y}%`,
-                    }}
-                  />
-                ))}
-              {openClawSeats.map((seat) => (
-                <span
-                  className={`mini-map-dot ${
-                    selectedEntityId === seat.selectionId ? "mini-map-focus" : ""
-                  }`}
-                  key={`map-${seat.selectionId}`}
-                  style={{
-                    background: miniLegend.contestant,
-                    left: `${seat.roomX}%`,
-                    top: `${seat.roomY}%`,
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="scene-toast">{roomCallout}</div>
-
-          <div className="control-dock">
-            <button
-              className={`control-button ${audioMode === "nearby" ? "is-active" : ""}`}
-              onClick={() => actions.setAudioMode("nearby")}
-              type="button"
-            >
-              Nearby
-            </button>
-            <button
-              className={`control-button ${audioMode === "focus" ? "is-active" : ""}`}
-              onClick={() => actions.setAudioMode("focus")}
-              type="button"
-            >
-              Focus
-            </button>
-            <button
-              className={`control-button ${audioMode === "muted" ? "is-active" : ""}`}
-              onClick={() => actions.setAudioMode("muted")}
-              type="button"
-            >
-              Mute
-            </button>
-            <button
-              className={`control-button ${simplifiedView ? "is-active" : ""}`}
-              onClick={() => setSimplifiedView((current) => !current)}
-              type="button"
-            >
-              Simple
-            </button>
-            <button
-              className={`control-button ${priorityContestantId ? "is-active" : ""}`}
-              onClick={() => actions.setPriorityContestantId(null)}
-              type="button"
-            >
-              Clear Wave
-            </button>
-          </div>
-        </section>
+        <ConversationDock
+          conversationRoomLabel={openClawConversation.roomLabel}
+          focusHeadline={focusTeam.submission.headline}
+          conversationNearbyHint={openClawConversation.nearbyHint}
+          activeStageOrder={activeStage.order}
+          focusTeamName={focusTeam.name}
+          audioMode={audioMode}
+          simplifiedView={simplifiedView}
+          onlineCount={onlineCount}
+          speakerSeats={speakerSeats}
+          selectedEntityId={selectedEntityId}
+          onSelectEntity={selectEntity}
+          onMoveStage={moveStage}
+        />
+        <SpatialRoomFloor
+          conversationTitle={openClawConversation.title}
+          activeStageTitle={activeStage.title}
+          activeStageObjective={activeStage.objective}
+          activeStageDeliverables={activeStage.deliverables}
+          focusTeamName={focusTeam.name}
+          focusTeamTheme={focusTeam.theme}
+          conversationSubtitle={openClawConversation.subtitle}
+          conversationHostLabel={openClawConversation.hostLabel}
+          audibleSignals={audibleSignals}
+          contestantMap={contestantMap}
+          listenerEntities={listenerEntities}
+          openClawSeats={openClawSeats}
+          selectedEntityId={selectedEntityId}
+          onSelectEntity={selectEntity}
+          miniLegend={miniLegend}
+          roomCallout={roomCallout}
+          audioMode={audioMode}
+          simplifiedView={simplifiedView}
+          priorityContestantId={priorityContestantId}
+          onSetAudioMode={actions.setAudioMode}
+          onToggleSimplifiedView={() => setSimplifiedView((current) => !current)}
+          onClearPriorityContestant={() => actions.setPriorityContestantId(null)}
+        />
       </main>
     </div>
   );
