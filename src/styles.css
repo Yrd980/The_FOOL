@@ -1193,6 +1193,16 @@ p {
   color: #e3ffe5;
 }
 
+.demo-control-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
 .openclaw-app.is-simplified .scene-note,
 .openclaw-app.is-simplified .signal-card,
 .openclaw-app.is-simplified .zone-legend,

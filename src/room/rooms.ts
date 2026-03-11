@@ -32,7 +32,7 @@ const buildTeamRooms = (
     const memberIds = team.members.map((m) => m.id);
     return {
       id: `team-room-${index + 1}`,
-      name: team.name,
+      name: `Team Room ${index + 1}`,
       kind: "team-room" as const,
       teamId: team.id,
       memberIds,

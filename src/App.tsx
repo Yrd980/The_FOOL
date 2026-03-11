@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import ConversationDock from "./components/ConversationDock";
+import { DemoControlPanel } from "./components/DemoControlPanel";
 import PresenceSidebar from "./components/PresenceSidebar";
 import SpatialRoomFloor from "./components/SpatialRoomFloor";
 import {
@@ -313,7 +314,7 @@ function App() {
     ],
   );
 
-  const { snapshot, roomDirectory: _roomDirectory, roomViewModel, actions } = useSeedRoomSource(hookInputs);
+  const { snapshot, roomDirectory, roomViewModel, actions } = useSeedRoomSource(hookInputs);
 
   // Update the ref so next render uses current interactions
   interactionsRef.current = snapshot.interactions;
@@ -572,8 +573,6 @@ function App() {
             active: seat.id === priorityContestantId,
             disabled: seat.state === "speaking",
           },
-          { id: "focus-audio", label: "Focus audio", active: audioMode === "focus" },
-          { id: "toggle-view", label: "Simplify view", active: simplifiedView },
         ],
       };
     }
@@ -596,10 +595,7 @@ function App() {
           { label: "Focus", value: focusTeam.name },
         ],
         chips: [judge.style, focusTeam.submission.headline, openClawConversation.roomLabel],
-        actions: [
-          { id: "nearby-audio", label: "Hear nearby", active: audioMode === "nearby" },
-          { id: "toggle-view", label: "Simplify view", active: simplifiedView },
-        ],
+        actions: [],
       };
     }
 
@@ -623,10 +619,7 @@ function App() {
           { label: "Wit", value: `${Math.round(judge.wit * 100)}%` },
         ],
         chips: [judge.persona, judge.signature, focusTeam.theme],
-        actions: [
-          { id: "mute-audio", label: "Mute all", active: audioMode === "muted" },
-          { id: "toggle-view", label: "Simplify view", active: simplifiedView },
-        ],
+        actions: [],
       };
     }
 
@@ -645,10 +638,7 @@ function App() {
         { label: "Timer", value: countdownLabel },
       ],
       chips: [activeStage.subtitle, focusTeam.submission.headline, "Passive listener"],
-      actions: [
-        { id: "nearby-audio", label: "Hear nearby", active: audioMode === "nearby" },
-        { id: "toggle-view", label: "Simplify view", active: simplifiedView },
-      ],
+      actions: [],
     };
   }, [
     activeStage.order,
@@ -783,6 +773,17 @@ function App() {
           selectedEntityId={selectedEntityId}
           onSelectEntity={selectEntity}
           onMoveStage={moveStage}
+        />
+        <DemoControlPanel
+          currentRoomId={snapshot.currentRoomId}
+          audioMode={snapshot.audioMode}
+          feedPaused={snapshot.feedPaused}
+          roomSwitchTargets={roomDirectory.rooms.map((r) => ({ id: r.id, name: r.name }))}
+          onSwitchRoom={actions.switchRoom}
+          onSetAudioMode={actions.setAudioMode}
+          onToggleFeedPaused={actions.toggleFeedPaused}
+          onInjectScenario={actions.injectScenario}
+          onResetDemo={actions.resetDemo}
         />
         <SpatialRoomFloor
           conversationTitle={openClawConversation.title}
