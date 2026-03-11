@@ -1,6 +1,7 @@
 export { deriveConversationState } from "./deriveConversationState";
 export { buildRoomViewModel } from "./buildRoomViewModel";
-export { appendSeedInteraction } from "./seedRoomSource";
+export { appendSeedInteraction, reduceRoomAction, createInitialSnapshot } from "./seedRoomSource";
+export { buildRoomDirectory } from "./rooms";
 export { useSeedRoomSource } from "./useSeedRoomSource";
 export type {
   AudioMode,
@@ -10,4 +11,14 @@ export type {
   RoomSeat,
   RoomViewModel,
   AppendSeedInteractionInput,
+  RoomKind,
+  RoomListItem,
+  RoomDirectory,
+  BuildRoomDirectoryInput,
+  ScenarioOverride,
+  RoomSourceSnapshot,
+  RoomAction,
+  RoomActionApi,
+  SeedRoomSourceInputs,
+  SeedRoomSourceResult,
 } from "./types";

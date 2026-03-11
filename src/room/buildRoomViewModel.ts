@@ -1,5 +1,5 @@
 import type { AudienceInteraction, OpenClawContestantState } from "../types";
-import type { BuildRoomViewModelInput, RoomSeat, RoomViewModel } from "./types";
+import type { BuildRoomViewModelInput, RoomSeat, RoomViewModel, ScenarioOverride } from "./types";
 
 const assignState = (
   contestantId: string,
@@ -65,6 +65,55 @@ const buildCallout = (
   return `${conversationCallout} ${queueHint} ${audioHint}`;
 };
 
+const applyScenarioOverride = (
+  viewModel: RoomViewModel,
+  override: ScenarioOverride | undefined,
+  currentRoomId: string | undefined,
+): RoomViewModel => {
+  if (!override || override.type === "none") return viewModel;
+  if (currentRoomId !== undefined && override.targetRoomId !== currentRoomId) return viewModel;
+
+  if (override.type === "quiet-room") {
+    return {
+      ...viewModel,
+      activeSpeakerId: null,
+      audibleSignals: [],
+      roomCallout: "This room is quiet right now.",
+    };
+  }
+
+  if (override.type === "empty-room") {
+    return {
+      ...viewModel,
+      openClawSeats: viewModel.openClawSeats.map((seat) => ({ ...seat, state: "muted" as const })),
+      activeSpeakerId: null,
+      audibleSignals: [],
+      micCount: 0,
+      queueCount: 0,
+      roomCallout: "This room is empty.",
+    };
+  }
+
+  if (override.type === "wave-over" && override.targetContestantId) {
+    const alreadyQueued = viewModel.openClawSeats.some(
+      (seat) =>
+        seat.id === override.targetContestantId &&
+        (seat.state === "queued" || seat.state === "raised-hand" || seat.state === "speaking"),
+    );
+    if (alreadyQueued) return viewModel;
+
+    return {
+      ...viewModel,
+      openClawSeats: viewModel.openClawSeats.map((seat) =>
+        seat.id === override.targetContestantId ? { ...seat, state: "queued" as const } : seat,
+      ),
+      queueCount: viewModel.queueCount + 1,
+    };
+  }
+
+  return viewModel;
+};
+
 export const buildRoomViewModel = ({
   conversationState,
   orderedContestantIds,
@@ -72,6 +121,8 @@ export const buildRoomViewModel = ({
   audioMode,
   nearbyHint,
   contestantNameById,
+  scenarioOverride,
+  currentRoomId,
 }: BuildRoomViewModelInput): RoomViewModel => {
   const { speakerId, raisedHandId, listeningIds, queuedIds, callout } = conversationState;
 
@@ -98,7 +149,7 @@ export const buildRoomViewModel = ({
   const raisedHandName = raisedHandId ? contestantNameById[raisedHandId] ?? null : null;
   const roomCallout = buildCallout(callout, raisedHandName, nearbyHint, audioMode, speakerId !== null);
 
-  return {
+  const baseViewModel: RoomViewModel = {
     openClawSeats,
     activeSpeakerId: speakerId,
     raisedHandId,
@@ -108,4 +159,6 @@ export const buildRoomViewModel = ({
     audibleSignals,
     roomCallout,
   };
+
+  return applyScenarioOverride(baseViewModel, scenarioOverride, currentRoomId);
 };

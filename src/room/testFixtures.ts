@@ -1,4 +1,4 @@
-import type { BuildRoomDirectoryInput, ConversationState } from "./types";
+import type { BuildRoomDirectoryInput, ConversationState, RoomSourceSnapshot } from "./types";
 
 export const createRoomDirectoryInput = (
   overrides: Partial<BuildRoomDirectoryInput> = {},
@@ -35,4 +35,19 @@ const createConversationState = (): ConversationState => ({
   listeningIds: ["glass-sea", "butter-knife", "speckled-playwright"],
   queuedIds: ["paperclip-captain"],
   callout: "Glass Sea is speaking on the main stage.",
+});
+
+export const createSeedRoomSnapshot = (
+  overrides: Partial<RoomSourceSnapshot> = {},
+): RoomSourceSnapshot => ({
+  activeStageId: "act-1",
+  currentRoomId: "main-stage",
+  selectedContestantId: null,
+  audioMode: "nearby",
+  feedPaused: false,
+  interactions: [],
+  priorityContestantId: null,
+  scenarioOverride: { type: "none" },
+  currentUserMode: "perimeter",
+  ...overrides,
 });

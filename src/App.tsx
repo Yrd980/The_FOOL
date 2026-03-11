@@ -3,13 +3,17 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
   aiJudges,
   audienceHandles,
   contestants,
+  contestantOpenClawPresences,
   humanJudges,
+  openClawConversation,
+  seedAudienceInteractions,
   stageDefinitions,
 } from "./data";
 import {
@@ -19,8 +23,7 @@ import {
   buildHumanReviews,
   buildTeams,
 } from "./logic";
-import { deriveConversationState, buildRoomViewModel, useSeedRoomSource } from "./room";
-import type { AudioMode } from "./room";
+import { useSeedRoomSource } from "./room";
 import type {
   ContestantOpenClawPresence,
   ContestantScorecard,
@@ -189,11 +192,8 @@ function App() {
   const [selectedEntityId, setSelectedEntityId] = useState(
     buildSelectionId("contestant", contestants[0].id),
   );
-  const { interactions, openClawConversation, contestantOpenClawPresences } = useSeedRoomSource();
   const [memberQuery, setMemberQuery] = useState("");
-  const [audioMode, setAudioMode] = useState<AudioMode>("nearby");
   const [simplifiedView, setSimplifiedView] = useState(false);
-  const [priorityContestantId, setPriorityContestantId] = useState<string | null>(null);
 
   const deferredQuery = useDeferredValue(memberQuery);
 
@@ -215,9 +215,17 @@ function App() {
     return () => window.clearInterval(timer);
   }, [activeStageTimer]);
 
+  // Use a ref to break the circular dependency between the hook (which owns interactions)
+  // and the business derivations (which need interactions). On first render, use initial seed
+  // data. On subsequent renders, use the previous render's snapshot.interactions.
+  const interactionsRef = useRef(seedAudienceInteractions);
+
+  const [selectedKind, selectedRef] = parseSelectionId(selectedEntityId);
+
+  // Business derivations computed from latest available interactions
   const contestantDeck = useMemo(
-    () => buildContestantDeck(contestants, interactions),
-    [interactions],
+    () => buildContestantDeck(contestants, interactionsRef.current),
+    [interactionsRef.current],
   );
 
   const contestantMap = useMemo(
@@ -241,14 +249,13 @@ function App() {
   );
 
   const audienceSummary = useMemo(
-    () => buildAudienceSummary(contestantDeck, interactions, teams),
-    [contestantDeck, interactions, teams],
+    () => buildAudienceSummary(contestantDeck, interactionsRef.current, teams),
+    [contestantDeck, interactionsRef.current, teams],
   );
 
   const humanReviews = useMemo(() => buildHumanReviews(teams, humanJudges), [teams]);
   const aiResults = useMemo(() => buildAiReviewSummary(teams, aiJudges), [teams]);
 
-  const [selectedKind, selectedRef] = parseSelectionId(selectedEntityId);
   const fallbackTeam = teams[0]!;
   const leadingTeam = teamMap[audienceSummary.leadingTeamId] ?? fallbackTeam;
   const selectedContestant =
@@ -257,63 +264,58 @@ function App() {
     ? resolveTeamForContestant(selectedContestant.id, teams, leadingTeam)
     : leadingTeam;
 
-  const stageConversation = useMemo(() => {
-    const orderedContestantIds = contestantDeck.map((contestant) => contestant.id);
-    const focusIds = focusTeam.members.map((member) => member.id);
-    const championTeam = teams.find((team) => team.id === aiResults.summaries[0]?.teamId);
-    const championIds = championTeam?.members.map((member) => member.id) ?? [];
-    const contestantNameById = contestantDeck.reduce<Record<string, string>>((acc, contestant) => {
-      acc[contestant.id] = contestant.name;
-      return acc;
-    }, {});
-    const stageFocusTeamName =
-      activeStage.id === "act-8" && championIds.length > 0
-        ? championTeam?.name ?? focusTeam.name
-        : focusTeam.name;
-
-    return deriveConversationState({
-      activeStageId: activeStage.id,
-      activeStageTitle: activeStage.title,
-      orderedContestantIds,
-      focusIds,
-      championIds,
-      leadingContestantId: audienceSummary.leadingContestantId ?? null,
-      defaultSpeakerId: focusIds[0] ?? orderedContestantIds[0] ?? contestants[0]?.id ?? null,
-      selectedContestantId: selectedContestant?.id ?? null,
-      focusTeamName: stageFocusTeamName,
-      focusHeadline: focusTeam.submission.headline,
-      nearbyHint: openClawConversation.nearbyHint,
-      contestantNameById,
-      priorityContestantId,
-    });
-  }, [
-    activeStage.id,
-    activeStage.title,
-    aiResults.summaries,
-    audienceSummary.leadingContestantId,
-    contestantDeck,
-    focusTeam,
-    priorityContestantId,
-    selectedContestant?.id,
-    teams,
-  ]);
-
-  const roomViewModel = useMemo(
+  const contestantNameById = useMemo(
     () =>
-      buildRoomViewModel({
-        conversationState: stageConversation,
-        orderedContestantIds: contestantDeck.map((c) => c.id),
-        interactions,
-        audioMode,
-        nearbyHint: openClawConversation.nearbyHint,
-        contestantNameById: contestantDeck.reduce<Record<string, string>>((acc, c) => {
-          acc[c.id] = c.name;
-          return acc;
-        }, {}),
-      }),
-    [stageConversation, contestantDeck, interactions, audioMode, openClawConversation.nearbyHint],
+      contestantDeck.reduce<Record<string, string>>((acc, c) => {
+        acc[c.id] = c.name;
+        return acc;
+      }, {}),
+    [contestantDeck],
   );
 
+  // Build listener entity IDs for the room directory
+  const listenerEntityIds = useMemo(() => {
+    const judgeIds = humanJudges.map((j) => j.id);
+    const aiIds = aiJudges.map((j) => j.id);
+    return [...judgeIds, ...aiIds];
+  }, []);
+
+  // Hook inputs — derived from business logic
+  const hookInputs = useMemo(
+    () => ({
+      contestantDeck,
+      teams,
+      focusTeam,
+      aiResults,
+      audienceSummary,
+      activeStageId: activeStage.id,
+      activeStageTitle: activeStage.title,
+      nearbyHint: openClawConversation.nearbyHint,
+      contestantNameById,
+      selectedContestantId: selectedContestant?.id ?? null,
+      focusHeadline: focusTeam.submission.headline,
+      listenerEntityIds,
+    }),
+    [
+      contestantDeck,
+      teams,
+      focusTeam,
+      aiResults,
+      audienceSummary,
+      activeStage.id,
+      activeStage.title,
+      contestantNameById,
+      selectedContestant?.id,
+      listenerEntityIds,
+    ],
+  );
+
+  const { snapshot, roomDirectory: _roomDirectory, roomViewModel, actions } = useSeedRoomSource(hookInputs);
+
+  // Update the ref so next render uses current interactions
+  interactionsRef.current = snapshot.interactions;
+
+  const { interactions, audioMode, priorityContestantId } = snapshot;
   const { roomCallout, audibleSignals } = roomViewModel;
 
   const seatStateMap = useMemo(
@@ -670,22 +672,24 @@ function App() {
 
   const handleDetailAction = (actionId: string) => {
     if (actionId === "wave-over" && selectedKind === "contestant") {
-      setPriorityContestantId((current) => (current === selectedRef ? null : selectedRef));
+      actions.setPriorityContestantId(
+        priorityContestantId === selectedRef ? null : selectedRef,
+      );
       return;
     }
 
     if (actionId === "focus-audio") {
-      setAudioMode("focus");
+      actions.setAudioMode("focus");
       return;
     }
 
     if (actionId === "nearby-audio") {
-      setAudioMode("nearby");
+      actions.setAudioMode("nearby");
       return;
     }
 
     if (actionId === "mute-audio") {
-      setAudioMode("muted");
+      actions.setAudioMode("muted");
       return;
     }
 
@@ -1173,21 +1177,21 @@ function App() {
           <div className="control-dock">
             <button
               className={`control-button ${audioMode === "nearby" ? "is-active" : ""}`}
-              onClick={() => setAudioMode("nearby")}
+              onClick={() => actions.setAudioMode("nearby")}
               type="button"
             >
               Nearby
             </button>
             <button
               className={`control-button ${audioMode === "focus" ? "is-active" : ""}`}
-              onClick={() => setAudioMode("focus")}
+              onClick={() => actions.setAudioMode("focus")}
               type="button"
             >
               Focus
             </button>
             <button
               className={`control-button ${audioMode === "muted" ? "is-active" : ""}`}
-              onClick={() => setAudioMode("muted")}
+              onClick={() => actions.setAudioMode("muted")}
               type="button"
             >
               Mute
@@ -1201,7 +1205,7 @@ function App() {
             </button>
             <button
               className={`control-button ${priorityContestantId ? "is-active" : ""}`}
-              onClick={() => setPriorityContestantId(null)}
+              onClick={() => actions.setPriorityContestantId(null)}
               type="button"
             >
               Clear Wave

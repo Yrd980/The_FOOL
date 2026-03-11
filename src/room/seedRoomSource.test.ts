@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { appendSeedInteraction } from "./seedRoomSource";
+import { appendSeedInteraction, reduceRoomAction } from "./seedRoomSource";
+import { createSeedRoomSnapshot } from "./testFixtures";
 import type { AudienceInteraction } from "../types";
 
 const contestants = [
@@ -73,5 +74,88 @@ describe("appendSeedInteraction", () => {
 
     expect(event.type).toBe("bet");
     expect(event.amount).toBe(8 + ((0 * 3) % 19));
+  });
+});
+
+describe("reduceRoomAction", () => {
+  it("switches rooms without changing speaker state", () => {
+    const state = createSeedRoomSnapshot();
+    const next = reduceRoomAction(state, { type: "switch-room", roomId: "team-room-1" });
+    expect(next.currentRoomId).toBe("team-room-1");
+    expect(next.priorityContestantId).toBeNull();
+  });
+
+  it("keeps join/leave idempotent", () => {
+    const state = createSeedRoomSnapshot();
+    const joined = reduceRoomAction(state, { type: "join-conversation" });
+    expect(joined.currentUserMode).toBe("listening");
+    expect(reduceRoomAction(joined, { type: "join-conversation" }).currentUserMode).toBe("listening");
+    expect(reduceRoomAction(joined, { type: "leave-conversation" }).currentUserMode).toBe("perimeter");
+  });
+
+  it("supports audio-mode, pause, scenario, and reset", () => {
+    const state = createSeedRoomSnapshot();
+    const focused = reduceRoomAction(state, { type: "set-audio-mode", mode: "focus" });
+    expect(focused.audioMode).toBe("focus");
+    expect(reduceRoomAction(focused, { type: "toggle-feed-paused" }).feedPaused).toBe(true);
+
+    const withScenario = reduceRoomAction(state, {
+      type: "inject-scenario",
+      scenario: "quiet-room",
+      targetRoomId: "team-room-1",
+    });
+    expect(withScenario.scenarioOverride).toMatchObject({ type: "quiet-room", targetRoomId: "team-room-1" });
+
+    const reset = reduceRoomAction(withScenario, { type: "reset-demo" });
+    expect(reset.currentRoomId).toBe("main-stage");
+    expect(reset.audioMode).toBe("nearby");
+    expect(reset.feedPaused).toBe(false);
+  });
+
+  it("falls back to main-stage for unknown room", () => {
+    const state = createSeedRoomSnapshot();
+    expect(reduceRoomAction(state, { type: "switch-room", roomId: "missing" }).currentRoomId).toBe("main-stage");
+  });
+
+  it("wave-over requires main-stage and selectedContestantId", () => {
+    const state = createSeedRoomSnapshot({ selectedContestantId: "glass-sea" });
+    const result = reduceRoomAction(state, {
+      type: "inject-scenario",
+      scenario: "wave-over",
+      targetRoomId: "main-stage",
+    });
+    expect(result.scenarioOverride).toMatchObject({
+      type: "wave-over",
+      targetRoomId: "main-stage",
+      targetContestantId: "glass-sea",
+    });
+  });
+
+  it("wave-over is no-op without selectedContestantId", () => {
+    const state = createSeedRoomSnapshot();
+    const result = reduceRoomAction(state, {
+      type: "inject-scenario",
+      scenario: "wave-over",
+      targetRoomId: "main-stage",
+    });
+    expect(result.scenarioOverride).toMatchObject({ type: "none" });
+  });
+
+  it("wave-over is no-op when targetRoomId is not main-stage", () => {
+    const state = createSeedRoomSnapshot({ selectedContestantId: "glass-sea" });
+    const result = reduceRoomAction(state, {
+      type: "inject-scenario",
+      scenario: "wave-over",
+      targetRoomId: "team-room-1",
+    });
+    expect(result.scenarioOverride).toMatchObject({ type: "none" });
+  });
+
+  it("inject-scenario none clears override", () => {
+    const state = createSeedRoomSnapshot({
+      scenarioOverride: { type: "quiet-room", targetRoomId: "team-room-1" },
+    });
+    const result = reduceRoomAction(state, { type: "inject-scenario", scenario: "none" });
+    expect(result.scenarioOverride).toMatchObject({ type: "none" });
   });
 });

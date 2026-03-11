@@ -38,6 +38,8 @@ export interface BuildRoomViewModelInput {
   audioMode: AudioMode;
   nearbyHint: string;
   contestantNameById: Record<string, string>;
+  scenarioOverride?: ScenarioOverride;
+  currentRoomId?: string;
 }
 
 export interface RoomViewModel {
@@ -84,4 +86,64 @@ export interface BuildRoomDirectoryInput {
   teams: ReadonlyArray<{ id: string; name: string; members: ReadonlyArray<{ id: string }> }>;
   orderedContestantIds: string[];
   listenerEntityIds: string[];
+}
+
+export type ScenarioOverride =
+  | { type: "none" }
+  | { type: "wave-over" | "quiet-room" | "empty-room"; targetRoomId: string; targetContestantId?: string };
+
+export interface RoomSourceSnapshot {
+  activeStageId: string;
+  currentRoomId: string;
+  selectedContestantId: string | null;
+  audioMode: AudioMode;
+  feedPaused: boolean;
+  interactions: AudienceInteraction[];
+  priorityContestantId: string | null;
+  scenarioOverride: ScenarioOverride;
+  currentUserMode: "perimeter" | "listening";
+}
+
+export type RoomAction =
+  | { type: "switch-room"; roomId: string }
+  | { type: "join-conversation" }
+  | { type: "leave-conversation" }
+  | { type: "set-audio-mode"; mode: AudioMode }
+  | { type: "toggle-feed-paused" }
+  | { type: "inject-scenario"; scenario: string; targetRoomId?: string; targetContestantId?: string }
+  | { type: "reset-demo" };
+
+export interface RoomActionApi {
+  switchRoom: (roomId: string) => void;
+  joinConversation: () => void;
+  leaveConversation: () => void;
+  setAudioMode: (mode: AudioMode) => void;
+  toggleFeedPaused: () => void;
+  injectScenario: (scenario: string, targetRoomId?: string) => void;
+  resetDemo: () => void;
+  setActiveStageId: (stageId: string) => void;
+  setSelectedContestantId: (id: string | null) => void;
+  setPriorityContestantId: (id: string | null) => void;
+}
+
+export interface SeedRoomSourceInputs {
+  contestantDeck: ReadonlyArray<{ id: string; name: string }>;
+  teams: ReadonlyArray<{ id: string; name: string; members: ReadonlyArray<{ id: string }> }>;
+  focusTeam: { name: string; submission: { headline: string }; members: ReadonlyArray<{ id: string }> };
+  aiResults: { summaries: ReadonlyArray<{ teamId: string }> };
+  audienceSummary: { leadingContestantId: string; leadingTeamId: string };
+  activeStageId: string;
+  activeStageTitle: string;
+  nearbyHint: string;
+  contestantNameById: Record<string, string>;
+  selectedContestantId: string | null;
+  focusHeadline: string;
+  listenerEntityIds: string[];
+}
+
+export interface SeedRoomSourceResult {
+  snapshot: RoomSourceSnapshot;
+  roomDirectory: RoomDirectory;
+  roomViewModel: RoomViewModel;
+  actions: RoomActionApi;
 }
