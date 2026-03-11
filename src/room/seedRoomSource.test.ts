@@ -112,6 +112,14 @@ describe("reduceRoomAction", () => {
     expect(reset.feedPaused).toBe(false);
   });
 
+  it("reset-demo preserves activeStageId", () => {
+    const state = createSeedRoomSnapshot({ activeStageId: "act-5", currentRoomId: "team-room-1", feedPaused: true });
+    const reset = reduceRoomAction(state, { type: "reset-demo" });
+    expect(reset.activeStageId).toBe("act-5");
+    expect(reset.currentRoomId).toBe("main-stage");
+    expect(reset.feedPaused).toBe(false);
+  });
+
   it("falls back to main-stage for unknown room", () => {
     const state = createSeedRoomSnapshot();
     expect(reduceRoomAction(state, { type: "switch-room", roomId: "missing" }).currentRoomId).toBe("main-stage");

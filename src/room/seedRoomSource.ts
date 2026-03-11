@@ -64,15 +64,11 @@ export const reduceRoomAction = (
   action: RoomAction,
 ): RoomSourceSnapshot => {
   switch (action.type) {
-    case "switch-room": {
-      if (VALID_ROOM_IDS.has(action.roomId)) {
-        return { ...state, currentRoomId: action.roomId };
-      }
-      if (!VALID_ROOM_IDS.has(state.currentRoomId)) {
-        return { ...state, currentRoomId: "main-stage" };
-      }
-      return { ...state, currentRoomId: "main-stage" };
-    }
+    case "switch-room":
+      return {
+        ...state,
+        currentRoomId: VALID_ROOM_IDS.has(action.roomId) ? action.roomId : "main-stage",
+      };
     case "join-conversation":
       return state.currentUserMode === "listening"
         ? state
@@ -115,7 +111,7 @@ export const reduceRoomAction = (
       return state;
     }
     case "reset-demo":
-      return createInitialSnapshot();
+      return createInitialSnapshot({ activeStageId: state.activeStageId });
     default:
       return state;
   }
