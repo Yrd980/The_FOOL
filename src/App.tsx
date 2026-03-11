@@ -305,16 +305,35 @@ function App() {
     : leadingTeam;
 
   const stageConversation = useMemo(() => {
+    const roomContestants = contestantDeck.map(({ id, name }) => ({ id, name }));
+    const roomTeams = teams.map(({ id, name, members, submission }) => ({
+      id,
+      name,
+      memberIds: members.map((member) => member.id),
+      submissionHeadline: submission.headline,
+    }));
+    const roomFocusTeam = {
+      id: focusTeam.id,
+      name: focusTeam.name,
+      memberIds: focusTeam.members.map((member) => member.id),
+      submissionHeadline: focusTeam.submission.headline,
+    };
+    const roomLeadingTeam = {
+      id: leadingTeam.id,
+      name: leadingTeam.name,
+      memberIds: leadingTeam.members.map((member) => member.id),
+      submissionHeadline: leadingTeam.submission.headline,
+    };
+
     return deriveConversationState({
       activeStage,
-      contestantDeck,
-      contestantMap,
-      focusTeam,
-      teams,
-      leadingTeam,
-      aiSummaries: aiResults.summaries,
-      audienceSummary,
-      selectedContestant,
+      contestants: roomContestants,
+      focusTeam: roomFocusTeam,
+      teams: roomTeams,
+      leadingTeam: roomLeadingTeam,
+      championTeamId: aiResults.summaries[0]?.teamId,
+      leadingContestantId: audienceSummary.leadingContestantId,
+      selectedContestantId: selectedContestant?.id,
       priorityContestantId,
       fallbackContestantId: contestants[0].id,
       nearbyHint: openClawConversation.nearbyHint,
@@ -325,11 +344,10 @@ function App() {
     aiResults.summaries,
     audienceSummary.leadingContestantId,
     contestantDeck,
-    contestantMap,
     focusTeam,
     leadingTeam,
     priorityContestantId,
-    selectedContestant,
+    selectedContestant?.id,
     teams,
   ]);
 

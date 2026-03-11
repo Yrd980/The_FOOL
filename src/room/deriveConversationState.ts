@@ -4,26 +4,25 @@ const isPresent = (value: string | undefined | null): value is string => Boolean
 
 export const deriveConversationState = ({
   activeStage,
-  contestantDeck,
-  contestantMap,
+  contestants,
   focusTeam,
   teams,
   leadingTeam,
-  aiSummaries,
-  audienceSummary,
-  selectedContestant,
+  championTeamId,
+  leadingContestantId,
+  selectedContestantId,
   priorityContestantId,
   fallbackContestantId,
   nearbyHint,
 }: DeriveConversationStateInput): ConversationState => {
-  const orderedIds = contestantDeck.map((contestant) => contestant.id);
-  const focusIds = focusTeam.members.map((member) => member.id);
+  const orderedIds = contestants.map((contestant) => contestant.id);
+  const contestantMap = Object.fromEntries(contestants.map((contestant) => [contestant.id, contestant]));
+  const focusIds = focusTeam.memberIds;
   const outsideFocusIds = orderedIds.filter((id) => !focusIds.includes(id));
-  const championTeam = teams.find((team) => team.id === aiSummaries[0]?.teamId) ?? leadingTeam;
-  const championIds = championTeam.members.map((member) => member.id);
+  const championTeam = teams.find((team) => team.id === championTeamId) ?? leadingTeam;
+  const championIds = championTeam.memberIds;
   const defaultSpeakerId = focusIds[0] ?? orderedIds[0] ?? fallbackContestantId;
-  const leadingId =
-    audienceSummary.leadingContestantId || orderedIds[0] || fallbackContestantId;
+  const leadingId = leadingContestantId || orderedIds[0] || fallbackContestantId;
 
   const baseConversation = (() => {
     switch (activeStage.id) {
@@ -37,7 +36,7 @@ export const deriveConversationState = ({
       };
     case "act-2":
       return {
-        speakerId: selectedContestant?.id ?? defaultSpeakerId,
+        speakerId: selectedContestantId ?? defaultSpeakerId,
         raisedHandId: outsideFocusIds[0] ?? orderedIds[1] ?? defaultSpeakerId,
         listeningIds: [...focusIds, orderedIds[2]].filter(isPresent).slice(0, 3),
         queuedIds: outsideFocusIds.slice(0, 2),
@@ -65,7 +64,7 @@ export const deriveConversationState = ({
         raisedHandId: focusIds[1] ?? outsideFocusIds[0] ?? defaultSpeakerId,
         listeningIds: focusIds,
         queuedIds: focusIds.slice(2, 3),
-        callout: `${focusTeam.submission.headline} 正在收束成可展示版本，队伍成员轮流补充最终卖点。`,
+        callout: `${focusTeam.submissionHeadline} 正在收束成可展示版本，队伍成员轮流补充最终卖点。`,
       };
     case "act-6":
       return {

@@ -1,10 +1,4 @@
-import type {
-  ActDefinition,
-  AiTeamSummary,
-  AudienceOverview,
-  ContestantScorecard,
-  TeamSummary,
-} from "../types";
+import type { ActDefinition } from "../types";
 
 export interface ConversationState {
   speakerId: string;
@@ -14,16 +8,27 @@ export interface ConversationState {
   callout: string;
 }
 
+export interface RoomConversationContestant {
+  id: string;
+  name: string;
+}
+
+export interface RoomConversationTeam {
+  id: string;
+  name: string;
+  memberIds: string[];
+  submissionHeadline: string;
+}
+
 export interface DeriveConversationStateInput {
   activeStage: Pick<ActDefinition, "id" | "title">;
-  contestantDeck: ContestantScorecard[];
-  contestantMap: Record<string, ContestantScorecard>;
-  focusTeam: TeamSummary;
-  teams: TeamSummary[];
-  leadingTeam: TeamSummary;
-  aiSummaries: AiTeamSummary[];
-  audienceSummary: Pick<AudienceOverview, "leadingContestantId">;
-  selectedContestant?: Pick<ContestantScorecard, "id">;
+  contestants: RoomConversationContestant[];
+  focusTeam: RoomConversationTeam;
+  teams: RoomConversationTeam[];
+  leadingTeam: RoomConversationTeam;
+  championTeamId?: string | null;
+  leadingContestantId?: string;
+  selectedContestantId?: string;
   priorityContestantId?: string | null;
   fallbackContestantId: string;
   nearbyHint: string;

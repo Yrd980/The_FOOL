@@ -1,143 +1,46 @@
 import { describe, expect, it } from "vitest";
 
 import { deriveConversationState } from "./deriveConversationState";
-import type {
-  ActDefinition,
-  AiTeamSummary,
-  AudienceOverview,
-  ContestantScorecard,
-  TeamSummary,
-} from "../types";
+import type { ActDefinition } from "../types";
 
-const createContestant = (id: string, name: string): ContestantScorecard => ({
-  id,
-  name,
-  title: `${name} title`,
-  archetype: `${name} archetype`,
-  persona: `${name} persona`,
-  background: `${name} background`,
-  specialties: [`${name} specialty`],
-  dislikes: [`${name} dislike`],
-  goal: `${name} goal`,
-  mood: `${name} mood`,
-  introScript: `${name} intro`,
-  currentMoment: `${name} current moment`,
-  stats: { confidence: 60, energy: 60, charm: 60, chaos: 20 },
-  skills: { strategy: 60, craft: 60, story: 60, execution: 60 },
-  palette: {
-    primary: "#111111",
-    secondary: "#222222",
-    accent: "#333333",
-    glow: "rgba(0, 0, 0, 0.2)",
-  },
-  desiredPartners: [],
-  avoidedPartners: [],
-  danmakuHook: `${name} danmaku`,
-  poetrySeed: `${name} poetry`,
-  humanProxy: `${name} proxy`,
-  avatarGlyph: name.slice(0, 2).toUpperCase(),
-  styleTitle: `${name} style`,
-  strengths: [`${name} strength`],
-  currentEmotion: `${name} emotion`,
-  confidence: 60,
-  energy: 60,
-  preferences: {
-    want: [],
-    avoid: [],
-  },
-  audienceLikes: 0,
-  audienceDislikes: 0,
-  audienceBets: 0,
-  danmuCount: 0,
-  supportScore: 0,
-  heatScore: 0,
-  moodAfterAudience: `${name} after audience`,
-  intro: {
-    tagline: `${name} tagline`,
-    manifesto: `${name} manifesto`,
-    reveal: `${name} reveal`,
-  },
-});
+const contestants = [
+  { id: "alpha", name: "Alpha" },
+  { id: "beta", name: "Beta" },
+  { id: "gamma", name: "Gamma" },
+  { id: "delta", name: "Delta" },
+  { id: "epsilon", name: "Epsilon" },
+  { id: "zeta", name: "Zeta" },
+] as const;
 
-const createTeam = (
-  id: string,
-  name: string,
-  members: ContestantScorecard[],
-  headline: string,
-): TeamSummary => ({
-  id,
-  name,
-  theme: `${name} theme`,
-  accent: "#444444",
-  members,
-  totalSkills: { strategy: 180, craft: 180, story: 180, execution: 180 },
-  affinityScore: 80,
-  balanceScore: 80,
-  audiencePull: 80,
-  acceptance: [],
-  discussion: [],
-  submission: {
-    posterLabel: `${headline} poster`,
-    posterMood: `${headline} mood`,
-    headline,
-    problem: `${headline} problem`,
-    coreFeatures: [`${headline} feature`],
-    route: [`${headline} route`],
-    roles: [],
-    elevatorPitch: `${headline} pitch`,
-    highlights: [`${headline} highlight`],
-    risk: `${headline} risk`,
-  },
-});
+const [alpha, beta, gamma, delta, epsilon, zeta] = contestants;
 
-const alpha = createContestant("alpha", "Alpha");
-const beta = createContestant("beta", "Beta");
-const gamma = createContestant("gamma", "Gamma");
-const delta = createContestant("delta", "Delta");
-const epsilon = createContestant("epsilon", "Epsilon");
-const zeta = createContestant("zeta", "Zeta");
-
-const contestantDeck = [alpha, beta, gamma, delta, epsilon, zeta];
-const contestantMap = Object.fromEntries(
-  contestantDeck.map((contestant) => [contestant.id, contestant]),
-) as Record<string, ContestantScorecard>;
-const focusTeam = createTeam("team-focus", "Focus Team", [gamma, delta, epsilon], "Focus Headline");
-const championTeam = createTeam(
-  "team-champion",
-  "Champion Team",
-  [alpha, beta],
-  "Champion Headline",
-);
-const reserveTeam = createTeam("team-reserve", "Reserve Team", [zeta], "Reserve Headline");
-const teams = [focusTeam, championTeam, reserveTeam];
-const aiSummaries: AiTeamSummary[] = [
-  {
-    teamId: championTeam.id,
-    averageScore: 96,
-    totalScore: 288,
-    favoriteHighlights: ["highlight"],
-    strongestReason: "strongest reason",
-    outrageousMoments: ["outrageous"],
-  },
-];
-const audienceSummary: AudienceOverview = {
-  totalLikes: 0,
-  totalDislikes: 0,
-  totalBetPoints: 0,
-  totalDanmu: 0,
-  heatIndex: 0,
-  leadingContestantId: zeta.id,
-  leadingTeamId: focusTeam.id,
+const focusTeam = {
+  id: "team-focus",
+  name: "Focus Team",
+  memberIds: [gamma.id, delta.id, epsilon.id],
+  submissionHeadline: "Focus Headline",
 };
+const championTeam = {
+  id: "team-champion",
+  name: "Champion Team",
+  memberIds: [alpha.id, beta.id],
+  submissionHeadline: "Champion Headline",
+};
+const reserveTeam = {
+  id: "team-reserve",
+  name: "Reserve Team",
+  memberIds: [zeta.id],
+  submissionHeadline: "Reserve Headline",
+};
+
 const baseInput = {
-  contestantDeck,
-  contestantMap,
+  contestants: [...contestants],
   focusTeam,
-  teams,
+  teams: [focusTeam, championTeam, reserveTeam],
   leadingTeam: focusTeam,
-  aiSummaries,
-  audienceSummary,
-  selectedContestant: epsilon,
+  championTeamId: championTeam.id,
+  leadingContestantId: zeta.id,
+  selectedContestantId: epsilon.id,
   priorityContestantId: null,
   fallbackContestantId: alpha.id,
   nearbyHint: "Nearby fallback hint",
@@ -279,6 +182,37 @@ describe("deriveConversationState", () => {
       listeningIds: ["gamma", "delta", "epsilon"],
       queuedIds: ["beta", "alpha"],
       callout: "Beta 被 wave over 到当前 conversation，房间正在为她/他留出切入点。",
+    });
+  });
+
+  it("falls back to the leading team when no champion team id is available", () => {
+    expect(
+      deriveConversationState({
+        ...baseInput,
+        activeStage: { id: "act-8", title: "颁奖" },
+        championTeamId: null,
+      }),
+    ).toEqual({
+      speakerId: "gamma",
+      raisedHandId: "delta",
+      listeningIds: ["gamma", "delta", "epsilon"],
+      queuedIds: ["zeta"],
+      callout: "Focus Team 正站在聚光区，其他选手在外圈等着奖项和人格标签落地。",
+    });
+  });
+
+  it("uses the nearby hint when the stage falls through the default branch", () => {
+    expect(
+      deriveConversationState({
+        ...baseInput,
+        activeStage: { id: "act-unknown" as ActDefinition["id"], title: "未知阶段" },
+      }),
+    ).toEqual({
+      speakerId: "gamma",
+      raisedHandId: "delta",
+      listeningIds: ["gamma", "delta", "epsilon"],
+      queuedIds: ["alpha"],
+      callout: "Nearby fallback hint",
     });
   });
 });
