@@ -30,7 +30,7 @@ useRoomSource(inputs, config)
 
 ### Key Constraint
 
-`App.tsx` and all presentation components (`PresenceSidebar`, `ConversationDock`, `SpatialRoomFloor`, `DemoControlPanel`) require zero changes. Both sources return the same `SeedRoomSourceResult` type.
+Both sources return the same `SeedRoomSourceResult` type. `App.tsx` changes only the import (one line). `DemoControlPanel` gets a small addition: a connection status indicator visible only in gateway mode. All other presentation components (`PresenceSidebar`, `ConversationDock`, `SpatialRoomFloor`) require zero changes.
 
 ## OpenClaw Gateway Protocol
 
@@ -96,7 +96,7 @@ type ConnectionEvent =
   | { type: "ws-open" }
   | { type: "auth-ok" }
   | { type: "auth-fail"; reason: string }
-  | { type: "ws-close"; code: number }
+  | { type: "ws-close" }
   | { type: "ws-error" }
   | { type: "retry-exhausted" }
   | { type: "disconnect" };
@@ -106,6 +106,16 @@ const reduceConnection = (
   event: ConnectionEvent,
 ): ConnectionState => { /* pure */ };
 ```
+
+Additional transitions not shown in the diagram above:
+
+```
+connecting ─[ws-error]→ reconnecting
+connected ─[ws-error]→ reconnecting
+authenticating ─[ws-error]→ reconnecting
+```
+
+`ws-error` and `ws-close` both trigger reconnection from any active state. The close code is not used for routing — all abnormal closes attempt reconnection.
 
 ## OpenClawGatewayClient
 
@@ -188,15 +198,28 @@ type AgentPresenceMap = Record<string, {
 }>;
 ```
 
-This map is either:
-- Auto-generated from the first N presence entries (for quick demos)
-- Loaded from a config file (`src/room/gateway/agent-map.json`) for stable assignments
+Resolution strategy (in order of precedence):
 
-When a presence entry has no mapping, it becomes a listener entity in the quiet-orbit.
+1. **Config file** (`src/room/gateway/agent-map.json`): If the file exists, use it. Maps gateway `instanceId` → contestant metadata. This gives stable assignments across gateway restarts.
+2. **Auto-generation**: If no config file, assign presence entries to contestants by arrival order (sorted by `ts` ascending). The first entry maps to contestant index 0, second to index 1, etc. N = number of contestants in `contestantDeck` (currently 6).
+
+When a presence entry has no mapping (either because N is exhausted or because it has `mode: "operator"`/`"node"`), it becomes a listener entity in the quiet-orbit.
 
 ### Multi-User Simulation
 
 The user can spawn multiple agent sessions via `openclaw agents add` to simulate a room with multiple contestants. Each agent gets its own gateway presence entry and maps to a distinct contestant.
+
+### Gateway Message Type
+
+```ts
+type GatewayMessage = {
+  id: string;
+  senderId: string;
+  senderName: string | null;
+  content: string;
+  ts: number;
+};
+```
 
 ### Message → AudienceInteraction Mapping
 
@@ -247,6 +270,22 @@ type GatewayConfig = {
 5. Exposes `actions` that dispatch both local state changes AND gateway RPCs where applicable
 6. On unmount, calls `client.destroy()`
 
+### Contestant ID Ordering
+
+The `orderedContestantIds` passed to derivation functions always comes from `inputs.contestantDeck` (the static deck). Gateway presence only augments the state of each contestant (speaking/listening/muted) — it does not change which contestants exist or their order. Unmapped presence entries become listeners, not contestants.
+
+### Zero-Presence Fallback
+
+When `system-presence` returns an empty array (or the gateway is unreachable), all contestants default to `"muted"` state. The derivation pipeline still runs with the full `contestantDeck`, producing a valid but silent room. The `roomCallout` is set to `"Waiting for gateway connections..."` when zero agent-mode presences are found.
+
+### Auth Failure Behavior
+
+When the connection state reaches `disconnected` due to `auth-fail`, the hook:
+- Sets `connectionStatus` to `"disconnected"` on the snapshot
+- Sets `roomCallout` to `"Gateway authentication failed. Check VITE_OPENCLAW_TOKEN."`
+- Keeps contestant states as `"muted"` (same as zero-presence)
+- Does not auto-retry (auth failures are not transient)
+
 ### Connection Status in UI
 
 The snapshot gets an optional `connectionStatus` field:
@@ -262,22 +301,22 @@ interface RoomSourceSnapshot {
 
 ## useRoomSource — Unified Hook
 
+The mode is a build-time constant (`import.meta.env.VITE_ROOM_SOURCE`), so Vite dead-code-eliminates the unused branch. To satisfy the Rules of Hooks lint rule (hooks must be called unconditionally), use a component-level switch rather than a conditional hook call:
+
 ```ts
-export const useRoomSource = (
-  inputs: SeedRoomSourceInputs,
-): SeedRoomSourceResult => {
-  const mode = import.meta.env.VITE_ROOM_SOURCE ?? "seed";
+// src/room/useRoomSource.ts
+const ROOM_MODE = (import.meta.env.VITE_ROOM_SOURCE ?? "seed") as "seed" | "gateway";
+const GATEWAY_URL = import.meta.env.VITE_OPENCLAW_URL ?? "ws://localhost:18789";
+const GATEWAY_TOKEN = import.meta.env.VITE_OPENCLAW_TOKEN ?? "";
 
-  if (mode === "gateway") {
-    return useGatewayRoomSource(inputs, {
-      url: import.meta.env.VITE_OPENCLAW_URL ?? "ws://localhost:18789",
-      token: import.meta.env.VITE_OPENCLAW_TOKEN ?? "",
-    });
-  }
-
-  return useSeedRoomSource(inputs);
-};
+// Export the appropriate hook at module level (build-time constant selection)
+export const useRoomSource: (inputs: SeedRoomSourceInputs) => SeedRoomSourceResult =
+  ROOM_MODE === "gateway"
+    ? (inputs) => useGatewayRoomSource(inputs, { url: GATEWAY_URL, token: GATEWAY_TOKEN })
+    : useSeedRoomSource;
 ```
+
+This is safe because `ROOM_MODE` is a build-time constant — Vite replaces `import.meta.env.VITE_ROOM_SOURCE` at compile time. Only one hook function is ever assigned.
 
 `App.tsx` changes one line:
 ```diff
