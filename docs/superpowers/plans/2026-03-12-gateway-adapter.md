@@ -48,6 +48,16 @@
 - Seed source files (`useSeedRoomSource.ts`, `seedRoomSource.ts`) are NOT modified
 - The gateway client must handle the full challenge/auth flow per OpenClaw 2026.3.8 protocol
 
+## Protocol Errata (verified 2026-03-12 against gateway source)
+
+These corrections were discovered by auditing the installed OpenClaw 2026.3.8 gateway binary (`gateway-cli-*.js`, `gateway-rpc-*.js`). All code in this plan already reflects these fixes.
+
+1. **`hello-ok` is at `payload.type`, not `payload.event`** — The connect response is `{type:"res", ok:true, payload:{type:"hello-ok", protocol:3, ...}}`.
+2. **Connect request needs `minProtocol`/`maxProtocol`** — Set both to `3`. Include a `client` object with `{id, version, platform, mode}`.
+3. **Presence `mode` is freeform** — Known values: `"gateway"`, `"agent"`, `"operator"`, `"node"`, `"cli"`. Use substring match for agent detection, not strict equality.
+4. **Presence fields are mostly optional** — Only `ts` is guaranteed. Use defensive access (`?.`) for all other fields. See updated `GatewayPresenceEntry` type.
+5. **`"presence"` event exists** — The gateway broadcasts presence snapshots via `event:"presence"`. Polling `system-presence` works but event subscription is more efficient. Plan uses polling; future optimization can subscribe to the event.
+
 ---
 
 ## Chunk 1: Pure Gateway Logic (No React, No Network)
@@ -82,12 +92,21 @@ export type ConnectionEvent =
   | { type: "disconnect" };
 
 export interface GatewayPresenceEntry {
-  instanceId: string;
-  host: string;
-  version: string;
-  deviceFamily: string;
-  mode: "agent" | "operator" | "node" | "cli";
-  lastInputSeconds: number;
+  instanceId?: string;
+  deviceId?: string;
+  host?: string;
+  ip?: string;
+  version?: string;
+  platform?: string;
+  deviceFamily?: string;
+  modelIdentifier?: string;
+  mode?: string;          // freeform — known: "gateway", "agent", "operator", "node", "cli"
+  lastInputSeconds?: number;
+  reason?: string;
+  roles?: string[];
+  scopes?: string[];
+  tags?: string[];
+  text?: string;          // e.g. "Node: host (ip) · app ver · last input Xs ago · mode M · reason R"
   ts: number;
 }
 
@@ -250,11 +269,13 @@ import type { GatewayPresenceEntry, AgentPresenceMap } from "./types";
 
 const makePresence = (overrides: Partial<GatewayPresenceEntry> = {}): GatewayPresenceEntry => ({
   instanceId: "inst-1",
+  deviceId: "dev-1",
   host: "localhost",
   version: "2026.3.8",
   deviceFamily: "cli",
   mode: "agent",
   lastInputSeconds: 5,
+  text: "Node: localhost (127.0.0.1) · app 2026.3.8 · last input 5s ago · mode agent · reason heartbeat",
   ts: Date.now(),
   ...overrides,
 });
@@ -318,11 +339,14 @@ describe("mapPresenceToContestantStates", () => {
     expect(result.get("c-1")).toBe("muted"); // unmapped
   });
 
-  it("filters out cli mode presences", () => {
-    const presences = [makePresence({ mode: "cli", lastInputSeconds: 5 })];
+  it("filters out cli and gateway mode presences", () => {
+    const presences = [
+      makePresence({ mode: "cli", lastInputSeconds: 5 }),
+      makePresence({ instanceId: "gw", mode: "gateway", lastInputSeconds: 0 }),
+    ];
     const result = mapPresenceToContestantStates(presences, contestantIds, {});
 
-    // cli filtered out, all contestants muted
+    // cli and gateway filtered out, all contestants muted
     expect(result.get("c-1")).toBe("muted");
   });
 
@@ -393,7 +417,8 @@ Expected: FAIL with module resolution error
 import type { AudienceInteraction, AudienceEventType, OpenClawContestantState } from "../../types";
 import type { AgentPresenceMap, GatewayMessage, GatewayPresenceEntry } from "./types";
 
-export const deriveContestantState = (lastInputSeconds: number): OpenClawContestantState => {
+export const deriveContestantState = (lastInputSeconds: number | undefined): OpenClawContestantState => {
+  if (lastInputSeconds === undefined) return "muted";
   if (lastInputSeconds < 10) return "speaking";
   if (lastInputSeconds < 30) return "raised-hand";
   if (lastInputSeconds < 120) return "listening";
@@ -412,9 +437,10 @@ export const mapPresenceToContestantStates = (
     stateMap.set(id, "muted");
   }
 
-  // Filter to agent-mode presences only
+  // Filter to agent-mode presences only (mode is freeform; match substring)
+  const isAgentMode = (mode?: string) => mode !== undefined && mode.includes("agent");
   const agentPresences = presences
-    .filter((p) => p.mode === "agent")
+    .filter((p) => isAgentMode(p.mode))
     .sort((a, b) => a.ts - b.ts);
 
   let autoIndex = 0;
@@ -602,7 +628,7 @@ describe("OpenClawGatewayClient", () => {
     // Challenge → connect → hello-ok
     ws.simulateMessage({ type: "event", event: "connect.challenge", payload: { nonce: "n", ts: 1 } });
     const connectReqId = JSON.parse(ws.sent[0]).id;
-    ws.simulateMessage({ type: "res", id: connectReqId, ok: true, payload: { event: "hello-ok" } });
+    ws.simulateMessage({ type: "res", id: connectReqId, ok: true, payload: { type: "hello-ok", protocol: 3 } });
 
     expect(client.getConnectionState()).toBe("connected");
 
@@ -795,8 +821,8 @@ export class OpenClawGatewayClient {
         this.pendingRpc.delete(frame.id);
         if (frame.ok) {
           // Check if this is the connect response (hello-ok)
-          const payload = frame.payload as { event?: string } | undefined;
-          if (payload?.event === "hello-ok") {
+          const payload = frame.payload as { type?: string } | undefined;
+          if (payload?.type === "hello-ok") {
             this.transition({ type: "auth-ok" });
             this.reconnectAttempt = 0;
             this.startPresencePolling();
@@ -829,11 +855,19 @@ export class OpenClawGatewayClient {
       id,
       method: "connect",
       params: {
+        minProtocol: 3,
+        maxProtocol: 3,
+        client: {
+          id: `thefool-${this.config.id}`,
+          version: "0.1.0",
+          platform: "web",
+          mode: "operator",
+        },
         auth: { token: this.config.token },
         role: "operator",
         scopes: ["operator.read"],
         device: {
-          id: `thefool-${Date.now()}`,
+          id: `thefool-device-${this.config.id}`,
           platform: "web",
           deviceFamily: "browser",
         },
@@ -1338,9 +1372,10 @@ git commit -m "feat: add gateway connection indicator to control panel"
 
 ## Risks To Watch
 
-- The gateway challenge/auth flow may differ slightly from what the docs describe. If the client fails to authenticate during manual testing, inspect the actual challenge frame and adjust `sendConnectRequest()`.
-- Presence polling at 3s may be too aggressive for production. The interval is a static constant in `OpenClawGatewayClient` — easy to tune.
-- The `system-presence` response shape may include extra fields not in our type. Use loose typing — only destructure the fields we need.
+- The gateway challenge/auth flow has been verified against 2026.3.8 source. If a future gateway version changes the connect handshake, inspect the actual challenge frame and adjust `sendConnectRequest()`.
+- Presence polling at 3s may be too aggressive for production. The interval is a static constant in `OpenClawGatewayClient` — easy to tune. Better: subscribe to the `"presence"` gateway event.
+- The `system-presence` response contains many optional fields. The `GatewayPresenceEntry` type uses optional fields — only destructure what we need.
+- Gateway self-presence (mode `"gateway"`) must be filtered out to avoid mapping the gateway itself as a contestant.
 
 ## Handoff Notes
 

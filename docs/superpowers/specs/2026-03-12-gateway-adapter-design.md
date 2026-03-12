@@ -34,7 +34,7 @@ Both sources return the same `SeedRoomSourceResult` type. `App.tsx` changes only
 
 ## OpenClaw Gateway Protocol
 
-Based on OpenClaw 2026.3.8 documentation:
+Based on OpenClaw 2026.3.8 source and documentation (verified 2026-03-12 against installed gateway binary):
 
 - **Transport:** WebSocket, JSON text frames
 - **Default port:** 18789 (local), 19001 (dev profile)
@@ -42,10 +42,16 @@ Based on OpenClaw 2026.3.8 documentation:
 - **Framing:**
   - Request: `{type:"req", id, method, params}`
   - Response: `{type:"res", id, ok, payload|error}`
-  - Event: `{type:"event", event, payload, seq?}`
-- **Key RPC method:** `system-presence` — returns connected clients
-- **Presence entry fields:** `instanceId`, `host`, `version`, `deviceFamily`, `mode`, `lastInputSeconds`, `ts`
-- **Challenge flow:** Server sends `connect.challenge` with nonce → client responds with auth token + device identity → server returns `hello-ok`
+  - Event: `{type:"event", event, payload, seq?, stateVersion?}`
+- **Key RPC method:** `system-presence` — returns connected clients as an array of presence entry objects
+- **Presence entry fields (verified from source):** `instanceId`, `deviceId`, `host`, `ip`, `version`, `platform`, `deviceFamily`, `modelIdentifier`, `mode` (freeform string), `lastInputSeconds`, `reason`, `roles`, `scopes`, `tags`, `text`, `ts`
+- **Presence events:** The server broadcasts a `"presence"` event to all connected clients when presence changes. `system-presence` RPC is available as a fallback for explicit polling.
+- **Challenge flow:** Server sends `connect.challenge` with `{nonce, ts}` → client responds with connect request including `auth.token`, `minProtocol`/`maxProtocol`, `client` identity, `role`, `scopes` → server returns response with `payload.type === "hello-ok"` (NOT `payload.event`)
+
+> **Protocol errata (discovered during source audit):**
+> 1. The `hello-ok` sentinel lives at `payload.type`, not `payload.event`. The response is `{type:"res", ok:true, payload:{type:"hello-ok", protocol:3, policy:{...}, auth:{...}}}`.
+> 2. The `connect` request should include `minProtocol`/`maxProtocol` (currently `3`) and a `client` object with `{id, version, platform, mode}` for proper handshake. The gateway may tolerate minimal requests under `--auth token` mode locally, but production gateways enforce stricter validation.
+> 3. Presence `mode` is a freeform string, not a strict union. Known values from source: `"gateway"`, `"agent"`, `"operator"`, `"node"`, `"cli"`, and node-submitted custom modes. Filter by known agent-like modes rather than exhaustive matching.
 
 ## Connection State Machine
 
@@ -167,24 +173,36 @@ Pure functions that map gateway data to room domain types. Located in `gatewayAd
 
 ```ts
 type GatewayPresenceEntry = {
-  instanceId: string;
-  host: string;
-  version: string;
-  deviceFamily: string;
-  mode: "agent" | "operator" | "node" | "cli";
-  lastInputSeconds: number;
+  instanceId?: string;
+  deviceId?: string;
+  host?: string;
+  ip?: string;
+  version?: string;
+  platform?: string;
+  deviceFamily?: string;
+  modelIdentifier?: string;
+  mode?: string;          // freeform — known values: "gateway", "agent", "operator", "node", "cli"
+  lastInputSeconds?: number;
+  reason?: string;
+  roles?: string[];
+  scopes?: string[];
+  tags?: string[];
+  text?: string;          // human-readable summary line, e.g. "Node: host (ip) · app ver · last input Xs ago · mode M · reason R"
   ts: number;
 };
 ```
 
+> Fields are optional because the gateway merges partial updates. Only `ts` is always present. Use defensive access for all other fields.
+
 Mapping rules:
 
-| Gateway `mode` | Room role | State heuristic (based on `lastInputSeconds`) |
-|----------------|-----------|----------------------------------------------|
-| `agent` | Contestant | 0-10s → speaking, 10-30s → raised-hand, 30-120s → listening, 120s+ → muted |
-| `operator` | Listener/Judge | Always "listening" |
-| `node` | Listener | Always "listening" |
-| `cli` | Filtered out | N/A |
+| Gateway `mode` (substring match) | Room role | State heuristic (based on `lastInputSeconds`) |
+|----------------------------------|-----------|----------------------------------------------|
+| contains `"agent"` | Contestant | 0-10s → speaking, 10-30s → raised-hand, 30-120s → listening, 120s+ → muted |
+| `"operator"` | Listener/Judge | Always "listening" |
+| `"node"` | Listener | Always "listening" |
+| `"gateway"` | Filtered out (gateway self-presence) | N/A |
+| `"cli"` or unknown | Filtered out | N/A |
 
 ### Agent Identity Resolution
 
@@ -397,7 +415,7 @@ All 48 existing tests remain untouched. The seed source is unchanged.
 ## Risks
 
 - **Gateway not running**: `useGatewayRoomSource` must gracefully degrade. Show connection status, don't crash. If gateway is unreachable after retries, show a "Gateway offline" message in the room callout.
-- **Presence polling load**: 3s polling is acceptable for local dev. For production, switch to event-driven presence when gateway supports it.
+- **Presence polling load**: 3s polling is acceptable for local dev. For production, subscribe to the `"presence"` gateway event (confirmed available in 2026.3.8 GATEWAY_EVENTS) instead of polling.
 - **Agent identity stability**: Gateway `instanceId` changes on restart. The auto-mapping strategy handles this by position, but may shuffle contestant assignments. Config-based mapping is more stable.
 - **No room concept in gateway**: The gateway has presence but no spatial rooms. Room assignment is derived client-side from agent metadata/team assignments.
 
