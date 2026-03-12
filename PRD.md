@@ -191,7 +191,27 @@ AI Pixel War 试图解决的问题是：
 - `GET /api/replay/:name`：返回指定 replay
 - `GET /health`：健康检查
 
-## 7.2 建议纳入下一阶段范围
+### 7.1.9 逐动作像素回放（V0.1 后期新增）
+
+- Replay 数据中每回合包含 `action_steps` 数组
+- 每个 step 记录 kind（seed / action / resolve_fill / resolve_harmonize）、actor、label 和像素更新
+- Viewer 支持按 step 逐帧播放，显示当前步骤标签和像素进度
+
+## 7.2 代码分析发现的技术债务
+
+以下问题来自 2026-03-12 的代码深度分析：
+
+1. **Viewer 单文件过大**：`viewer/src/App.tsx` 约 1140 行，所有 UI、状态和渲染逻辑耦合
+2. **引擎回调冗余**：`engine.ts` 中 `mythColorForPoint` lambda 重复构造 5+ 次
+3. **LLM 硬绑定**：DeepSeek 是唯一提供者，无抽象接口
+4. **Replay 无版本控制**：schema 变更会破坏旧回放文件与 Viewer 的兼容性
+5. **零测试覆盖**：项目没有任何测试文件
+6. **Treaty 系统不完整**：`joint_attack` 在类型中定义但无执行逻辑
+7. **Viewer 未展示错误数据**：replay 中的 errors 数组没有在 UI 中呈现
+8. **CLI 缺少帮助文本**：手写 parser 无 `--help`，未知参数静默忽略
+9. **排名显示不直观**：Viewer 排名面板显示 agent ID 而非角色名
+
+## 7.3 建议纳入下一阶段范围
 
 以下需求在当前仓库中没有完整产品化，但非常适合进入后续迭代：
 
@@ -392,12 +412,25 @@ AI Pixel War 试图解决的问题是：
 
 - 完成 CLI 模拟、数字分身接入、神话主题作画、社交叙事、replay 输出和 Viewer 基础观战
 
-## V0.2 建议方向
+## V0.2 确定方向（2026-03-12 基于代码分析确定）
 
-- 增加 replay 筛选、对比和元数据管理
-- 增加前端配置面板
-- 增加更清晰的错误展示与运行诊断
-- 增加对大 replay 的性能优化
+架构重构（优先）：
+- Viewer 组件化拆分
+- EngineContext 统一回调传递
+- LLM 提供者抽象层
+- Replay 版本化
+- 项目 CLAUDE.md 与文档体系
+
+功能补齐：
+- Viewer 错误面板
+- Treaty joint_attack 执行逻辑
+- Replay 筛选（按模式、agent 数量）
+- 排名面板显示角色名
+- CLI --help 与参数校验改进
+- Mock Agent 消息个性化
+- 核心模块单元测试
+
+详见 `docs/superpowers/specs/` 下的设计文档。
 
 ## V0.3 建议方向
 
@@ -407,10 +440,15 @@ AI Pixel War 试图解决的问题是：
 
 ## 16. 待确认问题
 
-1. 本项目长期更偏“创作工具 / Demo 引擎”还是“可持续游玩的观战产品”？
-2. 后续优先级更高的是 Viewer 易用性，还是模拟规则深度？
-3. 是否需要为 profiles 建立更标准的编辑和验证工具链？
-4. 是否计划将 replay API 独立成远程服务，而不只服务本地目录？
+### 已决策
+- ~~后续优先级更高的是 Viewer 易用性，还是模拟规则深度？~~ → V0.2 以架构重构优先，功能按依赖排序推进。
+
+### 待确认
+1. 本项目长期更偏”创作工具 / Demo 引擎”还是”可持续游玩的观战产品”？
+2. 是否需要为 profiles 建立更标准的编辑和验证工具链？
+3. 是否计划将 replay API 独立成远程服务，而不只服务本地目录？
+4. LLM 提供者抽象后，第二个要支持的模型是 OpenAI、Claude 还是其他？
+5. Viewer 组件化后是否引入状态管理库（如 Zustand），还是继续用 props drilling？
 
 ## 17. 结论
 
