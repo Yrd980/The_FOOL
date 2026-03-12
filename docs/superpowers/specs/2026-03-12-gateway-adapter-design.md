@@ -253,6 +253,7 @@ Same `SeedRoomSourceInputs` as the seed hook, plus gateway config:
 
 ```ts
 type GatewayConfig = {
+  id: string;    // gateway identity, e.g. "local" — enables multi-gateway keying later
   url: string;   // default: "ws://localhost:18789"
   token: string; // from import.meta.env.VITE_OPENCLAW_TOKEN or config file
 };
