@@ -301,6 +301,7 @@ export interface ReplayRound {
 }
 
 export interface SimulationResult {
+  schema_version: string;
   config: {
     width: number;
     height: number;

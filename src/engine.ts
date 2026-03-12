@@ -10,10 +10,12 @@ import {
   seedCurrentRoundWithBoard,
   type CanvasCell
 } from "./engine/canvasRuntime";
-import { DeepSeekClient } from "./deepseekClient";
+import type { EngineContext } from "./engine/engineContext";
+import { DeepSeekProvider } from "./llm/deepseekProvider";
+import type { LLMProvider } from "./llm/types";
 import { buildArtDirection, buildArtTarget, buildRenderPalette } from "./engine/artDirector";
 import { artPhaseForRound, mythColorForPoint, phaseGateAt, targetPriorityAt, zoneWeight } from "./engine/artRuntime";
-import { DEFAULT_MYTH_PROMPT } from "./engine/constants";
+import { DEFAULT_MYTH_PROMPT, SCHEMA_VERSION } from "./engine/constants";
 import { buildOpponentSummary as buildOpponentSummaryFromService, requestAgentDecision as requestAgentDecisionFromService, type DecisionRequestStatus } from "./engine/decisionService";
 import { buildScores } from "./engine/scoreboard";
 import { buildSocialMetrics, buildSocialSnapshot, consumeMemory, updateTreaties } from "./engine/socialState";
@@ -83,7 +85,8 @@ export class PixelWarEngine {
   private readonly artDirection: ArtDirection;
   private readonly mythRenderPalette: string[];
   private readonly artTargetColors: string[][];
-  private readonly deepSeek: DeepSeekClient;
+  private readonly ctx: EngineContext;
+  private readonly provider: LLMProvider;
   private readonly validateAgent: ValidateFunction<AgentState>;
   private readonly validateDecision: ValidateFunction<TurnDecision>;
 
@@ -93,7 +96,7 @@ export class PixelWarEngine {
   private activeTreaties: Treaty[] = [];
   private currentRoundUpdateMap = new Map<string, ReplayRound["canvas_updates"][number]>();
 
-  constructor(config: Partial<EngineConfig> = {}) {
+  constructor(config: Partial<EngineConfig> & { provider?: LLMProvider } = {}) {
     this.width = config.width ?? 64;
     this.height = config.height ?? 64;
     this.rounds = config.rounds ?? 30;
@@ -110,7 +113,7 @@ export class PixelWarEngine {
       artDirection: this.artDirection,
       renderPalette: this.mythRenderPalette
     });
-    this.deepSeek = new DeepSeekClient({ model: config.model ?? "deepseek-chat" });
+    this.provider = config.provider ?? new DeepSeekProvider({ model: config.model ?? "deepseek-chat" });
 
     const agentSchemaPath = path.join(__dirname, "..", "schemas", "agent-state.schema.json");
     const decisionSchemaPath = path.join(__dirname, "..", "schemas", "turn-decision.schema.json");
@@ -123,14 +126,13 @@ export class PixelWarEngine {
     this.validateDecision = ajv.compile<TurnDecision>(decisionSchema);
 
     this.board = createBoard(this.width, this.height);
-    this.agents = createAgents({
-      agentCount: this.agentCount,
-      profilePath: this.profilePath,
+    this.ctx = {
+      board: this.board,
       width: this.width,
       height: this.height,
       artDirection: this.artDirection,
-      board: this.board,
-      validateAgent: this.validateAgent,
+      artTargetColors: this.artTargetColors,
+      renderPalette: this.mythRenderPalette,
       mythColorForPoint: (agent, x, y, requestedColor, round) =>
         mythColorForPoint({
           agent,
@@ -141,7 +143,15 @@ export class PixelWarEngine {
           artTargetColors: this.artTargetColors,
           artDirection: this.artDirection,
           renderPalette: this.mythRenderPalette
-        })
+        }),
+      zoneWeight: (zone, x, y) => zoneWeight(this.width, this.height, zone, x, y)
+    };
+    this.agents = createAgents({
+      agentCount: this.agentCount,
+      profilePath: this.profilePath,
+      ctx: this.ctx,
+      validateAgent: this.validateAgent,
+      mythColorForPoint: this.ctx.mythColorForPoint
     });
     this.agentCount = this.agents.length;
   }
@@ -163,13 +173,9 @@ export class PixelWarEngine {
     validActionHints = buildActionHintsFromStrategy({
       agent,
       round,
-      board: this.board,
-      width: this.width,
-      height: this.height,
+      ctx: this.ctx,
       events: this.events,
-      artDirection: this.artDirection,
-      artTargetColors: this.artTargetColors,
-      zoneWeight: (zone, x, y) => zoneWeight(this.width, this.height, zone, x, y)
+      artDirection: this.artDirection
     })
   ): TurnDecision {
     return buildMockDecision({
@@ -276,24 +282,18 @@ export class PixelWarEngine {
             round,
             agents: this.agents,
             dryRun: this.dryRun,
-            width: this.width,
-            height: this.height,
-            artDirection: this.artDirection,
+            ctx: this.ctx,
             activeTreaties: this.activeTreaties,
             events: this.events,
-            deepSeek: this.deepSeek,
+            provider: this.provider,
             validateDecision: this.validateDecision,
             buildActionHints: (inputAgent, inputRound) =>
               buildActionHintsFromStrategy({
                 agent: inputAgent,
                 round: inputRound,
-                board: this.board,
-                width: this.width,
-                height: this.height,
+                ctx: this.ctx,
                 events: this.events,
-                artDirection: this.artDirection,
-                artTargetColors: this.artTargetColors,
-                zoneWeight: (zone, x, y) => zoneWeight(this.width, this.height, zone, x, y)
+                artDirection: this.artDirection
               }),
             buildFallbackDecision: (inputAgent, inputRound, validActionHints) =>
               this.buildFallbackDecision(inputAgent, inputRound, validActionHints),
@@ -303,20 +303,9 @@ export class PixelWarEngine {
                 decision,
                 hints,
                 round: inputRound,
-                width: this.width,
-                height: this.height,
+                ctx: this.ctx,
                 agents: this.agents,
-                mythColorForPoint: (agentArg, x, y, requestedColor, roundArg) =>
-                  mythColorForPoint({
-                    agent: agentArg,
-                    x,
-                    y,
-                    requestedColor,
-                    round: roundArg,
-                    artTargetColors: this.artTargetColors,
-                    artDirection: this.artDirection,
-                    renderPalette: this.mythRenderPalette
-                  })
+                mythColorForPoint: this.ctx.mythColorForPoint
               }),
             personalMythReading: (inputAgent) => personalMythReadingFromStrategy(inputAgent, this.artDirection)
           });
@@ -332,29 +321,14 @@ export class PixelWarEngine {
             hints: buildActionHintsFromStrategy({
               agent,
               round,
-              board: this.board,
-              width: this.width,
-              height: this.height,
+              ctx: this.ctx,
               events: this.events,
-              artDirection: this.artDirection,
-              artTargetColors: this.artTargetColors,
-              zoneWeight: (zone, x, y) => zoneWeight(this.width, this.height, zone, x, y)
+              artDirection: this.artDirection
             }),
             round,
-            width: this.width,
-            height: this.height,
+            ctx: this.ctx,
             agents: this.agents,
-            mythColorForPoint: (agentArg, x, y, requestedColor, roundArg) =>
-              mythColorForPoint({
-                agent: agentArg,
-                x,
-                y,
-                requestedColor,
-                round: roundArg,
-                artTargetColors: this.artTargetColors,
-                artDirection: this.artDirection,
-                renderPalette: this.mythRenderPalette
-              })
+            mythColorForPoint: this.ctx.mythColorForPoint
           });
 
           return {
@@ -412,7 +386,10 @@ export class PixelWarEngine {
         }
       }
 
-      for (const decision of shuffled(decisions)) {
+      const orderedDecisions = this.dryRun
+        ? [...decisions].sort((left, right) => left.agent_id.localeCompare(right.agent_id))
+        : shuffled(decisions);
+      for (const decision of orderedDecisions) {
         const owner = this.agents.find((agent) => agent.id === decision.agent_id);
         if (!owner) continue;
         for (const action of decision.actions) {
@@ -421,24 +398,12 @@ export class PixelWarEngine {
             agent: owner,
             action,
             round,
-            board: this.board,
-            width: this.width,
-            height: this.height,
+            ctx: this.ctx,
             currentRoundUpdateMap: this.currentRoundUpdateMap,
             activeTreaties: this.activeTreaties,
             events: this.events,
             stepUpdateLog,
-            mythColorForPoint: (inputAgent, x, y, requestedColor, inputRound) =>
-              mythColorForPoint({
-                agent: inputAgent,
-                x,
-                y,
-                requestedColor,
-                round: inputRound,
-                artTargetColors: this.artTargetColors,
-                artDirection: this.artDirection,
-                renderPalette: this.mythRenderPalette
-                  })
+            mythColorForPoint: this.ctx.mythColorForPoint
           });
           pushActionStep({
             kind: "action",
@@ -459,9 +424,7 @@ export class PixelWarEngine {
       resolveCanvasProgressivelyFromRuntime({
         round,
         rounds: this.rounds,
-        board: this.board,
-        width: this.width,
-        height: this.height,
+        ctx: this.ctx,
         currentRoundUpdateMap: this.currentRoundUpdateMap,
         events: this.events,
         artTargetColors: this.artTargetColors,
@@ -486,17 +449,7 @@ export class PixelWarEngine {
             updates: step.updates
           });
         },
-        mythColorForPoint: (inputAgent, x, y, requestedColor, inputRound) =>
-          mythColorForPoint({
-            agent: inputAgent,
-            x,
-            y,
-            requestedColor,
-            round: inputRound,
-            artTargetColors: this.artTargetColors,
-            artDirection: this.artDirection,
-            renderPalette: this.mythRenderPalette
-          })
+        mythColorForPoint: this.ctx.mythColorForPoint
       });
 
       const roundHighlights = this.events.filter((event) => event.round === round);
@@ -527,6 +480,7 @@ export class PixelWarEngine {
     }
 
     return {
+      schema_version: SCHEMA_VERSION,
       config: {
         width: this.width,
         height: this.height,
@@ -534,7 +488,7 @@ export class PixelWarEngine {
         agent_count: this.agentCount,
         max_concurrent_agents: this.maxConcurrentAgents,
         dry_run: this.dryRun,
-        model: this.deepSeek.modelName,
+        model: this.provider.modelName,
         ...(this.profilePath ? { profile_path: this.profilePath } : {}),
         myth_prompt: this.mythPrompt
       },
@@ -547,12 +501,7 @@ export class PixelWarEngine {
         mythAestheticScore: (agent) =>
           mythAestheticScore({
             agent,
-            board: this.board,
-            width: this.width,
-            height: this.height,
-            artDirection: this.artDirection,
-            artTargetColors: this.artTargetColors,
-            zoneWeight: (zone, x, y) => zoneWeight(this.width, this.height, zone, x, y)
+            ctx: this.ctx
           })
       }),
       final_highlights: this.events.slice(-25),

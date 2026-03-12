@@ -1,7 +1,9 @@
 import type { ValidateFunction } from "ajv/dist/2020.js";
 import { normalizeTurnDecision } from "../decisionNormalizer";
-import { buildAgentSystemPrompt, buildAgentUserPrompt } from "../deepseekClient";
-import type { ActionHints, AgentState, ArtDirection, MemoryEvent, OpponentSnapshot, Treaty, TurnDecision } from "../types";
+import { buildAgentSystemPrompt, buildAgentUserPrompt } from "../llm/prompts";
+import type { LLMProvider } from "../llm/types";
+import type { ActionHints, AgentState, MemoryEvent, OpponentSnapshot, Treaty, TurnDecision } from "../types";
+import type { EngineContext } from "./engineContext";
 import { relationSnapshot } from "./socialState";
 
 function clamp(value: number, min: number, max: number): number {
@@ -177,12 +179,10 @@ export async function requestAgentDecision({
   round,
   agents,
   dryRun,
-  width,
-  height,
-  artDirection,
+  ctx,
   activeTreaties,
   events,
-  deepSeek,
+  provider,
   validateDecision,
   buildActionHints,
   buildFallbackDecision,
@@ -193,14 +193,10 @@ export async function requestAgentDecision({
   round: number;
   agents: AgentState[];
   dryRun: boolean;
-  width: number;
-  height: number;
-  artDirection: ArtDirection;
+  ctx: EngineContext;
   activeTreaties: Treaty[];
   events: MemoryEvent[];
-  deepSeek: {
-    generateDecision(args: { systemPrompt: string; userPrompt: string; temperature?: number }): Promise<unknown>;
-  };
+  provider: LLMProvider;
   validateDecision: ValidateFunction<TurnDecision>;
   buildActionHints: (agent: AgentState, round: number) => ActionHints;
   buildFallbackDecision: (agent: AgentState, round: number, validActionHints?: ActionHints) => TurnDecision;
@@ -233,12 +229,12 @@ export async function requestAgentDecision({
   }
 
   const opponents = buildOpponentSummary(agents, agent.id);
-  const systemPrompt = buildAgentSystemPrompt(agent, artDirection, personalMythReading(agent));
+  const systemPrompt = buildAgentSystemPrompt(agent, ctx.artDirection, personalMythReading(agent));
   const userPrompt = buildAgentUserPrompt({
     round,
-    width,
-    height,
-    artDirection,
+    width: ctx.width,
+    height: ctx.height,
+    artDirection: ctx.artDirection,
     selfState: {
       id: agent.id,
       identity_dna: agent.identity_dna,
@@ -255,13 +251,13 @@ export async function requestAgentDecision({
     validActionHints
   });
 
-  const firstRaw = await deepSeek.generateDecision({ systemPrompt, userPrompt });
+  const firstRaw = await provider.generateDecision({ systemPrompt, userPrompt });
   const firstPass = sanitizeDecision({
     agent,
     rawDecision: firstRaw,
     round,
-    width,
-    height,
+    width: ctx.width,
+    height: ctx.height,
     validateDecision,
     buildFallbackDecision: (inputAgent, inputRound) => buildFallbackDecision(inputAgent, inputRound, validActionHints)
   });
@@ -270,16 +266,16 @@ export async function requestAgentDecision({
   }
 
   try {
-    const repairRaw = await deepSeek.generateDecision({
-      systemPrompt: buildAgentSystemPrompt(agent, artDirection, personalMythReading(agent)),
+    const repairRaw = await provider.generateDecision({
+      systemPrompt: buildAgentSystemPrompt(agent, ctx.artDirection, personalMythReading(agent)),
       userPrompt: buildRepairPrompt({
         agent,
         round,
         firstError: firstPass.error,
         rawDecision: firstRaw,
         validActionHints,
-        width,
-        height
+        width: ctx.width,
+        height: ctx.height
       }),
       temperature: 0.2
     });
@@ -288,8 +284,8 @@ export async function requestAgentDecision({
       agent,
       rawDecision: repairRaw,
       round,
-      width,
-      height,
+      width: ctx.width,
+      height: ctx.height,
       validateDecision,
       buildFallbackDecision: (inputAgent, inputRound) => buildFallbackDecision(inputAgent, inputRound, validActionHints)
     });

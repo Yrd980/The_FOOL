@@ -139,3 +139,5 @@ export const ACTION_COST: Record<TurnAction["action"], number> = {
   invade: 2,
   burst: 3
 };
+
+export const SCHEMA_VERSION = "1.0";

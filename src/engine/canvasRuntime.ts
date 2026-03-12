@@ -1,4 +1,5 @@
 import { ACTION_COST } from "./constants";
+import type { EngineContext } from "./engineContext";
 import { hasNoAttackTreaty } from "./socialState";
 import type { AgentState, MemoryEvent, Point, ReplayCanvasUpdate, ReplayRound, Treaty, TurnAction } from "../types";
 
@@ -12,17 +13,16 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function randomInt(max: number): number {
-  return Math.floor(Math.random() * max);
+function stableHash(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) % 2147483647;
+  }
+  return hash;
 }
 
-function shuffled<T>(items: T[]): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
+function stableUnit(key: string): number {
+  return (stableHash(key) % 10000) / 10000;
 }
 
 export function createBoard(width: number, height: number): CanvasCell[][] {
@@ -185,7 +185,10 @@ export function countOwnedNeighbors(board: CanvasCell[][], width: number, height
 export function selectUniquePoints(points: Point[], limit: number): Point[] {
   const selected: Point[] = [];
   const seen = new Set<string>();
-  for (const point of shuffled(points)) {
+  const ordered = [...points].sort(
+    (left, right) => stableHash(`${left.x},${left.y}:${limit}`) - stableHash(`${right.x},${right.y}:${limit}`)
+  );
+  for (const point of ordered) {
     const key = `${point.x},${point.y}`;
     if (seen.has(key)) continue;
     selected.push(point);
@@ -253,7 +256,10 @@ export function collectContestedHotspots(events: MemoryEvent[], round: number, w
 export function randomPoints(width: number, height: number, limit: number): Point[] {
   const points: Point[] = [];
   for (let i = 0; i < limit * 3; i += 1) {
-    points.push({ x: randomInt(width), y: randomInt(height) });
+    points.push({
+      x: stableHash(`x:${width}:${height}:${limit}:${i}`) % width,
+      y: stableHash(`y:${width}:${height}:${limit}:${i}`) % height
+    });
   }
   return selectUniquePoints(points, limit);
 }
@@ -305,6 +311,7 @@ export function applyActionToCanvas({
   agent,
   action,
   round,
+  ctx,
   board,
   width,
   height,
@@ -317,15 +324,23 @@ export function applyActionToCanvas({
   agent: AgentState;
   action: TurnAction;
   round: number;
-  board: CanvasCell[][];
-  width: number;
-  height: number;
+  ctx?: EngineContext;
+  board?: CanvasCell[][];
+  width?: number;
+  height?: number;
   currentRoundUpdateMap: Map<string, ReplayRound["canvas_updates"][number]>;
   activeTreaties: Treaty[];
   events: MemoryEvent[];
-  mythColorForPoint: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
+  mythColorForPoint?: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
   stepUpdateLog?: ReplayCanvasUpdate[];
 }): void {
+  const runtimeBoard = ctx?.board ?? board;
+  const runtimeWidth = ctx?.width ?? width;
+  const runtimeHeight = ctx?.height ?? height;
+  const colorForPoint = ctx?.mythColorForPoint ?? mythColorForPoint;
+  if (!runtimeBoard || runtimeWidth === undefined || runtimeHeight === undefined || !colorForPoint) {
+    throw new Error("applyActionToCanvas requires board, dimensions, and mythColorForPoint");
+  }
   const cost = ACTION_COST[action.action];
   if (cost > agent.energy) return;
 
@@ -335,19 +350,19 @@ export function applyActionToCanvas({
   }
 
   if (action.action === "paint") {
-    if (!inBounds(width, height, action.x, action.y)) return;
+    if (!inBounds(runtimeWidth, runtimeHeight, action.x, action.y)) return;
     agent.energy -= cost;
-    const stroke = squarePoints(width, height, action.x, action.y, paintBrushRadius(board, width, height, agent));
+    const stroke = squarePoints(runtimeWidth, runtimeHeight, action.x, action.y, paintBrushRadius(runtimeBoard, runtimeWidth, runtimeHeight, agent));
     for (const point of stroke) {
-      const cell = board[point.y][point.x];
+      const cell = runtimeBoard[point.y][point.x];
       if (cell.owner && cell.owner !== agent.id) continue;
 
       const wasEmpty = !cell.owner;
-      const nextColor = mythColorForPoint(agent, point.x, point.y, action.color, round);
+      const nextColor = colorForPoint(agent, point.x, point.y, action.color, round);
       setCellState({
-        board,
-        width,
-        height,
+        board: runtimeBoard,
+        width: runtimeWidth,
+        height: runtimeHeight,
         currentRoundUpdateMap,
         stepUpdateLog,
         x: point.x,
@@ -364,16 +379,16 @@ export function applyActionToCanvas({
   }
 
   if (action.action === "fortify") {
-    if (!inBounds(width, height, action.x, action.y)) return;
-    if (board[action.y][action.x].owner !== agent.id) return;
+    if (!inBounds(runtimeWidth, runtimeHeight, action.x, action.y)) return;
+    if (runtimeBoard[action.y][action.x].owner !== agent.id) return;
     agent.energy -= cost;
-    for (const point of diamondPoints(width, height, action.x, action.y, 1)) {
-      const cell = board[point.y][point.x];
+    for (const point of diamondPoints(runtimeWidth, runtimeHeight, action.x, action.y, 1)) {
+      const cell = runtimeBoard[point.y][point.x];
       if (cell.owner !== agent.id) continue;
       setCellState({
-        board,
-        width,
-        height,
+        board: runtimeBoard,
+        width: runtimeWidth,
+        height: runtimeHeight,
         currentRoundUpdateMap,
         stepUpdateLog,
         x: point.x,
@@ -387,12 +402,12 @@ export function applyActionToCanvas({
   }
 
   if (action.action === "invade") {
-    if (!inBounds(width, height, action.x, action.y)) return;
-    const targetCell = board[action.y][action.x];
+    if (!inBounds(runtimeWidth, runtimeHeight, action.x, action.y)) return;
+    const targetCell = runtimeBoard[action.y][action.x];
     const defenderId = targetCell.owner;
     if (!defenderId || defenderId === agent.id) return;
 
-    const neighbors = countOwnedNeighbors(board, width, height, agent.id, action.x, action.y);
+    const neighbors = countOwnedNeighbors(runtimeBoard, runtimeWidth, runtimeHeight, agent.id, action.x, action.y);
     if (neighbors === 0) return;
 
     if (hasNoAttackTreaty(activeTreaties, agent.id, defenderId, round)) {
@@ -406,30 +421,40 @@ export function applyActionToCanvas({
 
     agent.energy -= cost;
     const attackPower =
-      1 + neighbors * 0.4 + agent.emotion.anger * 0.01 + agent.emotion.confidence * 0.008 + Math.random() * 0.25;
-    const defendPower = 1 + targetCell.fortify * 0.6 + Math.random() * 0.25;
+      1 +
+      neighbors * 0.4 +
+      agent.emotion.anger * 0.01 +
+      agent.emotion.confidence * 0.008 +
+      stableUnit(`${agent.id}:${round}:attack:${action.x},${action.y}`) * 0.25;
+    const defendPower =
+      1 + targetCell.fortify * 0.6 + stableUnit(`${defenderId}:${round}:defend:${action.x},${action.y}`) * 0.25;
 
     if (attackPower >= defendPower) {
-      const footprint = diamondPoints(width, height, action.x, action.y, 1);
+      const footprint = diamondPoints(runtimeWidth, runtimeHeight, action.x, action.y, 1);
       let captured = 0;
       for (const point of footprint) {
-        const cell = board[point.y][point.x];
+        const cell = runtimeBoard[point.y][point.x];
         if (!cell.owner || cell.owner === agent.id) continue;
-        const pointNeighbors = countOwnedNeighbors(board, width, height, agent.id, point.x, point.y);
-        const localAttackPower = attackPower + pointNeighbors * 0.35 + agent.identity_dna.aggression_bias * 0.002 + Math.random() * 0.15;
-        const localDefendPower = 1 + cell.fortify * 0.6 + Math.random() * 0.2;
+        const pointNeighbors = countOwnedNeighbors(runtimeBoard, runtimeWidth, runtimeHeight, agent.id, point.x, point.y);
+        const localAttackPower =
+          attackPower +
+          pointNeighbors * 0.35 +
+          agent.identity_dna.aggression_bias * 0.002 +
+          stableUnit(`${agent.id}:${round}:local-attack:${point.x},${point.y}`) * 0.15;
+        const localDefendPower =
+          1 + cell.fortify * 0.6 + stableUnit(`${cell.owner}:${round}:local-defend:${point.x},${point.y}`) * 0.2;
         if (localAttackPower < localDefendPower) continue;
         const previousOwner = cell.owner;
         setCellState({
-          board,
-          width,
-          height,
+          board: runtimeBoard,
+          width: runtimeWidth,
+          height: runtimeHeight,
           currentRoundUpdateMap,
           stepUpdateLog,
           x: point.x,
           y: point.y,
           owner: agent.id,
-          color: mythColorForPoint(agent, point.x, point.y, agent.color, round),
+          color: colorForPoint(agent, point.x, point.y, agent.color, round),
           fortify: 0
         });
         events.push({ round, type: "attacked", by: agent.id, target: previousOwner });
@@ -440,15 +465,15 @@ export function applyActionToCanvas({
       }
       if (captured === 0) {
         setCellState({
-          board,
-          width,
-          height,
+          board: runtimeBoard,
+          width: runtimeWidth,
+          height: runtimeHeight,
           currentRoundUpdateMap,
           stepUpdateLog,
           x: action.x,
           y: action.y,
           owner: agent.id,
-          color: mythColorForPoint(agent, action.x, action.y, agent.color, round),
+          color: colorForPoint(agent, action.x, action.y, agent.color, round),
           fortify: 0
         });
         events.push({ round, type: "attacked", by: agent.id, target: defenderId });
@@ -458,7 +483,7 @@ export function applyActionToCanvas({
     return;
   }
 
-  if (!inBounds(width, height, action.center_x, action.center_y)) return;
+  if (!inBounds(runtimeWidth, runtimeHeight, action.center_x, action.center_y)) return;
   if (agent.cooldowns.burst > 0) return;
 
   agent.energy -= cost;
@@ -467,26 +492,26 @@ export function applyActionToCanvas({
     for (let dx = -1; dx <= 1; dx += 1) {
       const x = action.center_x + dx;
       const y = action.center_y + dy;
-      if (!inBounds(width, height, x, y)) continue;
+      if (!inBounds(runtimeWidth, runtimeHeight, x, y)) continue;
 
-      const targetCell = board[y][x];
+      const targetCell = runtimeBoard[y][x];
       const enemy = targetCell.owner && targetCell.owner !== agent.id;
       if (!enemy) continue;
 
-      const nearby = countOwnedNeighbors(board, width, height, agent.id, x, y);
+      const nearby = countOwnedNeighbors(runtimeBoard, runtimeWidth, runtimeHeight, agent.id, x, y);
       const chance = 0.15 + nearby * 0.2;
-      if (Math.random() < chance) {
+      if (stableUnit(`${agent.id}:${round}:burst:${x},${y}`) < chance) {
         const previousOwner = targetCell.owner;
         setCellState({
-          board,
-          width,
-          height,
+          board: runtimeBoard,
+          width: runtimeWidth,
+          height: runtimeHeight,
           currentRoundUpdateMap,
           stepUpdateLog,
           x,
           y,
           owner: agent.id,
-          color: mythColorForPoint(agent, x, y, agent.color, round),
+          color: colorForPoint(agent, x, y, agent.color, round),
           fortify: 0
         });
         events.push({ round, type: "attacked", by: agent.id, target: previousOwner ?? undefined });
@@ -673,6 +698,7 @@ function targetCoverageForRound(round: number, rounds: number): number {
 export function resolveCanvasProgressively({
   round,
   rounds,
+  ctx,
   board,
   width,
   height,
@@ -689,9 +715,10 @@ export function resolveCanvasProgressively({
 }: {
   round: number;
   rounds: number;
-  board: CanvasCell[][];
-  width: number;
-  height: number;
+  ctx?: EngineContext;
+  board?: CanvasCell[][];
+  width?: number;
+  height?: number;
   currentRoundUpdateMap: Map<string, ReplayRound["canvas_updates"][number]>;
   events: MemoryEvent[];
   artTargetColors: string[][];
@@ -703,14 +730,21 @@ export function resolveCanvasProgressively({
   mythColorForPoint: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
   onStep?: (step: { kind: "resolve_fill" | "resolve_harmonize"; label: string; updates: ReplayCanvasUpdate[] }) => void;
 }): void {
-  const totalCells = width * height;
+  const runtimeBoard = ctx?.board ?? board;
+  const runtimeWidth = ctx?.width ?? width;
+  const runtimeHeight = ctx?.height ?? height;
+  const colorForPoint = ctx?.mythColorForPoint ?? mythColorForPoint;
+  if (!runtimeBoard || runtimeWidth === undefined || runtimeHeight === undefined) {
+    throw new Error("resolveCanvasProgressively requires board and dimensions");
+  }
+  const totalCells = runtimeWidth * runtimeHeight;
   const targetCoverage = targetCoverageForRound(round, rounds);
   const desiredOccupied = Math.ceil(totalCells * targetCoverage);
   const desiredAligned = Math.ceil(totalCells * Math.min(1, targetCoverage + 0.12));
   const phase = artPhaseForRound(round);
 
-  let fillBudget = Math.max(0, desiredOccupied - occupiedCellCount(board, width, height));
-  let harmonizeBudget = Math.max(0, desiredAligned - alignedCellCount(board, artTargetColors, width, height));
+  let fillBudget = Math.max(0, desiredOccupied - occupiedCellCount(runtimeBoard, runtimeWidth, runtimeHeight));
+  let harmonizeBudget = Math.max(0, desiredAligned - alignedCellCount(runtimeBoard, artTargetColors, runtimeWidth, runtimeHeight));
 
   if (phase.id === "block_in") {
     fillBudget = Math.ceil(fillBudget * 0.78);
@@ -730,31 +764,31 @@ export function resolveCanvasProgressively({
     round,
     budget: fillBudget,
     phase,
-    board,
-    width,
-    height,
+    board: runtimeBoard,
+    width: runtimeWidth,
+    height: runtimeHeight,
     currentRoundUpdateMap,
     events,
     phaseGateAt,
     targetPriorityAt,
     targetMismatchAt,
     getAgentById,
-    mythColorForPoint,
+    mythColorForPoint: colorForPoint,
     onStep: (updates) => onStep?.({ kind: "resolve_fill", label: `Resolve Fill · ${phase.label}`, updates })
   });
   harmonizeTowardTarget({
     round,
     budget: harmonizeBudget,
     phase,
-    board,
-    width,
-    height,
+    board: runtimeBoard,
+    width: runtimeWidth,
+    height: runtimeHeight,
     currentRoundUpdateMap,
     phaseGateAt,
     targetPriorityAt,
     targetMismatchAt,
     getAgentById,
-    mythColorForPoint,
+    mythColorForPoint: colorForPoint,
     onStep: (updates) => onStep?.({ kind: "resolve_harmonize", label: `Resolve Harmonize · ${phase.label}`, updates })
   });
 }

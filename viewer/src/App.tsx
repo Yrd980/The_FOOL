@@ -98,6 +98,7 @@ type ArtDirection = {
 };
 
 type ReplayData = {
+  schema_version?: string;
   config: {
     width: number;
     height: number;
@@ -295,6 +296,18 @@ async function fetchJSON<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+function normalizedSchemaVersion(version: string | undefined): string {
+  return version?.trim() ? version : "0.9";
+}
+
+function schemaWarningFor(version: string): string {
+  const major = version.split(".")[0] || "0";
+  if (major !== "1") {
+    return `Replay schema ${version} may be incompatible with this viewer. Trying to load it anyway.`;
+  }
+  return "";
+}
+
 function MetricCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-2xl border border-[#dbcfb4] bg-white/70 p-3 shadow-sm backdrop-blur-sm">
@@ -359,6 +372,7 @@ export function App() {
   const [selectedLensAgentId, setSelectedLensAgentId] = useState("");
   const [loadingList, setLoadingList] = useState(false);
   const [errorText, setErrorText] = useState("");
+  const [schemaWarning, setSchemaWarning] = useState("");
 
   const frame = frames[roundIndex] ?? null;
   const previousFrame = roundIndex > 0 ? frames[roundIndex - 1] : null;
@@ -391,12 +405,17 @@ export function App() {
   const loadReplay = useCallback(
     async (name: string, options?: { autoPlay?: boolean; hint?: string }) => {
       const data = await fetchJSON<ReplayData>(`/api/replay/${encodeURIComponent(name)}`);
-      const hydrated: HydratedReplay = {
+      const schemaVersion = normalizedSchemaVersion(data.schema_version);
+      const normalizedData: ReplayData = {
         ...data,
-        colorMap: stableColorMap(data),
-        agentDirectory: buildAgentDirectory(data)
+        schema_version: schemaVersion
       };
-      const builtFrames = buildFrames(data);
+      const hydrated: HydratedReplay = {
+        ...normalizedData,
+        colorMap: stableColorMap(normalizedData),
+        agentDirectory: buildAgentDirectory(normalizedData)
+      };
+      const builtFrames = buildFrames(normalizedData);
       const shouldAutoPlay = options?.autoPlay ?? true;
       const initialSteps = actionStepsForRound(builtFrames[0]?.source);
 
@@ -407,6 +426,7 @@ export function App() {
       setRevealedStepCount(shouldAutoPlay ? 0 : initialSteps.length);
       setRevealedStepUpdateCount(0);
       setErrorText("");
+      setSchemaWarning(schemaWarningFor(schemaVersion));
       setWatchHint(options?.hint ?? "");
       setSelectedLensAgentId((previous) => {
         if (previous && hydrated.agentDirectory.some((item) => item.id === previous)) return previous;
@@ -432,6 +452,7 @@ export function App() {
         setReplays(incoming);
 
         if (incoming.length === 0) {
+          setSchemaWarning("");
           setErrorText("output 目录没有 replay 文件，先运行一局模拟。");
           return;
         }
@@ -457,6 +478,7 @@ export function App() {
           });
         }
       } catch (error) {
+        setSchemaWarning("");
         setErrorText(error instanceof Error ? error.message : String(error));
       } finally {
         setLoadingList(false);
@@ -709,6 +731,11 @@ export function App() {
                 : errorText || "加载中..."}
             </p>
             <p className="mt-2 font-mono text-xs text-[#0f7f78]">{watchStateText}</p>
+            {schemaWarning ? (
+              <p className="mt-2 rounded-xl border border-[#e0bc62] bg-[#fff4cf] px-3 py-2 text-xs text-[#7a5b15]">
+                {schemaWarning}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start">

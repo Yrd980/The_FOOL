@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ValidateFunction } from "ajv/dist/2020.js";
+import type { EngineContext } from "./engineContext";
 import type { AgentState, ArtDirection, DigitalTwinProfile, IdentityDNA } from "../types";
 import { COLORS, DEFAULT_TWIN_DNA_LIBRARY, LEGACY_PERSONAS } from "./constants";
 
@@ -14,8 +15,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function randomInt(max: number): number {
-  return Math.floor(Math.random() * max);
+function stableHash(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) % 2147483647;
+  }
+  return hash;
+}
+
+function stableInt(key: string, max: number): number {
+  if (max <= 0) return 0;
+  return stableHash(key) % max;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -144,6 +154,7 @@ function loadTwinProfiles(profilePath?: string): DigitalTwinProfile[] {
 export function createAgents({
   agentCount,
   profilePath,
+  ctx,
   width,
   height,
   artDirection,
@@ -153,13 +164,22 @@ export function createAgents({
 }: {
   agentCount: number;
   profilePath?: string;
-  width: number;
-  height: number;
-  artDirection: ArtDirection;
-  board: BoardCell[][];
+  ctx?: EngineContext;
+  width?: number;
+  height?: number;
+  artDirection?: ArtDirection;
+  board?: BoardCell[][];
   validateAgent: ValidateFunction<AgentState>;
-  mythColorForPoint: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
+  mythColorForPoint?: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
 }): AgentState[] {
+  const runtimeWidth = ctx?.width ?? width;
+  const runtimeHeight = ctx?.height ?? height;
+  const runtimeArtDirection = ctx?.artDirection ?? artDirection;
+  const runtimeBoard = ctx?.board ?? board;
+  const colorForPoint = ctx?.mythColorForPoint ?? mythColorForPoint;
+  if (!runtimeWidth || !runtimeHeight || !runtimeArtDirection || !runtimeBoard || !colorForPoint) {
+    throw new Error("createAgents requires board, dimensions, art direction, and mythColorForPoint");
+  }
   const agents: AgentState[] = [];
   const profiles = loadTwinProfiles(profilePath);
   const totalAgents = profiles.length > 0 ? profiles.length : agentCount;
@@ -172,7 +192,7 @@ export function createAgents({
 
       const idCandidate = typeof profile.id === "string" ? profile.id.trim() : `a${i + 1}`;
       const id = /^[a-zA-Z0-9_-]{1,24}$/.test(idCandidate) ? idCandidate : `a${i + 1}`;
-      const paletteColor = artDirection.palette[i % artDirection.palette.length] ?? COLORS[i % COLORS.length];
+      const paletteColor = runtimeArtDirection.palette[i % runtimeArtDirection.palette.length] ?? COLORS[i % COLORS.length];
       const colorCandidate = typeof profile.color === "string" ? profile.color.trim() : paletteColor;
       const color = /^#[0-9A-Fa-f]{6}$/.test(colorCandidate) ? colorCandidate : paletteColor;
       const name = (profile.name || `Twin-${i + 1}`).slice(0, 20);
@@ -202,7 +222,7 @@ export function createAgents({
     const agent: AgentState = {
       id,
       name: `Twin-${i + 1}`,
-      color: artDirection.palette[i % artDirection.palette.length] ?? COLORS[i % COLORS.length],
+      color: runtimeArtDirection.palette[i % runtimeArtDirection.palette.length] ?? COLORS[i % COLORS.length],
       identity_dna: dna,
       goal_weights: normalizeGoalWeights(dna),
       emotion: { anger: 20, fear: 20, confidence: 50, satisfaction: 50 },
@@ -236,14 +256,16 @@ export function createAgents({
   for (const agent of agents) {
     let x = 0;
     let y = 0;
+    let attempt = 0;
     do {
-      x = randomInt(width);
-      y = randomInt(height);
+      x = stableInt(`${agent.id}:x:${runtimeWidth}:${runtimeHeight}:${attempt}`, runtimeWidth);
+      y = stableInt(`${agent.id}:y:${runtimeWidth}:${runtimeHeight}:${attempt}`, runtimeHeight);
+      attempt += 1;
     } while (used.has(`${x},${y}`));
 
     used.add(`${x},${y}`);
-    board[y][x].owner = agent.id;
-    board[y][x].color = mythColorForPoint(agent, x, y, agent.color, 1);
+    runtimeBoard[y][x].owner = agent.id;
+    runtimeBoard[y][x].color = colorForPoint(agent, x, y, agent.color, 1);
 
     const agentId = agent.id;
     if (!validateAgent(agent)) {

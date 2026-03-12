@@ -5,15 +5,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function shuffled<T>(items: T[]): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
-
 function hashText(value: string): number {
   let hash = 2166136261;
   for (let i = 0; i < value.length; i += 1) {
@@ -21,6 +12,17 @@ function hashText(value: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return Math.abs(hash >>> 0);
+}
+
+function shuffled<T>(items: T[], seedText: string): T[] {
+  const copy = [...items];
+  let seed = hashText(seedText) || 1;
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    seed = Math.imul(seed ^ (i + 1), 1664525) + 1013904223;
+    const j = Math.abs(seed >>> 0) % (i + 1);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -269,7 +271,9 @@ export function buildArtDirection(themePrompt: string): ArtDirection {
     ) ?? ART_PALETTE_LIBRARY[seed % ART_PALETTE_LIBRARY.length];
 
   const palette = [...paletteKit.colors];
-  const motifs = [...new Set(MOTIF_LIBRARY.filter((motif) => lower.includes(motif)).concat(shuffled(MOTIF_LIBRARY).slice(0, 3)))].slice(0, 5);
+  const motifs = [
+    ...new Set(MOTIF_LIBRARY.filter((motif) => lower.includes(motif)).concat(shuffled(MOTIF_LIBRARY, themePrompt).slice(0, 3)))
+  ].slice(0, 5);
   const titleLead = motifs[0] ? `${motifs[0][0].toUpperCase()}${motifs[0].slice(1)}` : "Myth";
 
   const zoneGuides: ArtZone[] = [

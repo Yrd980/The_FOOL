@@ -8,12 +8,21 @@ const ACTION_COST: Record<TurnAction["action"], number> = {
   burst: 3
 };
 
-function randomInt(max: number): number {
-  return Math.floor(Math.random() * max);
+function stableHash(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) % 2147483647;
+  }
+  return hash;
 }
 
-function randomBetween(min: number, max: number): number {
-  return min + randomInt(max - min + 1);
+function stableInt(key: string, max: number): number {
+  if (max <= 0) return 0;
+  return stableHash(key) % max;
+}
+
+function stableBetween(key: string, min: number, max: number): number {
+  return min + stableInt(key, max - min + 1);
 }
 
 function clampByte(value: number): number {
@@ -39,11 +48,11 @@ function stablePairBias(agentId: string, targetId: string, round: number): numbe
   return (hash % 100) / 100;
 }
 
-function pickPoint(candidates: Point[], width: number, height: number): Point {
+function pickPoint(candidates: Point[], width: number, height: number, key: string): Point {
   if (candidates.length > 0) {
-    return candidates[randomInt(Math.min(candidates.length, 3))];
+    return candidates[stableInt(key, Math.min(candidates.length, 3))];
   }
-  return { x: randomInt(width), y: randomInt(height) };
+  return { x: stableInt(`${key}:x`, width), y: stableInt(`${key}:y`, height) };
 }
 
 function pickPaintColor(agent: AgentState, intent: TurnIntent, round: number, validActionHints: ActionHints, artDirection: ArtDirection): string {
@@ -90,7 +99,10 @@ function pushAction(actions: TurnAction[], action: TurnAction, energyLeft: { val
   return true;
 }
 
-function pickIntent(agent: AgentState, opponents: OpponentSnapshot[]): TurnIntent {
+const BETRAY_THRESHOLD = 0.2;
+const DIPLOMACY_BETRAY_THRESHOLD = 0.16;
+
+function pickIntent(agent: AgentState, opponents: OpponentSnapshot[], round: number): TurnIntent {
   const dna = agent.identity_dna;
   const values = dna.core_values.map((value) => value.toLowerCase());
   const mostTense = [...opponents].sort((left, right) => right.relationship.tension - left.relationship.tension)[0];
@@ -106,11 +118,16 @@ function pickIntent(agent: AgentState, opponents: OpponentSnapshot[]): TurnInten
   if (mostTrusted && mostTrusted.relationship.trust >= 18 && dna.diplomacy_bias >= 60) {
     return "cooperate";
   }
-  if (mostTense && mostTense.relationship.tension >= 70 && dna.diplomacy_bias >= 58 && Math.random() < 0.2) {
+  if (
+    mostTense &&
+    mostTense.relationship.tension >= 70 &&
+    dna.diplomacy_bias >= 58 &&
+    stablePairBias(agent.id, mostTense.id, round) < BETRAY_THRESHOLD
+  ) {
     return "betray";
   }
   if (dna.diplomacy_bias >= 72 && dna.aggression_bias < 60) {
-    return Math.random() < 0.16 ? "betray" : "cooperate";
+    return mostTrusted && stablePairBias(agent.id, mostTrusted.id, round) < DIPLOMACY_BETRAY_THRESHOLD ? "betray" : "cooperate";
   }
   if (dna.aggression_bias >= 68 || values.some((value) => value.includes("pressure") || value.includes("growth") || value.includes("tempo"))) {
     return "expand";
@@ -199,7 +216,7 @@ function buildActions(
     validActionHints.burst_centers.length > 0 &&
     (intent === "revenge" || dna.aggression_bias + agent.emotion.confidence >= 150)
   ) {
-    const center = pickPoint(validActionHints.burst_centers, width, height);
+    const center = pickPoint(validActionHints.burst_centers, width, height, `${agent.id}:${round}:${intent}:burst`);
     pushAction(actions, { action: "burst", center_x: center.x, center_y: center.y, radius: 1 }, energyLeft);
   }
 
@@ -207,23 +224,23 @@ function buildActions(
     if (actions.length >= 3) break;
 
     if (priority.action === "paint") {
-      const point = pickPoint(validActionHints.paint_candidates, width, height);
+      const point = pickPoint(validActionHints.paint_candidates, width, height, `${agent.id}:${round}:${intent}:paint:${actions.length}`);
       pushAction(actions, { action: "paint", x: point.x, y: point.y, color: pickPaintColor(agent, intent, round, validActionHints, artDirection) }, energyLeft);
       continue;
     }
 
     if (priority.action === "fortify") {
-      const point = pickPoint(validActionHints.fortify_candidates, width, height);
+      const point = pickPoint(validActionHints.fortify_candidates, width, height, `${agent.id}:${round}:${intent}:fortify:${actions.length}`);
       pushAction(actions, { action: "fortify", x: point.x, y: point.y }, energyLeft);
       continue;
     }
 
-    const point = pickPoint(validActionHints.invade_candidates, width, height);
+    const point = pickPoint(validActionHints.invade_candidates, width, height, `${agent.id}:${round}:${intent}:invade:${actions.length}`);
     pushAction(actions, { action: "invade", x: point.x, y: point.y }, energyLeft);
   }
 
   if (actions.length === 0) {
-    const point = pickPoint(validActionHints.paint_candidates, width, height);
+    const point = pickPoint(validActionHints.paint_candidates, width, height, `${agent.id}:${round}:${intent}:fallback`);
     pushAction(actions, {
       action: "paint",
       x: point.x,
@@ -237,45 +254,48 @@ function buildActions(
 
 function buildPublicMessage(agent: AgentState, intent: TurnIntent): string {
   const style = agent.identity_dna.speech_style.toLowerCase();
+  const identityToken = (agent.identity_dna.core_values[0] || agent.identity_dna.archetype).toLowerCase();
+  const archetypeToken = agent.identity_dna.archetype.toLowerCase();
 
   if (style.includes("expressive") || style.includes("poetic")) {
-    if (intent === "art_focus") return "Let this border carry my name.";
-    if (intent === "revenge") return "I remember the cut. Now answer it.";
-    return "Shape first. Noise later.";
+    if (intent === "art_focus") return `${archetypeToken} shapes ${identityToken} into the border.`;
+    if (intent === "revenge") return `${archetypeToken} remembers the cut and answers it.`;
+    return `${archetypeToken} puts ${identityToken} before noise.`;
   }
 
   if (style.includes("calm") || style.includes("measured") || style.includes("analytical")) {
-    if (intent === "defend") return "Hold the line and trade nothing away.";
-    if (intent === "cooperate") return "Stable edges benefit both of us.";
-    return "Pressure stays controlled from here.";
+    if (intent === "defend") return `${archetypeToken} holds the line for ${identityToken}.`;
+    if (intent === "cooperate") return `${archetypeToken} keeps this edge steady in ${identityToken}.`;
+    return `${archetypeToken} keeps ${identityToken} under control.`;
   }
 
   if (style.includes("playful") || style.includes("ironic") || style.includes("sly")) {
-    if (intent === "betray") return "Smile once. Shift twice.";
-    return "You will notice this move too late.";
+    if (intent === "betray") return `${archetypeToken} smiles once and flips ${identityToken} twice.`;
+    return `${archetypeToken} hides ${identityToken} until it is too late.`;
   }
 
-  if (intent === "revenge") return "I am taking that space back.";
-  if (intent === "art_focus") return "This round needs a cleaner pattern.";
-  if (intent === "cooperate") return "Keep the border quiet and useful.";
-  return "I am leaning forward this round.";
+  if (intent === "revenge") return `${archetypeToken} takes that space back for ${identityToken}.`;
+  if (intent === "art_focus") return `${archetypeToken} wants a cleaner ${identityToken} pattern.`;
+  if (intent === "cooperate") return `${archetypeToken} keeps the border quiet for ${identityToken}.`;
+  return `${archetypeToken} leans forward with ${identityToken}.`;
 }
 
 function buildPrivateMessage(agent: AgentState, target: OpponentSnapshot | undefined, intent: TurnIntent): TurnDecision["private_messages"] {
   if (!target || target.id === agent.id) return [];
   const recent = target.relationship.recent_shared_events[0];
+  const historyTag = recent ? ` We remember ${recent}.` : "";
 
   if (intent === "cooperate" || intent === "defend") {
-    const content = recent ? `We remember ${recent}. Keep this lane calm.` : "Keep this lane calm for two rounds.";
+    const content = `${agent.identity_dna.archetype} asks for calm.${historyTag || " Keep this lane calm for two rounds."}`;
     return [{ target_id: target.id, content: content.slice(0, 50) }];
   }
 
   if (intent === "betray") {
-    return [{ target_id: target.id, content: "Stay relaxed. I am not pressing yet." }];
+    return [{ target_id: target.id, content: `Stay relaxed.${historyTag}`.slice(0, 50) }];
   }
 
   if (intent === "revenge" || intent === "expand") {
-    const content = target.relationship.debt > 0 ? "You still owe this border an answer." : "Do not mistake pressure for hesitation.";
+    const content = target.relationship.debt > 0 ? `You still owe this border an answer.${historyTag}` : `Do not mistake pressure for hesitation.${historyTag}`;
     return [{ target_id: target.id, content }];
   }
 
@@ -298,17 +318,18 @@ function buildTreaty(agent: AgentState, round: number, target: OpponentSnapshot 
   ];
 }
 
-function buildEmotionDelta(intent: TurnIntent): TurnDecision["emotion_delta"] {
+function buildEmotionDelta(agentId: string, round: number, intent: TurnIntent): TurnDecision["emotion_delta"] {
+  const delta = (label: string, min: number, max: number) => stableBetween(`${agentId}:${round}:${intent}:${label}`, min, max);
   if (intent === "revenge") {
-    return { anger: randomBetween(1, 4), fear: randomBetween(-2, 1), confidence: randomBetween(0, 3), satisfaction: randomBetween(-1, 2) };
+    return { anger: delta("anger", 1, 4), fear: delta("fear", -2, 1), confidence: delta("confidence", 0, 3), satisfaction: delta("satisfaction", -1, 2) };
   }
   if (intent === "defend") {
-    return { anger: randomBetween(-1, 2), fear: randomBetween(0, 3), confidence: randomBetween(-1, 2), satisfaction: randomBetween(-1, 2) };
+    return { anger: delta("anger", -1, 2), fear: delta("fear", 0, 3), confidence: delta("confidence", -1, 2), satisfaction: delta("satisfaction", -1, 2) };
   }
   if (intent === "art_focus") {
-    return { anger: randomBetween(-2, 1), fear: randomBetween(-2, 1), confidence: randomBetween(1, 4), satisfaction: randomBetween(1, 4) };
+    return { anger: delta("anger", -2, 1), fear: delta("fear", -2, 1), confidence: delta("confidence", 1, 4), satisfaction: delta("satisfaction", 1, 4) };
   }
-  return { anger: randomBetween(-2, 2), fear: randomBetween(-2, 2), confidence: randomBetween(0, 3), satisfaction: randomBetween(0, 3) };
+  return { anger: delta("anger", -2, 2), fear: delta("fear", -2, 2), confidence: delta("confidence", 0, 3), satisfaction: delta("satisfaction", 0, 3) };
 }
 
 export function buildMockDecision({
@@ -328,7 +349,7 @@ export function buildMockDecision({
   validActionHints: ActionHints;
   artDirection: ArtDirection;
 }): TurnDecision {
-  const intent = pickIntent(agent, opponents);
+  const intent = pickIntent(agent, opponents, round);
   const target = chooseTarget(agent, opponents, intent, round);
   const targetSnapshot = opponents.find((item) => item.id === target);
 
@@ -340,7 +361,7 @@ export function buildMockDecision({
     private_messages: buildPrivateMessage(agent, targetSnapshot, intent),
     treaty_proposals: buildTreaty(agent, round, targetSnapshot, intent),
     actions: buildActions(agent, intent, width, height, validActionHints, round, artDirection),
-    emotion_delta: buildEmotionDelta(intent),
+    emotion_delta: buildEmotionDelta(agent.id, round, intent),
     mood_change_reason: `${agent.identity_dna.archetype} reacted to frontline pressure`
   };
 }

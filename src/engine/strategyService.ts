@@ -1,6 +1,7 @@
 import { boundDecision } from "./decisionService";
 import { ACTION_COST } from "./constants";
 import { collectContestedHotspots, collectOwnedCells, mergeUniquePoints, neighbors4, randomPoints, selectUniquePoints, type CanvasCell } from "./canvasRuntime";
+import type { EngineContext } from "./engineContext";
 import { sharedHistory } from "./socialState";
 import type { ActionHints, AgentState, ArtDirection, ArtZone, MemoryEvent, Point, TurnAction, TurnDecision } from "../types";
 
@@ -84,6 +85,7 @@ function mythFocusPoints({
 
 export function mythAestheticScore({
   agent,
+  ctx,
   board,
   width,
   height,
@@ -92,25 +94,35 @@ export function mythAestheticScore({
   zoneWeight
 }: {
   agent: AgentState;
-  board: CanvasCell[][];
-  width: number;
-  height: number;
-  artDirection: ArtDirection;
-  artTargetColors: string[][];
-  zoneWeight: (zone: ArtZone, x: number, y: number) => number;
+  ctx?: EngineContext;
+  board?: CanvasCell[][];
+  width?: number;
+  height?: number;
+  artDirection?: ArtDirection;
+  artTargetColors?: string[][];
+  zoneWeight?: (zone: ArtZone, x: number, y: number) => number;
 }): number {
+  const runtimeBoard = ctx?.board ?? board;
+  const runtimeWidth = ctx?.width ?? width;
+  const runtimeHeight = ctx?.height ?? height;
+  const runtimeArtDirection = ctx?.artDirection ?? artDirection;
+  const runtimeArtTargetColors = ctx?.artTargetColors ?? artTargetColors;
+  const runtimeZoneWeight = ctx?.zoneWeight ?? zoneWeight;
+  if (!runtimeBoard || runtimeWidth === undefined || runtimeHeight === undefined || !runtimeArtDirection || !runtimeArtTargetColors || !runtimeZoneWeight) {
+    throw new Error("mythAestheticScore requires board, dimensions, art direction, target colors, and zoneWeight");
+  }
   let total = 0;
   let count = 0;
   const preferredKinds = preferredZoneKindsForAgent(agent);
 
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const cell = board[y][x];
+  for (let y = 0; y < runtimeHeight; y += 1) {
+    for (let x = 0; x < runtimeWidth; x += 1) {
+      const cell = runtimeBoard[y][x];
       if (cell.owner !== agent.id) continue;
-      const preferredColor = artTargetColors[y][x];
+      const preferredColor = runtimeArtTargetColors[y][x];
       const colorScore = 1 - colorDistance(cell.color, preferredColor) / 441.6729559;
-      const zoneScore = artDirection.zone_guides.reduce((best, zone) => {
-        const raw = zoneWeight(zone, x, y);
+      const zoneScore = runtimeArtDirection.zone_guides.reduce((best, zone) => {
+        const raw = runtimeZoneWeight(zone, x, y);
         return preferredKinds.includes(zone.kind) ? Math.max(best, raw * 1.2) : Math.max(best, raw * 0.6);
       }, 0);
       total += clamp(colorScore * 70 + zoneScore * 30, 0, 100);
@@ -193,6 +205,7 @@ function targetPriorityPoints({
 export function buildActionHints({
   agent,
   round,
+  ctx,
   board,
   width,
   height,
@@ -203,25 +216,43 @@ export function buildActionHints({
 }: {
   agent: AgentState;
   round: number;
-  board: CanvasCell[][];
-  width: number;
-  height: number;
+  ctx?: EngineContext;
+  board?: CanvasCell[][];
+  width?: number;
+  height?: number;
   events: MemoryEvent[];
-  artDirection: ArtDirection;
-  artTargetColors: string[][];
-  zoneWeight: (zone: ArtZone, x: number, y: number) => number;
+  artDirection?: ArtDirection;
+  artTargetColors?: string[][];
+  zoneWeight?: (zone: ArtZone, x: number, y: number) => number;
 }): ActionHints {
-  const ownedCells = collectOwnedCells(board, width, height, agent.id);
+  const runtimeBoard = ctx?.board ?? board;
+  const runtimeWidth = ctx?.width ?? width;
+  const runtimeHeight = ctx?.height ?? height;
+  const runtimeArtDirection = ctx?.artDirection ?? artDirection;
+  const runtimeArtTargetColors = ctx?.artTargetColors ?? artTargetColors;
+  const runtimeZoneWeight = ctx?.zoneWeight ?? zoneWeight;
+  if (!runtimeBoard || runtimeWidth === undefined || runtimeHeight === undefined || !runtimeArtDirection || !runtimeArtTargetColors || !runtimeZoneWeight) {
+    throw new Error("buildActionHints requires board, dimensions, art direction, target colors, and zoneWeight");
+  }
+  const ownedCells = collectOwnedCells(runtimeBoard, runtimeWidth, runtimeHeight, agent.id);
   const paintRaw: Point[] = [];
   const fortifyRaw: Point[] = [];
   const invadeRaw: Point[] = [];
   const burstRaw: Point[] = [];
-  const targetPriority = targetPriorityPoints({ agent, board, width, height, artDirection, artTargetColors, zoneWeight });
+  const targetPriority = targetPriorityPoints({
+    agent,
+    board: runtimeBoard,
+    width: runtimeWidth,
+    height: runtimeHeight,
+    artDirection: runtimeArtDirection,
+    artTargetColors: runtimeArtTargetColors,
+    zoneWeight: runtimeZoneWeight
+  });
 
   for (const own of ownedCells) {
     let hasEnemyNeighbor = false;
-    for (const neighbor of neighbors4(width, height, own.x, own.y)) {
-      const owner = board[neighbor.y][neighbor.x].owner;
+    for (const neighbor of neighbors4(runtimeWidth, runtimeHeight, own.x, own.y)) {
+      const owner = runtimeBoard[neighbor.y][neighbor.x].owner;
       if (owner === agent.id) continue;
       if (owner === null) {
         paintRaw.push(neighbor);
@@ -232,7 +263,7 @@ export function buildActionHints({
       hasEnemyNeighbor = true;
     }
 
-    if (hasEnemyNeighbor || board[own.y][own.x].fortify < 2) {
+    if (hasEnemyNeighbor || runtimeBoard[own.y][own.x].fortify < 2) {
       fortifyRaw.push(own);
     }
     if (hasEnemyNeighbor) {
@@ -240,10 +271,10 @@ export function buildActionHints({
     }
   }
 
-  const hotspots = collectContestedHotspots(events, round, width, height);
-  const mythRaw = mythFocusPoints({ agent, width, height, artDirection, zoneWeight });
+  const hotspots = collectContestedHotspots(events, round, runtimeWidth, runtimeHeight);
+  const mythRaw = mythFocusPoints({ agent, width: runtimeWidth, height: runtimeHeight, artDirection: runtimeArtDirection, zoneWeight: runtimeZoneWeight });
   for (const point of hotspots) {
-    const owner = board[point.y][point.x].owner;
+    const owner = runtimeBoard[point.y][point.x].owner;
     if (owner !== agent.id) {
       invadeRaw.push(point);
       burstRaw.push(point);
@@ -254,10 +285,10 @@ export function buildActionHints({
   }
 
   if (paintRaw.length === 0) {
-    const fallback = ownedCells.length > 0 ? ownedCells : randomPoints(width, height, 8);
+    const fallback = ownedCells.length > 0 ? ownedCells : randomPoints(runtimeWidth, runtimeHeight, 8);
     for (const origin of fallback) {
-      for (const neighbor of neighbors4(width, height, origin.x, origin.y)) {
-        if (board[neighbor.y][neighbor.x].owner !== agent.id) {
+      for (const neighbor of neighbors4(runtimeWidth, runtimeHeight, origin.x, origin.y)) {
+        if (runtimeBoard[neighbor.y][neighbor.x].owner !== agent.id) {
           paintRaw.push(neighbor);
         }
       }
@@ -279,23 +310,23 @@ export function buildActionHints({
   return {
     paint_candidates: mergeUniquePoints(
       targetPriority.paint,
-      mergeUniquePoints(mythRaw, paintRaw.length > 0 ? paintRaw : randomPoints(width, height, 10), 16),
+      mergeUniquePoints(mythRaw, paintRaw.length > 0 ? paintRaw : randomPoints(runtimeWidth, runtimeHeight, 10), 16),
       14
     ),
-    fortify_candidates: mergeUniquePoints(targetPriority.fortify, fortifyRaw.length > 0 ? fortifyRaw : randomPoints(width, height, 8), 8),
+    fortify_candidates: mergeUniquePoints(targetPriority.fortify, fortifyRaw.length > 0 ? fortifyRaw : randomPoints(runtimeWidth, runtimeHeight, 8), 8),
     invade_candidates: mergeUniquePoints(
       targetPriority.invade,
-      mergeUniquePoints(hotspots, invadeRaw.length > 0 ? invadeRaw : randomPoints(width, height, 10), 14),
+      mergeUniquePoints(hotspots, invadeRaw.length > 0 ? invadeRaw : randomPoints(runtimeWidth, runtimeHeight, 10), 14),
       10
     ),
     burst_centers: mergeUniquePoints(
       targetPriority.invade,
-      mergeUniquePoints(hotspots, burstRaw.length > 0 ? burstRaw : randomPoints(width, height, 8), 12),
+      mergeUniquePoints(hotspots, burstRaw.length > 0 ? burstRaw : randomPoints(runtimeWidth, runtimeHeight, 8), 12),
       8
     ),
     contested_hotspots: selectUniquePoints(hotspots, 6),
-    palette_candidates: mythPaletteCandidatesForAgent(artDirection, agent),
-    motif_focus: artDirection.zone_guides
+    palette_candidates: mythPaletteCandidatesForAgent(runtimeArtDirection, agent),
+    motif_focus: runtimeArtDirection.zone_guides
       .filter((zone) => preferredZoneKindsForAgent(agent).includes(zone.kind))
       .map((zone) => `${zone.label}: ${zone.motif}`)
       .slice(0, 4)
@@ -390,8 +421,7 @@ export function applyIdentitySteering({
   decision,
   hints,
   round,
-  width,
-  height,
+  ctx,
   agents,
   mythColorForPoint
 }: {
@@ -399,11 +429,16 @@ export function applyIdentitySteering({
   decision: TurnDecision;
   hints: ActionHints;
   round: number;
-  width: number;
-  height: number;
+  ctx?: EngineContext;
   agents: AgentState[];
-  mythColorForPoint: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
+  mythColorForPoint?: (agent: AgentState, x: number, y: number, requestedColor?: string, round?: number) => string;
 }): { decision: TurnDecision; note: string; proactive_score: number } {
+  const colorForPoint = ctx?.mythColorForPoint ?? mythColorForPoint;
+  const runtimeWidth = ctx?.width;
+  const runtimeHeight = ctx?.height;
+  if (!colorForPoint || runtimeWidth === undefined || runtimeHeight === undefined) {
+    throw new Error("applyIdentitySteering requires ctx width/height and mythColorForPoint");
+  }
   const next: TurnDecision = {
     ...decision,
     public_message: stylePublicMessage(agent, decision.public_message),
@@ -452,7 +487,7 @@ export function applyIdentitySteering({
   const pickPaint = (): TurnAction | null => {
     const point = hints.paint_candidates[0];
     if (!point) return null;
-    return { action: "paint", x: point.x, y: point.y, color: mythColorForPoint(agent, point.x, point.y, agent.color, round) };
+    return { action: "paint", x: point.x, y: point.y, color: colorForPoint(agent, point.x, point.y, agent.color, round) };
   };
 
   const pickFortify = (): TurnAction | null => {
@@ -545,7 +580,7 @@ export function applyIdentitySteering({
   const note = notes.length > 0 ? `${notePrefix}: ${notes.join("；")}` : `${notePrefix}: 行为保持人格一致`;
 
   return {
-    decision: boundDecision(next, width, height),
+    decision: boundDecision(next, runtimeWidth, runtimeHeight),
     note,
     proactive_score: proactiveScore
   };
