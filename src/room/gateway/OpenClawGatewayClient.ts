@@ -47,6 +47,7 @@ export class OpenClawGatewayClient {
   disconnect(): void {
     this.transition({ type: "disconnect" });
     this.cleanup();
+    this.flushPendingRpc(new Error("WebSocket disconnected"));
   }
 
   async call<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
@@ -73,9 +74,9 @@ export class OpenClawGatewayClient {
   destroy(): void {
     this.destroyed = true;
     this.cleanup();
+    this.flushPendingRpc(new Error("Gateway client destroyed"));
     this.connectionState = "idle";
     this.listeners.clear();
-    this.pendingRpc.clear();
   }
 
   private openWebSocket(): void {
@@ -106,6 +107,7 @@ export class OpenClawGatewayClient {
 
     this.ws.onclose = () => {
       this.stopPresencePolling();
+      this.flushPendingRpc(new Error("WebSocket closed"));
       if (!this.destroyed && this.connectionState !== "disconnected") {
         this.transition({ type: "ws-close" });
         this.scheduleReconnect();
@@ -125,6 +127,13 @@ export class OpenClawGatewayClient {
           if (payload?.type === "hello-ok") {
             this.transition({ type: "auth-ok" });
             this.reconnectAttempt = 0;
+            this.emitPresenceFromPayload(
+              (
+                frame.payload as {
+                  snapshot?: { presence?: GatewayPresenceEntry[] };
+                }
+              )?.snapshot?.presence,
+            );
             this.startPresencePolling();
           }
           pending.resolve(frame.payload);
@@ -144,6 +153,21 @@ export class OpenClawGatewayClient {
     if (frame.type === "event") {
       if (frame.event === "connect.challenge") {
         this.sendConnectRequest();
+        return;
+      }
+
+      if (frame.event === "presence") {
+        this.emitPresenceFromPayload(frame.payload);
+        return;
+      }
+
+      if (frame.event === "message") {
+        this.emitMessageFromPayload(frame.payload);
+        return;
+      }
+
+      if (frame.event === "chat") {
+        this.emitChatPayload(frame.payload);
       }
     }
   }
@@ -159,6 +183,7 @@ export class OpenClawGatewayClient {
         maxProtocol: 3,
         client: {
           id: `thefool-${this.config.id}`,
+          instanceId: this.config.id,
           version: "0.1.0",
           platform: "web",
           mode: "operator",
@@ -240,6 +265,92 @@ export class OpenClawGatewayClient {
       }
       this.ws = null;
     }
+  }
+
+  private flushPendingRpc(error: Error): void {
+    for (const pending of this.pendingRpc.values()) {
+      pending.reject(error);
+    }
+    this.pendingRpc.clear();
+  }
+
+  private emitPresenceFromPayload(payload: unknown): void {
+    if (Array.isArray(payload)) {
+      this.emit("presence", payload as GatewayPresenceEntry[]);
+      return;
+    }
+
+    const presence = (
+      payload as { presence?: GatewayPresenceEntry[] } | undefined
+    )?.presence;
+
+    if (Array.isArray(presence)) {
+      this.emit("presence", presence);
+    }
+  }
+
+  private emitMessageFromPayload(payload: unknown): void {
+    const message = payload as Partial<GatewayMessage> | undefined;
+
+    if (
+      typeof message?.id === "string" &&
+      typeof message.senderId === "string" &&
+      typeof message.content === "string" &&
+      typeof message.ts === "number"
+    ) {
+      this.emit("message", {
+        id: message.id,
+        senderId: message.senderId,
+        senderName: typeof message.senderName === "string" ? message.senderName : null,
+        content: message.content,
+        ts: message.ts,
+      });
+    }
+  }
+
+  private emitChatPayload(payload: unknown): void {
+    const chatPayload = payload as {
+      runId?: string;
+      sessionKey?: string;
+      message?: { timestamp?: number; content?: unknown };
+    } | undefined;
+    const content = this.extractTextFromChatMessage(chatPayload?.message?.content);
+
+    if (!chatPayload?.sessionKey || !content) {
+      return;
+    }
+
+    this.emit("message", {
+      id: chatPayload.runId ?? `${chatPayload.sessionKey}-${chatPayload.message?.timestamp ?? Date.now()}`,
+      senderId: chatPayload.sessionKey,
+      senderName: null,
+      content,
+      ts: chatPayload.message?.timestamp ?? Date.now(),
+    });
+  }
+
+  private extractTextFromChatMessage(content: unknown): string | null {
+    if (typeof content === "string") {
+      return content;
+    }
+
+    if (!Array.isArray(content)) {
+      return null;
+    }
+
+    const parts = content
+      .map((item) =>
+        typeof item === "object" &&
+        item !== null &&
+        "type" in item &&
+        (item as { type?: unknown }).type === "text" &&
+        typeof (item as { text?: unknown }).text === "string"
+          ? (item as { text: string }).text
+          : null,
+      )
+      .filter((value): value is string => Boolean(value));
+
+    return parts.length > 0 ? parts.join("\n") : null;
   }
 
   private transition(event: { type: string; reason?: string }): void {

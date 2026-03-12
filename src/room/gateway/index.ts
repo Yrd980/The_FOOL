@@ -1,10 +1,12 @@
 export { OpenClawGatewayClient } from "./OpenClawGatewayClient";
 export { reduceConnection } from "./connectionReducer";
 export {
+  buildPresenceContestantMap,
   classifyInteractionType,
   deriveContestantState,
   mapGatewayMessage,
   mapPresenceToContestantStates,
+  resolveGatewayContestantId,
 } from "./gatewayAdapter";
 export type {
   AgentPresenceMap,

@@ -125,6 +125,14 @@ describe("reduceRoomAction", () => {
     expect(reduceRoomAction(state, { type: "switch-room", roomId: "missing" }).currentRoomId).toBe("main-stage");
   });
 
+  it("accepts generated team-room ids beyond the initial static list", () => {
+    const state = createSeedRoomSnapshot();
+
+    expect(reduceRoomAction(state, { type: "switch-room", roomId: "team-room-4" }).currentRoomId).toBe(
+      "team-room-4",
+    );
+  });
+
   it("wave-over requires main-stage and selectedContestantId", () => {
     const state = createSeedRoomSnapshot({ selectedContestantId: "glass-sea" });
     const result = reduceRoomAction(state, {

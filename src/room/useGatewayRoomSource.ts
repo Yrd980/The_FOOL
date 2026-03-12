@@ -4,8 +4,10 @@ import { buildRoomViewModel } from "./buildRoomViewModel";
 import { buildRoomDirectory } from "./rooms";
 import {
   OpenClawGatewayClient,
+  buildPresenceContestantMap,
   mapPresenceToContestantStates,
   mapGatewayMessage,
+  resolveGatewayContestantId,
 } from "./gateway";
 import type {
   AudioMode,
@@ -39,6 +41,7 @@ export const useGatewayRoomSource = (
   feedPausedRef.current = feedPaused;
   const contestantDeckRef = useRef(inputs.contestantDeck);
   contestantDeckRef.current = inputs.contestantDeck;
+  const presenceContestantMapRef = useRef(new Map<string, string>());
 
   // Connect on mount
   useEffect(() => {
@@ -65,7 +68,14 @@ export const useGatewayRoomSource = (
     client.on("message", (msg) => {
       if (feedPausedRef.current) return;
       const contestantIds = contestantDeckRef.current.map((c) => c.id);
-      const contestantId = contestantIds[0] ?? "unknown";
+      const contestantId = resolveGatewayContestantId(
+        msg,
+        presenceContestantMapRef.current,
+        contestantIds,
+      );
+      if (!contestantId) {
+        return;
+      }
       const interaction = mapGatewayMessage(msg, contestantId);
       setInteractions((prev) => [...prev, interaction]);
     });
@@ -79,13 +89,19 @@ export const useGatewayRoomSource = (
   }, [config.id, config.url, config.token]);
 
   // Derive contestant states from presence data
+  const presenceContestantMap = useMemo(() => {
+    const contestantIds = inputs.contestantDeck.map((c) => c.id);
+    return buildPresenceContestantMap(presences, contestantIds, {});
+  }, [presences, inputs.contestantDeck]);
+  presenceContestantMapRef.current = presenceContestantMap;
+
   const contestantStateMap = useMemo(() => {
     const contestantIds = inputs.contestantDeck.map((c) => c.id);
     return mapPresenceToContestantStates(presences, contestantIds, {});
   }, [presences, inputs.contestantDeck]);
 
   const hasAgentPresences = useMemo(
-    () => presences.some((p) => p.mode === "agent"),
+    () => presences.some((p) => p.mode?.includes("agent")),
     [presences],
   );
 
@@ -141,15 +157,13 @@ export const useGatewayRoomSource = (
       audioMode,
       nearbyHint: inputs.nearbyHint,
       contestantNameById: inputs.contestantNameById,
+      teams: inputs.teams,
+      focusTeamId: inputs.focusTeam.id,
+      currentRoom: roomDirectory.currentRoom,
+      seatStateOverrides: Object.fromEntries(contestantStateMap),
       scenarioOverride,
       currentRoomId,
     });
-
-    // Override seat states from gateway presence
-    const overriddenSeats = model.openClawSeats.map((seat) => ({
-      ...seat,
-      state: contestantStateMap.get(seat.id) ?? seat.state,
-    }));
 
     // Override callout for connection issues
     let callout = model.roomCallout;
@@ -161,11 +175,19 @@ export const useGatewayRoomSource = (
       callout = `Connecting to gateway (${connectionStatus})...`;
     }
 
-    return { ...model, openClawSeats: overriddenSeats, roomCallout: callout };
+    return { ...model, roomCallout: callout };
   }, [
-    stageConversation, inputs, interactions, audioMode,
-    scenarioOverride, currentRoomId, contestantStateMap,
-    connectionStatus, hasAgentPresences, authFailed,
+    stageConversation,
+    inputs,
+    interactions,
+    audioMode,
+    scenarioOverride,
+    currentRoomId,
+    contestantStateMap,
+    connectionStatus,
+    hasAgentPresences,
+    authFailed,
+    roomDirectory.currentRoom,
   ]);
 
   // Build snapshot

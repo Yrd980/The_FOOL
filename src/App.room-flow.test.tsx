@@ -45,6 +45,26 @@ describe("App room shell", () => {
 });
 
 describe("Room interaction flows", () => {
+  it("switches rooms and updates the visible room context", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: /go to team room 1/i }));
+
+    expect(screen.getByText(/current room/i)).toHaveTextContent(/team room 1/i);
+  });
+
+  it("toggles the hallway guide between perimeter and listening mode", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: /join conversation/i }));
+    expect(screen.getByText(/hallway guide/i)).toHaveTextContent(/listening/i);
+
+    await user.click(screen.getByRole("button", { name: /leave conversation/i }));
+    expect(screen.getByText(/hallway guide/i)).toHaveTextContent(/perimeter/i);
+  });
+
   it("room switching updates aria-pressed on room buttons", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -109,8 +129,12 @@ describe("Room interaction flows", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await user.click(screen.getByRole("button", { name: /go to team room 1/i }));
     await user.click(screen.getByRole("button", { name: /simulate quiet room/i }));
     expect(screen.getByText(/this room is quiet right now/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /go to main stage/i }));
+    expect(screen.queryByText(/this room is quiet right now/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /simulate empty room/i }));
     expect(screen.getByText(/this room is empty/i)).toBeInTheDocument();
@@ -139,5 +163,6 @@ describe("Room interaction flows", () => {
       "aria-pressed",
       "false",
     );
+    expect(screen.getByText(/current room/i)).toHaveTextContent(/main stage/i);
   });
 });

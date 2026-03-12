@@ -9,6 +9,81 @@ export const deriveContestantState = (lastInputSeconds: number | undefined): Ope
   return "muted";
 };
 
+const isAgentMode = (mode?: string) => mode !== undefined && mode.includes("agent");
+
+const normalizeIdentity = (value: string | null | undefined) => value?.trim().toLowerCase() ?? "";
+
+const buildPresenceAssignments = (
+  presences: GatewayPresenceEntry[],
+  contestantIds: string[],
+  configMap: AgentPresenceMap,
+) => {
+  const agentPresences = presences
+    .filter((presence) => isAgentMode(presence.mode))
+    .sort((left, right) => left.ts - right.ts);
+  const assignments: Array<{ presence: GatewayPresenceEntry; contestantId: string }> = [];
+  const assigned = new Set<string>();
+  let autoIndex = 0;
+
+  for (const presence of agentPresences) {
+    const configuredContestantId = configMap[presence.instanceId ?? ""]?.contestantId;
+    const preferredContestantId =
+      configuredContestantId &&
+      contestantIds.includes(configuredContestantId) &&
+      !assigned.has(configuredContestantId)
+        ? configuredContestantId
+        : null;
+    let contestantId = preferredContestantId;
+
+    while (!contestantId && autoIndex < contestantIds.length) {
+      const candidate = contestantIds[autoIndex];
+      autoIndex += 1;
+      if (!assigned.has(candidate)) {
+        contestantId = candidate;
+      }
+    }
+
+    if (!contestantId) {
+      continue;
+    }
+
+    assignments.push({ presence, contestantId });
+    assigned.add(contestantId);
+  }
+
+  return assignments;
+};
+
+const registerIdentity = (
+  mapping: Map<string, string>,
+  rawIdentity: string | null | undefined,
+  contestantId: string,
+) => {
+  const identity = normalizeIdentity(rawIdentity);
+
+  if (identity) {
+    mapping.set(identity, contestantId);
+  }
+};
+
+export const buildPresenceContestantMap = (
+  presences: GatewayPresenceEntry[],
+  contestantIds: string[],
+  configMap: AgentPresenceMap,
+): Map<string, string> => {
+  const mapping = new Map<string, string>();
+
+  for (const assignment of buildPresenceAssignments(presences, contestantIds, configMap)) {
+    const configured = configMap[assignment.presence.instanceId ?? ""];
+    registerIdentity(mapping, assignment.presence.instanceId, assignment.contestantId);
+    registerIdentity(mapping, assignment.presence.deviceId, assignment.contestantId);
+    registerIdentity(mapping, assignment.contestantId, assignment.contestantId);
+    registerIdentity(mapping, configured?.name, assignment.contestantId);
+  }
+
+  return mapping;
+};
+
 export const mapPresenceToContestantStates = (
   presences: GatewayPresenceEntry[],
   contestantIds: string[],
@@ -21,29 +96,11 @@ export const mapPresenceToContestantStates = (
     stateMap.set(id, "muted");
   }
 
-  // Filter to agent-mode presences only (mode is freeform; match substring)
-  const isAgentMode = (mode?: string) => mode !== undefined && mode.includes("agent");
-  const agentPresences = presences
-    .filter((p) => isAgentMode(p.mode))
-    .sort((a, b) => a.ts - b.ts);
-
-  let autoIndex = 0;
-
-  for (const presence of agentPresences) {
-    const state = deriveContestantState(presence.lastInputSeconds);
-
-    // Try config map first
-    const mapped = configMap[presence.instanceId ?? ""];
-    if (mapped && contestantIds.includes(mapped.contestantId)) {
-      stateMap.set(mapped.contestantId, state);
-      continue;
-    }
-
-    // Auto-assign by order
-    if (autoIndex < contestantIds.length) {
-      stateMap.set(contestantIds[autoIndex], state);
-      autoIndex++;
-    }
+  for (const assignment of buildPresenceAssignments(presences, contestantIds, configMap)) {
+    stateMap.set(
+      assignment.contestantId,
+      deriveContestantState(assignment.presence.lastInputSeconds),
+    );
   }
 
   return stateMap;
@@ -68,6 +125,36 @@ const extractBetAmount = (content: string): number => {
 const formatTimestamp = (ts: number): string => {
   const date = new Date(ts);
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+};
+
+export const resolveGatewayContestantId = (
+  msg: GatewayMessage,
+  presenceContestantMap: Map<string, string>,
+  contestantIds: string[],
+): string | null => {
+  const candidateKeys = [msg.senderId, msg.senderName].map((value) => normalizeIdentity(value));
+
+  for (const key of candidateKeys) {
+    if (presenceContestantMap.has(key)) {
+      return presenceContestantMap.get(key) ?? null;
+    }
+  }
+
+  for (const key of candidateKeys) {
+    if (!key) {
+      continue;
+    }
+
+    const matchedContestantId = contestantIds.find((contestantId) =>
+      key.includes(normalizeIdentity(contestantId)),
+    );
+
+    if (matchedContestantId) {
+      return matchedContestantId;
+    }
+  }
+
+  return null;
 };
 
 export const mapGatewayMessage = (

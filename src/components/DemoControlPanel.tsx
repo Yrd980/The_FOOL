@@ -2,11 +2,16 @@ import type { ConnectionState } from "../room/gateway/types";
 
 export interface DemoControlPanelProps {
   currentRoomId: string;
+  currentRoomName: string;
+  currentRoomStatus: string;
+  currentUserMode: "perimeter" | "listening";
   audioMode: "nearby" | "focus" | "muted";
   feedPaused: boolean;
   connectionStatus?: ConnectionState;
   roomSwitchTargets: Array<{ id: string; name: string }>;
   onSwitchRoom: (roomId: string) => void;
+  onJoinConversation: () => void;
+  onLeaveConversation: () => void;
   onSetAudioMode: (mode: "nearby" | "focus" | "muted") => void;
   onToggleFeedPaused: () => void;
   onInjectScenario: (scenario: string) => void;
@@ -15,11 +20,16 @@ export interface DemoControlPanelProps {
 
 export function DemoControlPanel({
   currentRoomId,
+  currentRoomName,
+  currentRoomStatus,
+  currentUserMode,
   audioMode,
   feedPaused,
   connectionStatus,
   roomSwitchTargets,
   onSwitchRoom,
+  onJoinConversation,
+  onLeaveConversation,
   onSetAudioMode,
   onToggleFeedPaused,
   onInjectScenario,
@@ -27,6 +37,11 @@ export function DemoControlPanel({
 }: DemoControlPanelProps) {
   return (
     <div className="demo-control-panel">
+      <div className="control-context">
+        <span className="control-context__pill">Current room: {currentRoomName}</span>
+        <span className="control-context__pill">Status: {currentRoomStatus}</span>
+        <span className="control-context__pill">Hallway guide: {currentUserMode}</span>
+      </div>
       {connectionStatus && (
         <span className={`connection-status connection-status--${connectionStatus}`}>
           {connectionStatus === "connected" ? "● Gateway" : connectionStatus === "connecting" || connectionStatus === "reconnecting" ? "◌ Connecting" : "○ Offline"}
@@ -67,6 +82,21 @@ export function DemoControlPanel({
         onClick={() => onSetAudioMode("muted")}
       >
         Mute all
+      </button>
+
+      <button
+        type="button"
+        className={`control-button ${currentUserMode === "listening" ? "is-active" : ""}`}
+        onClick={onJoinConversation}
+      >
+        Join conversation
+      </button>
+      <button
+        type="button"
+        className={`control-button ${currentUserMode === "perimeter" ? "is-active" : ""}`}
+        onClick={onLeaveConversation}
+      >
+        Leave conversation
       </button>
 
       <button

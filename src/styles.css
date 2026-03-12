@@ -1203,6 +1203,24 @@ p {
   background: var(--panel);
 }
 
+.control-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.control-context__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  letter-spacing: 0.03em;
+}
+
 .openclaw-app.is-simplified .scene-note,
 .openclaw-app.is-simplified .signal-card,
 .openclaw-app.is-simplified .zone-legend,

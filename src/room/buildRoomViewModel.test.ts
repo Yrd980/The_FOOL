@@ -33,6 +33,29 @@ const baseInput: BuildRoomViewModelInput = {
   audioMode: "nearby",
   nearbyHint: "Nearby people may listen in",
   contestantNameById,
+  teams: [
+    {
+      id: "team-alpha",
+      name: "Team Alpha",
+      members: [{ id: "alpha" }, { id: "beta" }],
+    },
+    {
+      id: "team-beta",
+      name: "Team Beta",
+      members: [{ id: "gamma" }, { id: "delta" }],
+    },
+  ],
+  focusTeamId: "team-alpha",
+  currentRoom: {
+    id: "main-stage",
+    name: "Main Stage",
+    kind: "main-stage",
+    memberIds: ["alpha", "beta", "gamma", "delta"],
+    memberCount: 4,
+    audibleSummary: "Main stage",
+    statusLabel: "Live",
+    active: true,
+  },
 };
 
 describe("buildRoomViewModel", () => {
@@ -93,5 +116,120 @@ describe("buildRoomViewModel", () => {
 
     expect(model.roomCallout).toContain("Nearby people may listen in");
     expect(model.roomCallout).not.toContain("也在边上举手等待切入");
+  });
+
+  it("derives a non-focus team room from the room membership instead of the main stage", () => {
+    const model = buildRoomViewModel({
+      ...baseInput,
+      currentRoomId: "team-room-2",
+      currentRoom: {
+        id: "team-room-2",
+        name: "Team Room 2",
+        kind: "team-room",
+        teamId: "team-beta",
+        memberIds: ["gamma", "delta"],
+        memberCount: 2,
+        audibleSummary: "Team Beta discussion",
+        statusLabel: "Active",
+        active: true,
+      },
+    });
+
+    expect(model.activeSpeakerId).toBe("gamma");
+    expect(model.raisedHandId).toBe("delta");
+    expect(model.openClawSeats.find((seat) => seat.id === "gamma")?.state).toBe("speaking");
+    expect(model.openClawSeats.find((seat) => seat.id === "delta")?.state).toBe("raised-hand");
+    expect(model.openClawSeats.find((seat) => seat.id === "alpha")?.state).toBe("muted");
+    expect(model.roomSignals.every((event) => ["gamma", "delta"].includes(event.contestantId))).toBe(true);
+    expect(model.roomCallout).toContain("Team Beta");
+  });
+
+  it("uses quiet-orbit semantics instead of leaking main-stage conversation", () => {
+    const model = buildRoomViewModel({
+      ...baseInput,
+      currentRoomId: "quiet-orbit",
+      currentRoom: {
+        id: "quiet-orbit",
+        name: "Quiet Orbit",
+        kind: "quiet-orbit",
+        memberIds: ["gamma", "delta", "listener-a"],
+        memberCount: 3,
+        audibleSummary: "Quiet orbit",
+        statusLabel: "Observing",
+        active: true,
+      },
+    });
+
+    expect(model.activeSpeakerId).toBeNull();
+    expect(model.raisedHandId).toBeNull();
+    expect(model.micCount).toBe(0);
+    expect(model.queueCount).toBe(0);
+    expect(model.audibleSignals).toEqual([]);
+    expect(model.openClawSeats.every((seat) => seat.state === "muted")).toBe(true);
+    expect(model.roomCallout).toContain("Quiet orbit");
+  });
+
+  it("applies quiet-room overrides consistently across seats, counts, and signals", () => {
+    const model = buildRoomViewModel({
+      ...baseInput,
+      scenarioOverride: {
+        type: "quiet-room",
+        targetRoomId: "main-stage",
+      },
+      currentRoomId: "main-stage",
+    });
+
+    expect(model.activeSpeakerId).toBeNull();
+    expect(model.raisedHandId).toBeNull();
+    expect(model.micCount).toBe(0);
+    expect(model.queueCount).toBe(0);
+    expect(model.roomSignals).toEqual([]);
+    expect(model.audibleSignals).toEqual([]);
+    expect(model.openClawSeats.every((seat) => seat.state === "muted")).toBe(true);
+  });
+
+  it("recomputes speaker and counts from explicit seat-state overrides", () => {
+    const model = buildRoomViewModel({
+      ...baseInput,
+      seatStateOverrides: {
+        alpha: "muted",
+        beta: "listening",
+        gamma: "speaking",
+        delta: "raised-hand",
+      },
+    });
+
+    expect(model.activeSpeakerId).toBe("gamma");
+    expect(model.raisedHandId).toBe("delta");
+    expect(model.micCount).toBe(2);
+    expect(model.queueCount).toBe(1);
+    expect(
+      model.roomSignals.every((event) => ["beta", "gamma", "delta"].includes(event.contestantId)),
+    ).toBe(true);
+  });
+
+  it("does not let out-of-room seat overrides leak into the current room", () => {
+    const model = buildRoomViewModel({
+      ...baseInput,
+      currentRoomId: "team-room-2",
+      currentRoom: {
+        id: "team-room-2",
+        name: "Team Room 2",
+        kind: "team-room",
+        teamId: "team-beta",
+        memberIds: ["gamma", "delta"],
+        memberCount: 2,
+        audibleSummary: "Team Beta discussion",
+        statusLabel: "Active",
+        active: true,
+      },
+      seatStateOverrides: {
+        alpha: "speaking",
+      },
+    });
+
+    expect(model.activeSpeakerId).toBe("gamma");
+    expect(model.openClawSeats.find((seat) => seat.id === "alpha")?.state).toBe("muted");
+    expect(model.roomSignals.every((event) => ["gamma", "delta"].includes(event.contestantId))).toBe(true);
   });
 });

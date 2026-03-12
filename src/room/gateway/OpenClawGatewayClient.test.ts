@@ -137,6 +137,55 @@ describe("OpenClawGatewayClient", () => {
     client.destroy();
   });
 
+  it("emits pushed message events to subscribers", () => {
+    const client = new OpenClawGatewayClient({ id: "local", url: "ws://localhost:18789", token: "test-token" });
+    let received: Record<string, unknown> | null = null;
+    client.on("message", (message) => {
+      received = message as unknown as Record<string, unknown>;
+    });
+
+    client.connect();
+    const ws = MockWebSocket.instances[0];
+    ws.triggerOpen();
+    ws.simulateMessage({
+      type: "event",
+      event: "message",
+      payload: {
+        id: "msg-1",
+        senderId: "agent-alpha",
+        senderName: "Alpha",
+        content: "下注 12",
+        ts: 1710000000000,
+      },
+    });
+
+    expect(received).toMatchObject({
+      id: "msg-1",
+      senderId: "agent-alpha",
+      senderName: "Alpha",
+      content: "下注 12",
+    });
+
+    client.destroy();
+  });
+
+  it("rejects pending RPC calls when destroyed", async () => {
+    const client = new OpenClawGatewayClient({ id: "local", url: "ws://localhost:18789", token: "test-token" });
+
+    client.connect();
+    const ws = MockWebSocket.instances[0];
+    ws.triggerOpen();
+
+    const outcome = client
+      .call("system-presence")
+      .then(() => "resolved")
+      .catch((error: Error) => error.message);
+
+    client.destroy();
+
+    await expect(outcome).resolves.toMatch(/destroyed|closed|disconnected/i);
+  });
+
   it("reconnects after unexpected close with backoff", () => {
     vi.useFakeTimers();
     const client = new OpenClawGatewayClient({ id: "local", url: "ws://localhost:18789", token: "test-token" });

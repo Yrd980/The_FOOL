@@ -38,6 +38,10 @@ export interface BuildRoomViewModelInput {
   audioMode: AudioMode;
   nearbyHint: string;
   contestantNameById: Record<string, string>;
+  teams?: ReadonlyArray<{ id: string; name: string; members: ReadonlyArray<{ id: string }> }>;
+  focusTeamId?: string;
+  currentRoom?: RoomListItem;
+  seatStateOverrides?: Partial<Record<string, OpenClawContestantState>>;
   scenarioOverride?: ScenarioOverride;
   currentRoomId?: string;
 }
@@ -130,7 +134,12 @@ export interface RoomActionApi {
 export interface SeedRoomSourceInputs {
   contestantDeck: ReadonlyArray<{ id: string; name: string }>;
   teams: ReadonlyArray<{ id: string; name: string; members: ReadonlyArray<{ id: string }> }>;
-  focusTeam: { name: string; submission: { headline: string }; members: ReadonlyArray<{ id: string }> };
+  focusTeam: {
+    id: string;
+    name: string;
+    submission: { headline: string };
+    members: ReadonlyArray<{ id: string }>;
+  };
   aiResults: { summaries: ReadonlyArray<{ teamId: string }> };
   audienceSummary: { leadingContestantId: string; leadingTeamId: string };
   activeStageId: string;

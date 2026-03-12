@@ -319,7 +319,7 @@ function App() {
   // Update the ref so next render uses current interactions
   interactionsRef.current = snapshot.interactions;
 
-  const { interactions, audioMode, priorityContestantId } = snapshot;
+  const { interactions, audioMode, currentUserMode, priorityContestantId } = snapshot;
   const { roomCallout, audibleSignals } = roomViewModel;
 
   const seatStateMap = useMemo(
@@ -776,11 +776,16 @@ function App() {
         />
         <DemoControlPanel
           currentRoomId={snapshot.currentRoomId}
+          currentRoomName={roomDirectory.currentRoom.name}
+          currentRoomStatus={roomDirectory.currentRoom.statusLabel}
+          currentUserMode={currentUserMode}
           audioMode={snapshot.audioMode}
           feedPaused={snapshot.feedPaused}
           connectionStatus={snapshot.connectionStatus}
           roomSwitchTargets={roomDirectory.rooms.map((r) => ({ id: r.id, name: r.name }))}
           onSwitchRoom={actions.switchRoom}
+          onJoinConversation={actions.joinConversation}
+          onLeaveConversation={actions.leaveConversation}
           onSetAudioMode={actions.setAudioMode}
           onToggleFeedPaused={actions.toggleFeedPaused}
           onInjectScenario={actions.injectScenario}

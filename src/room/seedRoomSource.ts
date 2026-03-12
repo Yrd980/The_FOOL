@@ -32,13 +32,8 @@ export const appendSeedInteraction = ({
   ];
 };
 
-const VALID_ROOM_IDS = new Set([
-  "main-stage",
-  "team-room-1",
-  "team-room-2",
-  "team-room-3",
-  "quiet-orbit",
-]);
+const isValidRoomId = (roomId: string) =>
+  roomId === "main-stage" || roomId === "quiet-orbit" || /^team-room-\d+$/.test(roomId);
 
 const INITIAL_SNAPSHOT: RoomSourceSnapshot = {
   activeStageId: "act-1",
@@ -67,7 +62,7 @@ export const reduceRoomAction = (
     case "switch-room":
       return {
         ...state,
-        currentRoomId: VALID_ROOM_IDS.has(action.roomId) ? action.roomId : "main-stage",
+        currentRoomId: isValidRoomId(action.roomId) ? action.roomId : "main-stage",
       };
     case "join-conversation":
       return state.currentUserMode === "listening"

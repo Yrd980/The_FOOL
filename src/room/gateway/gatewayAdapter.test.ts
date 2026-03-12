@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildPresenceContestantMap,
   classifyInteractionType,
   deriveContestantState,
   mapGatewayMessage,
   mapPresenceToContestantStates,
+  resolveGatewayContestantId,
 } from "./gatewayAdapter";
 import type { GatewayPresenceEntry, AgentPresenceMap } from "./types";
 
@@ -97,6 +99,76 @@ describe("mapPresenceToContestantStates", () => {
 
     // operator doesn't map to a contestant
     expect(result.get("c-1")).toBe("muted");
+  });
+});
+
+describe("buildPresenceContestantMap", () => {
+  it("reuses the same contestant assignment identities for instance ids and device ids", () => {
+    const result = buildPresenceContestantMap(
+      [
+        makePresence({ instanceId: "agent-alpha", deviceId: "device-alpha", ts: 100 }),
+        makePresence({ instanceId: "agent-beta", deviceId: "device-beta", ts: 200 }),
+      ],
+      ["c-1", "c-2", "c-3"],
+      {},
+    );
+
+    expect(result.get("agent-alpha")).toBe("c-1");
+    expect(result.get("device-alpha")).toBe("c-1");
+    expect(result.get("agent-beta")).toBe("c-2");
+  });
+});
+
+describe("resolveGatewayContestantId", () => {
+  it("resolves a sender through the shared presence mapping", () => {
+    const mapping = new Map<string, string>([
+      ["agent-alpha", "c-1"],
+      ["alpha name", "c-1"],
+      ["c-2", "c-2"],
+    ]);
+
+    expect(
+      resolveGatewayContestantId(
+        {
+          id: "msg-1",
+          senderId: "agent-alpha",
+          senderName: "Alpha Name",
+          content: "hello",
+          ts: 1710000000000,
+        },
+        mapping,
+        ["c-1", "c-2"],
+      ),
+    ).toBe("c-1");
+    expect(
+      resolveGatewayContestantId(
+        {
+          id: "msg-2",
+          senderId: "session:c-2:main",
+          senderName: null,
+          content: "hello",
+          ts: 1710000000000,
+        },
+        mapping,
+        ["c-1", "c-2"],
+      ),
+    ).toBe("c-2");
+  });
+
+  it("returns null when the sender cannot be matched safely", () => {
+    expect(
+      resolveGatewayContestantId(
+        {
+          id: "msg-3",
+          senderId: "mystery-user",
+          senderName: "Mystery User",
+          content: "hello",
+          ts: 1710000000000,
+        },
+        new Map(),
+        ["c-1", "c-2"],
+      ),
+    ).toBeNull();
   });
 });
 
