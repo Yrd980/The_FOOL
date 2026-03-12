@@ -27,7 +27,7 @@ import {
   buildHumanReviews,
   buildTeams,
 } from "./logic";
-import { useSeedRoomSource } from "./room";
+import { useRoomSource } from "./room";
 import type {
   ContestantOpenClawPresence,
   ContestantScorecard,
@@ -314,7 +314,7 @@ function App() {
     ],
   );
 
-  const { snapshot, roomDirectory, roomViewModel, actions } = useSeedRoomSource(hookInputs);
+  const { snapshot, roomDirectory, roomViewModel, actions } = useRoomSource(hookInputs);
 
   // Update the ref so next render uses current interactions
   interactionsRef.current = snapshot.interactions;
@@ -778,6 +778,7 @@ function App() {
           currentRoomId={snapshot.currentRoomId}
           audioMode={snapshot.audioMode}
           feedPaused={snapshot.feedPaused}
+          connectionStatus={snapshot.connectionStatus}
           roomSwitchTargets={roomDirectory.rooms.map((r) => ({ id: r.id, name: r.name }))}
           onSwitchRoom={actions.switchRoom}
           onSetAudioMode={actions.setAudioMode}

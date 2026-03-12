@@ -102,6 +102,7 @@ export interface RoomSourceSnapshot {
   priorityContestantId: string | null;
   scenarioOverride: ScenarioOverride;
   currentUserMode: "perimeter" | "listening";
+  connectionStatus?: import("./gateway/types").ConnectionState;
 }
 
 export type RoomAction =

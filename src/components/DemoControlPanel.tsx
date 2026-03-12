@@ -1,7 +1,10 @@
+import type { ConnectionState } from "../room/gateway/types";
+
 export interface DemoControlPanelProps {
   currentRoomId: string;
   audioMode: "nearby" | "focus" | "muted";
   feedPaused: boolean;
+  connectionStatus?: ConnectionState;
   roomSwitchTargets: Array<{ id: string; name: string }>;
   onSwitchRoom: (roomId: string) => void;
   onSetAudioMode: (mode: "nearby" | "focus" | "muted") => void;
@@ -14,6 +17,7 @@ export function DemoControlPanel({
   currentRoomId,
   audioMode,
   feedPaused,
+  connectionStatus,
   roomSwitchTargets,
   onSwitchRoom,
   onSetAudioMode,
@@ -23,6 +27,11 @@ export function DemoControlPanel({
 }: DemoControlPanelProps) {
   return (
     <div className="demo-control-panel">
+      {connectionStatus && (
+        <span className={`connection-status connection-status--${connectionStatus}`}>
+          {connectionStatus === "connected" ? "● Gateway" : connectionStatus === "connecting" || connectionStatus === "reconnecting" ? "◌ Connecting" : "○ Offline"}
+        </span>
+      )}
       {roomSwitchTargets.map((room) => (
         <button
           key={room.id}

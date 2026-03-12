@@ -3,6 +3,7 @@ export { buildRoomViewModel } from "./buildRoomViewModel";
 export { appendSeedInteraction, reduceRoomAction, createInitialSnapshot } from "./seedRoomSource";
 export { buildRoomDirectory } from "./rooms";
 export { useSeedRoomSource } from "./useSeedRoomSource";
+export { useRoomSource } from "./useRoomSource";
 export type {
   AudioMode,
   BuildRoomViewModelInput,
