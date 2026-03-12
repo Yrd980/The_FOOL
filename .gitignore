@@ -1,9 +1,9 @@
 node_modules/
 output/
+.worktrees/
 .env
 .env.*
 *.log
 dist/
 coverage/
 package-lock.json
-
