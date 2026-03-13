@@ -375,7 +375,7 @@ export const aiJudges: AiJudge[] = [
   },
 ];
 
-export const seedAudienceEvents: AudienceEvent[] = [
+export const seedAudienceInteractions: AudienceEvent[] = [
   {
     id: "evt-1",
     contestantId: "glass-sea",
@@ -451,8 +451,6 @@ export const seedAudienceEvents: AudienceEvent[] = [
 ];
 
 export const stageDefinitions = acts;
-
-export const seedAudienceInteractions = seedAudienceEvents;
 
 export const openClawConversation: OpenClawConversation = {
   id: "bonjour-ama",

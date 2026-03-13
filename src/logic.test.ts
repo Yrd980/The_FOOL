@@ -4,12 +4,8 @@ import { aiJudges, contestants, humanJudges, seedAudienceInteractions } from "./
 import {
   buildAiReviewSummary,
   buildAudienceSummary,
-  buildAwardResults,
   buildContestantDeck,
   buildHumanReviews,
-  buildMoodBoard,
-  buildPixelBoard,
-  buildReflectionNotes,
   buildTeams,
 } from "./logic";
 import type { AudienceInteraction, Contestant } from "./types";
@@ -173,10 +169,6 @@ describe("openclaw logic pipeline", () => {
     const audienceSummary = buildAudienceSummary(deck, seedAudienceInteractions, teams);
     const humanReviews = buildHumanReviews(teams, humanJudges);
     const { reviews, summaries } = buildAiReviewSummary(teams, aiJudges);
-    const awards = buildAwardResults(deck, teams, summaries, audienceSummary);
-    const moodBoard = buildMoodBoard(deck, teams, awards);
-    const pixelBoard = buildPixelBoard(moodBoard);
-    const reflectionNotes = buildReflectionNotes(deck, teams, awards);
 
     expect(deck).toHaveLength(contestants.length);
     expect(deck[0].supportScore).toBeGreaterThanOrEqual(deck[deck.length - 1].supportScore);
@@ -193,11 +185,5 @@ describe("openclaw logic pipeline", () => {
       true,
     );
     expect(teams.some((team) => team.id === audienceSummary.leadingTeamId)).toBe(true);
-    expect(teams.some((team) => team.id === awards.aiChampionTeamId)).toBe(true);
-    expect(teams.some((team) => team.id === awards.humanChampionTeamId)).toBe(true);
-    expect(awards.personalityAwards).toHaveLength(6);
-    expect(moodBoard).toHaveLength(deck.length);
-    expect(pixelBoard.cells).toHaveLength(pixelBoard.width * pixelBoard.height);
-    expect(reflectionNotes).toHaveLength(3);
   });
 });

@@ -4,18 +4,13 @@ import type {
   AiTeamSummary,
   AudienceInteraction,
   AudienceOverview,
-  AwardSummary,
   Contestant,
-  ContestantPoem,
   ContestantReaction,
   ContestantScorecard,
   HumanJudge,
   HumanReview,
-  PixelBoard,
-  PixelCell,
   SkillAxis,
   SkillVector,
-  StageAward,
   TeamDiscussionMessage,
   TeamRoleAssignment,
   TeamSubmission,
@@ -319,9 +314,6 @@ const buildDiscussion = (team: TeamSummary): TeamDiscussionMessage[] => {
   ];
 };
 
-const highestBy = <T>(items: T[], score: (item: T) => number) =>
-  items.reduce((best, item) => (score(item) > score(best) ? item : best), items[0]);
-
 export const buildContestantDeck = (
   contestants: Contestant[],
   interactions: AudienceInteraction[],
@@ -621,180 +613,3 @@ export const buildAiReviewSummary = (
   return { reviews, summaries };
 };
 
-export const buildAwardResults = (
-  contestants: ContestantScorecard[],
-  teams: TeamSummary[],
-  aiSummaries: AiTeamSummary[],
-  audienceSummary: AudienceOverview,
-): AwardSummary => {
-  const aiChampionTeamId =
-    [...aiSummaries].sort((left, right) => right.averageScore - left.averageScore)[0]?.teamId ??
-    teams[0]?.id ??
-    "";
-  const humanChampionTeamId =
-    [...teams].sort((left, right) => right.audiencePull - left.audiencePull)[0]?.id ??
-    teams[0]?.id ??
-    "";
-  const agreementScore = clamp(
-    aiChampionTeamId === humanChampionTeamId
-      ? 100
-      : Math.round(58 + audienceSummary.heatIndex * 0.12),
-    42,
-    100,
-  );
-
-  const sharpest = highestBy(contestants, (contestant) => contestant.stats.chaos + contestant.skills.story * 0.2);
-  const kindest = highestBy(contestants, (contestant) => contestant.supportScore + contestant.stats.charm);
-  const fiercest = highestBy(contestants, (contestant) => contestant.confidence + contestant.stats.chaos);
-  const laziest = [...contestants].sort((left, right) => left.energy - right.energy)[0];
-  const mostHuman = highestBy(
-    contestants,
-    (contestant) => contestant.stats.charm + contestant.audienceLikes * 6,
-  );
-  const tolerant = [...contestants].sort(
-    (left, right) =>
-      left.preferences.avoid.length - right.preferences.avoid.length ||
-      right.supportScore - left.supportScore,
-  )[0];
-
-  const personalityAwards: StageAward[] = [
-    {
-      title: "最毒舌",
-      icon: "刃",
-      winnerId: sharpest.id,
-      note: `${sharpest.name} 总能把一句判断说成带刺的金句。`,
-    },
-    {
-      title: "最天使",
-      icon: "羽",
-      winnerId: kindest.id,
-      note: `${kindest.name} 最能把场上的锐气重新缝回合作状态。`,
-    },
-    {
-      title: "最凶",
-      icon: "火",
-      winnerId: fiercest.id,
-      note: `${fiercest.name} 的压迫感和存在感都高到像提前领奖。`,
-    },
-    {
-      title: "最宽容",
-      icon: "潮",
-      winnerId: tolerant.id,
-      note: `${tolerant.name} 对局势和队友的耐受度明显比别人更高。`,
-    },
-    {
-      title: "最摆烂",
-      icon: "云",
-      winnerId: laziest.id,
-      note: `${laziest.name} 看着最松，但关键时刻又总会补刀救场。`,
-    },
-    {
-      title: "最像人类",
-      icon: "镜",
-      winnerId: mostHuman.id,
-      note: `${mostHuman.name} 最能精准拿捏人类观众的犹豫、上头和押注冲动。`,
-    },
-  ];
-
-  return {
-    aiChampionTeamId,
-    humanChampionTeamId,
-    agreementScore,
-    personalityAwards,
-  };
-};
-
-export const buildMoodBoard = (
-  contestants: ContestantScorecard[],
-  teams: TeamSummary[],
-  awards: AwardSummary,
-): ContestantPoem[] =>
-  contestants.map((contestant) => {
-    const team = teams.find((candidate) =>
-      candidate.members.some((member) => member.id === contestant.id),
-    );
-    const palette = [
-      contestant.palette.primary,
-      contestant.palette.secondary,
-      contestant.palette.accent,
-      contestant.palette.glow.replace("rgba(", "rgb(").replace(/,\s*0?\.\d+\)$/, ")"),
-    ];
-    const isAwarded = awards.personalityAwards.some((award) => award.winnerId === contestant.id);
-    const championCue =
-      team && (awards.aiChampionTeamId === team.id || awards.humanChampionTeamId === team.id)
-        ? "奖杯在旁边轻轻发热"
-        : "舞台边缘还残着海盐和掌声";
-
-    return {
-      contestantId: contestant.id,
-      title: `${contestant.name} 的赛后小诗`,
-      lines: [
-        `${contestant.name} 把 ${contestant.currentEmotion} 藏进壳里，`,
-        `和 ${team?.name ?? "未知队伍"} 一起把喧哗熬成余波，`,
-        `${championCue}，人类的弹幕仍在水面闪烁，`,
-        isAwarded ? "连人格奖都像一枚迟到却准确的盐粒。" : "没说完的话，就交给像素继续发亮。",
-      ],
-      prompt: `${contestant.poetrySeed}、${contestant.moodAfterAudience}、${team?.theme ?? "未知主题"}、会呼吸的海。`,
-      palette,
-    };
-  });
-
-export const buildPixelBoard = (
-  moodBoard: ContestantPoem[],
-  width = 24,
-  height = 16,
-): PixelBoard => {
-  const cells: PixelCell[] = [];
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const owner = moodBoard[(x + y) % moodBoard.length];
-      const prompt = owner.prompt ?? owner.lines.join("");
-      const seed = prompt.charCodeAt((x * 7 + y * 11) % prompt.length);
-      const color = owner.palette[(seed + x + y) % owner.palette.length];
-
-      cells.push({
-        index: y * width + x,
-        x,
-        y,
-        color,
-        ownerId: owner.contestantId,
-      });
-    }
-  }
-
-  return {
-    width,
-    height,
-    caption: "OpenClaw World：所有选手把押注、情绪、失控和奖杯压成同一片会发光的海。",
-    cells,
-  };
-};
-
-export const buildReflectionNotes = (
-  contestants: ContestantScorecard[],
-  teams: TeamSummary[],
-  awards: AwardSummary,
-): Array<{ speaker: string; role: string; message: string }> => {
-  const aiChamp = teams.find((team) => team.id === awards.aiChampionTeamId);
-  const humanChamp = teams.find((team) => team.id === awards.humanChampionTeamId);
-  const hottest = [...contestants].sort((left, right) => right.heatScore - left.heatScore)[0];
-
-  return [
-    {
-      speaker: "开放麦人类 01",
-      role: "观众",
-      message: `我本来只是来看龙虾互相挑刺，结果真的开始在 ${humanChamp?.name ?? "冠军队"} 身上押真情实感。`,
-    },
-    {
-      speaker: "开放麦人类 02",
-      role: "评审团",
-      message: `${aiChamp?.name ?? "AI 冠军队"} 拿冠军很合理，它们的方案像是真的能活到下一场。`,
-    },
-    {
-      speaker: hottest.name,
-      role: "选手",
-      message: "我今天学会了一件事：原来被弹幕改变心情，也可以是作品的一部分。",
-    },
-  ];
-};

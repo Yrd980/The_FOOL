@@ -89,95 +89,6 @@ export interface AiJudge {
   signature: string;
 }
 
-export interface LiveContestant extends Contestant {
-  liveStats: ContestantStats;
-  audience: {
-    likes: number;
-    boos: number;
-    betPool: number;
-    danmakuCount: number;
-    sentiment: number;
-    heat: number;
-  };
-}
-
-export interface AudienceLeaderboardEntry {
-  contestantId: string;
-  score: number;
-  label: string;
-}
-
-export interface AudienceSummary {
-  totals: {
-    likes: number;
-    boos: number;
-    betPool: number;
-    danmakuCount: number;
-  };
-  trendingMessages: AudienceEvent[];
-  leaderId: string;
-  underdogId: string;
-  leaderboard: AudienceLeaderboardEntry[];
-}
-
-export interface PreferenceSummary {
-  adoredId: string;
-  dreadedId: string;
-  affectionCounts: Record<string, number>;
-  frictionCounts: Record<string, number>;
-}
-
-export interface TeamAcceptance {
-  contestantId: string;
-  verdict: string;
-  mood: string;
-}
-
-export interface RoomMessage {
-  speakerId: string;
-  content: string;
-  tone: string;
-}
-
-export interface TeamDiscussion {
-  projectName: string;
-  problem: string;
-  coreFeatures: string[];
-  route: string[];
-  division: string[];
-  roomMessages: RoomMessage[];
-  patrolNote: string;
-}
-
-export interface Submission {
-  posterTitle: string;
-  posterStamp: string;
-  elevatorPitch: string;
-  highlights: string[];
-  risk: string;
-  fileHint: string;
-}
-
-export interface TeamProfile {
-  id: string;
-  name: string;
-  theme: string;
-  memberIds: string[];
-  compatibility: number;
-  skillBars: SkillMatrix;
-  acceptance: TeamAcceptance[];
-  discussion: TeamDiscussion;
-  submission: Submission;
-  humanBetShare: number;
-}
-
-export interface HumanCommentary {
-  judgeId: string;
-  teamId: string;
-  quote: string;
-  stance: string;
-}
-
 export interface AiReview {
   judgeId: string;
   teamId: string;
@@ -189,68 +100,7 @@ export interface AiReview {
   outrageous?: string;
 }
 
-export interface TeamScore {
-  teamId: string;
-  average: number;
-  humanBuzz: number;
-  aiLead: boolean;
-  audienceLead: boolean;
-}
-
-export interface PersonalityAward {
-  title: string;
-  contestantId: string;
-  citation: string;
-}
-
-export interface AwardResults {
-  aiChampionTeamId: string;
-  audienceChampionTeamId: string;
-  predictionAgreement: number;
-  personalityAwards: PersonalityAward[];
-  humanChampionTeamId?: string;
-  agreementScore?: number;
-}
-
-export interface ContestantPoem {
-  contestantId: string;
-  title?: string;
-  lines: string[];
-  prompt?: string;
-  palette: string[];
-}
-
-export interface PixelCell {
-  index: number;
-  x?: number;
-  y?: number;
-  color: string;
-  ownerId: string;
-}
-
-export interface OpenMicEntry {
-  speaker: string;
-  role: string;
-  content: string;
-}
-
-export interface ShowSnapshot {
-  liveContestants: LiveContestant[];
-  audienceSummary: AudienceSummary;
-  preferenceSummary: PreferenceSummary;
-  teams: TeamProfile[];
-  humanCommentary: HumanCommentary[];
-  aiReviews: AiReview[];
-  scoreBoard: TeamScore[];
-  awards: AwardResults;
-  poems: ContestantPoem[];
-  pixelBoard: PixelCell[];
-  openMic: OpenMicEntry[];
-}
-
 export type StageId = ActDefinition["id"];
-
-export type InteractionType = AudienceEventType;
 
 export type SkillAxis = keyof SkillMatrix;
 
@@ -358,27 +208,6 @@ export interface AudienceOverview {
   heatIndex: number;
   leadingContestantId: string;
   leadingTeamId: string;
-}
-
-export interface StageAward {
-  title: string;
-  icon: string;
-  winnerId: string;
-  note: string;
-}
-
-export interface AwardSummary {
-  aiChampionTeamId: string;
-  humanChampionTeamId: string;
-  agreementScore: number;
-  personalityAwards: StageAward[];
-}
-
-export interface PixelBoard {
-  width: number;
-  height: number;
-  caption: string;
-  cells: PixelCell[];
 }
 
 export type OpenClawContestantState =
