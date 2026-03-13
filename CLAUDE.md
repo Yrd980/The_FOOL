@@ -36,17 +36,18 @@ src/
   viewerServer.ts       # Replay API + 静态服务
 viewer/
   src/
-    App.tsx             # 前端主界面（268 行，组件化架构）
+    App.tsx             # 前端主界面（组件化架构，布局编排）
     types.ts            # Viewer 共享类型
     utils.ts            # 工具函数与常量
     hooks/              # 自定义 hooks
-      useReplayData.ts  # Replay 加载、轮询、列表管理
+      useReplayData.ts  # Replay 加载、轮询、列表管理、筛选
       usePlaybackControl.ts # 回合/步骤播放状态机
       useCanvasRenderer.ts  # Canvas 绘制逻辑
     components/         # UI 组件
       ArtMission.tsx    # 艺术方向展示
       BattleCanvas.tsx  # 画布 + 播放控制
-      RoundPulse.tsx    # 回合指标 + 排名
+      RoundPulse.tsx    # 回合指标 + 排名（显示角色名）
+      ErrorPanel.tsx    # 回合错误面板（按类型着色）
       PublicVoice.tsx   # 公开发言列表
       PrivateWire.tsx   # 私聊消息列表
       PersonaNotes.tsx  # 人格注释列表
@@ -95,7 +96,10 @@ docs/superpowers/specs/ # 设计文档
 - `LLMProvider` 接口（`src/llm/types.ts`）抽象 LLM 调用，DeepSeek 为默认实现
 - Viewer 采用 hooks + components 组件化架构，App.tsx 仅负责布局编排
 - Replay 输出包含 `schema_version`（当前 "1.0"），Viewer 兼容旧格式
-- Treaty 系统仅实现 `no_attack`，`joint_attack` 在类型中定义但无执行逻辑
+- Treaty 系统支持 `no_attack` 和 `joint_attack`（含 +15% 攻击加成与互不侵犯）
+- Viewer 错误面板按类型着色显示回合错误
+- Replay API 支持按模式/agent 数量筛选（`?mode=dry-run&agents_min=N`）
+- 排名面板显示角色名而非 agent ID
 
 ## Design Documents
 - `PRD.md` — 产品需求文档

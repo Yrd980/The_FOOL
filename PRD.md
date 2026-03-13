@@ -199,19 +199,26 @@ AI Pixel War 试图解决的问题是：
 
 ## 7.2 代码分析发现的技术债务
 
-以下问题来自 2026-03-12 的代码深度分析：
+以下问题来自 2026-03-12 的代码深度分析（V0.2 已全部解决）：
 
-1. **Viewer 单文件过大**：`viewer/src/App.tsx` 约 1140 行，所有 UI、状态和渲染逻辑耦合
-2. **引擎回调冗余**：`engine.ts` 中 `mythColorForPoint` lambda 重复构造 5+ 次
-3. **LLM 硬绑定**：DeepSeek 是唯一提供者，无抽象接口
-4. **Replay 无版本控制**：schema 变更会破坏旧回放文件与 Viewer 的兼容性
-5. **零测试覆盖**：项目没有任何测试文件
-6. **Treaty 系统不完整**：`joint_attack` 在类型中定义但无执行逻辑
-7. **Viewer 未展示错误数据**：replay 中的 errors 数组没有在 UI 中呈现
-8. **CLI 缺少帮助文本**：手写 parser 无 `--help`，未知参数静默忽略
-9. **排名显示不直观**：Viewer 排名面板显示 agent ID 而非角色名
+1. ~~**Viewer 单文件过大**~~ → 已拆分为 hooks + components 组件化架构，App.tsx 降至 ~270 行
+2. ~~**引擎回调冗余**~~ → EngineContext 统一传递，mythColorForPoint lambda 仅构造 1 次
+3. ~~**LLM 硬绑定**~~ → LLMProvider 接口抽象，DeepSeek 为默认实现
+4. ~~**Replay 无版本控制**~~ → schema_version "1.0"，Viewer 兼容旧格式
+5. ~~**零测试覆盖**~~ → 8 个测试文件，21 个测试用例，覆盖核心模块
+6. ~~**Treaty 系统不完整**~~ → joint_attack 完整实现（签约/攻击加成/互不侵犯/关系影响）
+7. ~~**Viewer 未展示错误数据**~~ → ErrorPanel 组件按类型着色显示
+8. ~~**CLI 缺少帮助文本**~~ → --help 支持，未知参数 warning
+9. ~~**排名显示不直观**~~ → 排名面板显示角色名
 
-## 7.3 建议纳入下一阶段范围
+## 7.3 V0.2 新增功能（2026-03-13 完成）
+
+1. **Viewer 错误面板**：ErrorPanel 组件按错误类型着色（validation=红、repaired=黄、generation=橙），无错误时隐藏
+2. **排名显示角色名**：RoundPulse 排名面板从 agentDirectory 查找并显示角色名
+3. **Replay 筛选**：API 支持 `?mode=dry-run|live&agents_min=N&agents_max=N` 查询参数，Viewer 提供模式筛选下拉和 badge 标签
+4. **Treaty joint_attack**：完整实现联合攻击条约系统，包含签约、+15% 攻击加成、联盟方互不侵犯、关系影响、事件记录
+
+## 7.4 建议纳入下一阶段范围
 
 以下需求在当前仓库中没有完整产品化，但非常适合进入后续迭代：
 
@@ -221,7 +228,6 @@ AI Pixel War 试图解决的问题是：
 4. 更丰富的规则系统，例如资源点、地形、阵营目标
 5. 更完整的 viewer 分享能力，例如截图、导出 GIF、分享链接
 6. Web 表单化的配置入口，而不只是 CLI
-7. 更清晰的错误面板与运行诊断页
 
 ## 8. 核心用户流程
 
@@ -408,27 +414,27 @@ AI Pixel War 试图解决的问题是：
 
 ## 15. 版本规划建议
 
-## V0.1 当前 MVP
+## V0.1 MVP（已完成）
 
 - 完成 CLI 模拟、数字分身接入、神话主题作画、社交叙事、replay 输出和 Viewer 基础观战
 
-## V0.2 确定方向（2026-03-12 基于代码分析确定）
+## V0.2（已完成，2026-03-13）
 
-架构重构（优先）：
-- Viewer 组件化拆分
-- EngineContext 统一回调传递
-- LLM 提供者抽象层
-- Replay 版本化
-- 项目 CLAUDE.md 与文档体系
+架构重构：
+- ✅ Viewer 组件化拆分（App.tsx ~270 行 + hooks + components）
+- ✅ EngineContext 统一回调传递
+- ✅ LLM 提供者抽象层（LLMProvider 接口）
+- ✅ Replay 版本化（schema_version "1.0"）
+- ✅ 项目 CLAUDE.md 与文档体系
 
 功能补齐：
-- Viewer 错误面板
-- Treaty joint_attack 执行逻辑
-- Replay 筛选（按模式、agent 数量）
-- 排名面板显示角色名
-- CLI --help 与参数校验改进
-- Mock Agent 消息个性化
-- 核心模块单元测试
+- ✅ Viewer 错误面板（ErrorPanel 按类型着色）
+- ✅ Treaty joint_attack 执行逻辑（签约/攻击加成/互不侵犯）
+- ✅ Replay 筛选（按模式、agent 数量，API + UI）
+- ✅ 排名面板显示角色名
+- ✅ CLI --help 与参数校验改进
+- ✅ Mock Agent 消息个性化（确定性模板 + DNA 驱动）
+- ✅ 核心模块单元测试（8 文件，21 用例）
 
 详见 `docs/superpowers/specs/` 下的设计文档。
 
