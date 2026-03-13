@@ -10,6 +10,7 @@ import { PublicVoice } from "./components/PublicVoice";
 import { PrivateWire } from "./components/PrivateWire";
 import { PersonaNotes } from "./components/PersonaNotes";
 import { TwinLens } from "./components/TwinLens";
+import { ErrorPanel } from "./components/ErrorPanel";
 
 export function App() {
   const {
@@ -119,7 +120,8 @@ export function App() {
         const prev = previousFrame ? previousFrame.territory.get(id) || 0 : cells;
         const delta = cells - prev;
         const score = currentReplay.ranking.find((item) => item.agent_id === id)?.final_score || 0;
-        return { id, cells, delta, score, share: totalCells > 0 ? (cells / totalCells) * 100 : 0 };
+        const name = currentReplay.agentDirectory.find((item) => item.id === id)?.name || id;
+        return { id, name, cells, delta, score, share: totalCells > 0 ? (cells / totalCells) * 100 : 0 };
       })
       .sort((left, right) => right.cells - left.cells || right.score - left.score)
       .slice(0, Math.min(12, currentReplay.config.agent_count || 12));
@@ -248,6 +250,7 @@ export function App() {
               selectedLensAgentId={selectedLensAgentId}
               setSelectedLensAgentId={setSelectedLensAgentId}
             />
+            <ErrorPanel currentRound={currentRound} />
             <section className="grid gap-4 lg:grid-cols-2">
               <PublicVoice currentRound={currentRound} />
               <PrivateWire currentRound={currentRound} />

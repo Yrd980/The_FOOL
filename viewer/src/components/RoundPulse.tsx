@@ -4,6 +4,7 @@ import { MetricCard } from "./MetricCard";
 
 export type RankingItem = {
   id: string;
+  name: string;
   cells: number;
   delta: number;
   score: number;
@@ -77,7 +78,7 @@ export function RoundPulse({
                 <div className="mb-2 flex items-center justify-between gap-3 font-mono text-xs">
                   <span className="flex items-center gap-2 text-[#13232f]">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
-                    {item.id}
+                    {item.name}
                   </span>
                   <span>
                     <span className={deltaClass}>{deltaText}</span> · {item.cells}
