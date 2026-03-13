@@ -1,5 +1,9 @@
 // src/components/PixelTownMap.tsx
 import { STREET_SEGMENTS, type TownBuilding } from "../room/townLayout";
+import { AtmosphereLayer } from "../town/atmosphere";
+import { ATMOSPHERE_LAYOUT } from "../town/atmosphere/layout";
+
+const TILE_SIZE = 32;
 
 type PixelTownMapProps = {
   buildings: TownBuilding[];
@@ -22,6 +26,8 @@ function PixelTownMap({ buildings, onEnterRoom, onSelectEntity }: PixelTownMapPr
       </svg>
 
       <span className="town-map-x" aria-hidden="true">X</span>
+
+      <AtmosphereLayer layout={ATMOSPHERE_LAYOUT} tileSize={TILE_SIZE} />
 
       {buildings.map((building) => (
         <button
