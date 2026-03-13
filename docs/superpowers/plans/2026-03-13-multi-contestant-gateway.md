@@ -1,6 +1,6 @@
 # Multi-Contestant OpenClaw Gateway Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** Completed (2026-03-13)
 
 **Goal:** Extend the gateway-adapter to support 20 OpenClaw contestants via agent-id registry and dual-RPC polling (system-presence + status).
 

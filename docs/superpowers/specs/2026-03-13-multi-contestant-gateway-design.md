@@ -1,7 +1,7 @@
 # Multi-Contestant OpenClaw Gateway Design
 
 **Date:** 2026-03-13
-**Status:** Draft
+**Status:** Implemented
 **Branch:** `feat/gateway-adapter`
 **Builds on:** `2026-03-12-gateway-adapter-design.md`
 
