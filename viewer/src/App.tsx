@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { actionStepsForRound } from "./utils";
+
 import { useReplayData } from "./hooks/useReplayData";
 import { usePlaybackControl } from "./hooks/usePlaybackControl";
 import { useCanvasRenderer } from "./hooks/useCanvasRenderer";
@@ -254,7 +254,6 @@ export function App() {
               <PersonaNotes currentRound={currentRound} />
               <TwinLens
                 currentReplay={currentReplay}
-                currentRound={currentRound}
                 frame={frame}
                 lensSnapshot={lensSnapshot}
                 selectedLensAgentId={selectedLensAgentId}

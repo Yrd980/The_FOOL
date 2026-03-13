@@ -1,17 +1,14 @@
-import type { HydratedReplay, Frame } from "../types";
-import type { ReplayRound } from "../types";
+import type { HydratedReplay, Frame, ReplayRound } from "../types";
 import { RelationCard } from "./RelationCard";
 
 export function TwinLens({
   currentReplay,
-  currentRound,
   frame,
   lensSnapshot,
   selectedLensAgentId,
   setSelectedLensAgentId
 }: {
   currentReplay: HydratedReplay | null;
-  currentRound: ReplayRound | null;
   frame: Frame | null;
   lensSnapshot: NonNullable<ReplayRound["social_snapshot"]>[number] | null;
   selectedLensAgentId: string;
