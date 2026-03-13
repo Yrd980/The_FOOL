@@ -4,7 +4,7 @@
 - Runtime: Bun
 - Language: TypeScript (strict mode via tsconfig)
 - Frontend: React 18 + Tailwind CSS 4 + Vite
-- LLM: DeepSeek API (default provider, via `src/deepseekClient.ts`)
+- LLM: LLMProvider interface (default: DeepSeek, via `src/llm/deepseekProvider.ts`)
 - Schema Validation: AJV 2020 (`schemas/` directory)
 - Package Manager: Bun
 
@@ -12,6 +12,7 @@
 ```
 src/
   index.ts              # CLI 入口 + 参数解析
+  cli.ts                # CLI 解析/验证/帮助工具函数
   engine.ts             # 主引擎编排（PixelWarEngine 类）
   engine/               # 引擎子模块
     artDirector.ts      # 艺术方向生成
@@ -19,17 +20,39 @@ src/
     canvasRuntime.ts    # 画布操作与冲突解算
     constants.ts        # 默认配置、调色板、人格模板
     decisionService.ts  # 决策请求与回退
+    engineContext.ts    # EngineContext 接口（统一运行时上下文）
     scoreboard.ts       # 评分计算
     socialState.ts      # 关系/条约/社交指标
     strategyService.ts  # 策略提示与身份导向
     twinFactory.ts      # 角色初始化
-  deepseekClient.ts     # LLM API 客户端 + prompt 构建
+  llm/                  # LLM 抽象层
+    types.ts            # LLMProvider 接口
+    deepseekProvider.ts # DeepSeek 实现
+    prompts.ts          # Agent 系统/用户提示词构建
+    jsonExtractor.ts    # LLM 响应 JSON 提取
   decisionNormalizer.ts # schema 修复与规范化
   mockAgent.ts          # dry-run 模式的模拟决策
   types.ts              # 核心类型定义
   viewerServer.ts       # Replay API + 静态服务
 viewer/
-  src/App.tsx           # 前端主界面（待拆分组件化）
+  src/
+    App.tsx             # 前端主界面（268 行，组件化架构）
+    types.ts            # Viewer 共享类型
+    utils.ts            # 工具函数与常量
+    hooks/              # 自定义 hooks
+      useReplayData.ts  # Replay 加载、轮询、列表管理
+      usePlaybackControl.ts # 回合/步骤播放状态机
+      useCanvasRenderer.ts  # Canvas 绘制逻辑
+    components/         # UI 组件
+      ArtMission.tsx    # 艺术方向展示
+      BattleCanvas.tsx  # 画布 + 播放控制
+      RoundPulse.tsx    # 回合指标 + 排名
+      PublicVoice.tsx   # 公开发言列表
+      PrivateWire.tsx   # 私聊消息列表
+      PersonaNotes.tsx  # 人格注释列表
+      TwinLens.tsx      # Agent 详情卡片
+      MetricCard.tsx    # 可复用指标卡片
+      RelationCard.tsx  # 可复用关系卡片
 profiles/               # 数字分身配置样例
 schemas/                # JSON Schema 约束
 output/                 # replay 产物目录
@@ -54,7 +77,7 @@ docs/superpowers/specs/ # 设计文档
 ### Replay Schema
 - 变更 `SimulationResult` 或 `ReplayRound` 结构时，必须：
   1. 同步更新 `PRD.md` 中的相关描述
-  2. 更新 `schema_version`（待实现）
+  2. 更新 `SCHEMA_VERSION`（`src/engine/constants.ts`）
   3. 确保 Viewer 兼容旧格式
 
 ### Git
@@ -62,15 +85,16 @@ docs/superpowers/specs/ # 设计文档
 - 提交前运行 `bun run typecheck`
 - 提交消息使用 conventional commits 格式
 
-### Testing（待建设）
+### Testing
 - 框架：Bun 内置 test runner（`bun test`）
 - 测试文件放在 `src/__tests__/`
-- 优先覆盖：scoreboard、socialState、canvasRuntime、decisionNormalizer
+- 已覆盖：scoreboard、socialState、canvasRuntime、decisionNormalizer、engine、cli、mockAgent、jsonExtractor
 
 ## Key Architecture Notes
-- `engine.ts` 中的 `mythColorForPoint` 回调在多处重复传递（V0.2 计划用 EngineContext 统一）
-- `viewer/src/App.tsx` 为 1140 行单文件（V0.2 计划拆分为组件化架构）
-- DeepSeek 是唯一 LLM 提供者（V0.2 计划抽象为 LLMProvider 接口）
+- `EngineContext`（`src/engine/engineContext.ts`）统一传递 board/art/color 回调，消除重复 lambda
+- `LLMProvider` 接口（`src/llm/types.ts`）抽象 LLM 调用，DeepSeek 为默认实现
+- Viewer 采用 hooks + components 组件化架构，App.tsx 仅负责布局编排
+- Replay 输出包含 `schema_version`（当前 "1.0"），Viewer 兼容旧格式
 - Treaty 系统仅实现 `no_attack`，`joint_attack` 在类型中定义但无执行逻辑
 
 ## Design Documents
