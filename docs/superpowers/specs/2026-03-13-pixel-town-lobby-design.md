@@ -78,7 +78,17 @@ Entity colors remain per existing palette (contestant palette.primary, judge #f3
 - Edge fog — map edges fade to dark, implying unseen surroundings
 - Idle flicker — subtle CSS animation on building status lamps
 
-## 5. Layout Structure
+## 5. Entity-to-Room Assignment
+
+Entities must be placed into exactly one building on the town map. The precedence rule:
+
+1. **Conversation state wins.** If a contestant is `speaking`, `raised-hand`, `listening`, or `queued` (via `roomViewModel.openClawSeats`), they appear in the `main-stage` building.
+2. **Team membership.** If a contestant is `muted`, they appear in their team room building.
+3. **Fallback.** Contestants with no team assignment and all non-contestant entities (judges, AI, listeners) appear in `quiet-orbit`.
+
+This ensures no entity appears in two buildings simultaneously. The `RoomListItem.memberIds` arrays from `roomDirectory` already encode most of this logic — `buildTownLayout` should consume them directly rather than re-deriving.
+
+## 6. Layout Structure
 
 ### 5.1 App Shell (replaces 3-column grid)
 
@@ -132,11 +142,15 @@ Building content:
 - **Entity dot area** (interior): small colored squares representing occupants
 - **Door marker** (bottom edge): small crimson rectangle indicating entrance
 
-Team room themes from the original spec:
-- Team Room 1 → "印刷所 PRINT SHOP" (paper stack motif, slightly warm gray)
-- Team Room 2 → "诊所 CLINIC" (tiled floor feel, cooler gray)
-- Team Room 3 → "杂货铺 CONVENIENCE" (shelf-like internal lines)
-- Quiet Orbit → "静默区 QUIET ZONE" (damp green-gray, dimmed)
+Building themes (roomId → themed name):
+
+| Room ID | Theme key | Display name | Visual motif |
+|---|---|---|---|
+| `main-stage` | `lobby` | "大厅 LOBBY PLAZA" | Bright paper-white floor, central crimson X mark, notice pylons |
+| `team-room-1` | `print-shop` | "印刷所 PRINT SHOP" | Paper stack motif, slightly warm gray |
+| `team-room-2` | `clinic` | "诊所 CLINIC" | Tiled floor feel, cooler gray |
+| `team-room-3` | `convenience` | "杂货铺 CONVENIENCE" | Shelf-like internal lines |
+| `quiet-orbit` | `quiet-zone` | "静默区 QUIET ZONE" | Damp green-gray, dimmed |
 
 ### 5.4 Room View Layout
 
@@ -170,10 +184,29 @@ Room container (fills viewport)
 - On entity dot click: calls `onSelectEntity(selectionId)`
 
 **`PixelRoomView`** — Room View renderer (replaces `SpatialRoomFloor`)
-- Receives current room data, openClawSeats, listenerEntities, audibleSignals
 - Renders room interior, entity sprites, conversation ring, speech bubbles
 - Reuses positioning logic from existing `SpatialRoomFloor`
 - Has "← Back to town" button
+
+Props interface:
+
+```typescript
+type PixelRoomViewProps = {
+  room: RoomListItem;
+  theme: TownBuildingTheme;
+  contestantSeats: ContestantSeat[];    // rich App-level seats (NOT roomViewModel.openClawSeats)
+  listenerEntities: SidebarEntity[];
+  audibleSignals: AudienceEvent[];
+  contestantMap: Record<string, ContestantScorecard>;
+  roomCallout: string;
+  audioMode: AudioMode;
+  selectedEntityId: string;
+  onSelectEntity: (selectionId: string) => void;
+  onBack: () => void;
+};
+```
+
+Note: `contestantSeats` is the rich `ContestantSeat[]` array computed in `App.tsx` (with names, colors, positions), NOT `roomViewModel.openClawSeats` which is `RoomSeat[]` (id + state only).
 
 **`TownOverlay`** — persistent UI layer
 - Top-left: location label + subtitle
@@ -220,23 +253,35 @@ App.tsx
 Pure function mapping room directory + entity data to town-specific layout:
 
 ```typescript
+type TownBuildingTheme = "lobby" | "print-shop" | "clinic" | "convenience" | "quiet-zone";
+
+interface TownBuildingEntity {
+  id: string;
+  selectionId: string;
+  color: string;
+  label: string;
+  x: number;  // % within building bounds
+  y: number;
+}
+
 interface TownBuilding {
   roomId: string;
   name: string;
-  theme: "lobby" | "print-shop" | "clinic" | "convenience" | "quiet-zone";
+  theme: TownBuildingTheme;
   position: { x: number; y: number; width: number; height: number }; // % of map
-  entities: Array<{ id: string; color: string; label: string; x: number; y: number }>;
+  entities: TownBuildingEntity[];
   status: "active" | "idle" | "live";
   memberCount: number;
 }
 
 function buildTownLayout(
   rooms: RoomListItem[],
-  openClawSeats: ContestantSeat[],
+  contestantSeats: ContestantSeat[],   // rich App-level seats
   listenerEntities: SidebarEntity[],
-  currentRoomId: string,
 ): TownBuilding[];
 ```
+
+Note on naming: throughout this spec, `contestantSeats` refers to the rich `ContestantSeat[]` computed in `App.tsx` (includes name, color, position, team, state). This is distinct from `roomViewModel.openClawSeats` which is `RoomSeat[]` (id + state only). Components that need visual rendering always receive the rich version.
 
 Building positions are hardcoded constants (the town layout is fixed, not procedural):
 
@@ -250,7 +295,7 @@ const BUILDING_POSITIONS: Record<string, { x: number; y: number; w: number; h: n
 };
 ```
 
-Entity positions within buildings: distribute evenly across building area, or use existing roomX/roomY mapped to building bounds.
+Entity positions within buildings: `buildTownLayout` distributes entities evenly in a grid pattern within each building's bounds. The exact `roomX`/`roomY` values from contestant presence data are only used in Room View (by `PixelRoomView`), not in Town View where dots are schematic.
 
 ## 8. View Transitions
 
@@ -269,7 +314,7 @@ CSS transition on the map container:
 }
 ```
 
-After transition ends, swap to `PixelRoomView`. The zoom target point is computed from the clicked building's center position.
+After transition completes, swap to `PixelRoomView`. Use a `setTimeout(300)` fallback alongside `onTransitionEnd` to guarantee the swap happens even if the transition event is missed. The zoom target point is computed from the clicked building's center position.
 
 ### 8.2 Room → Town
 
@@ -317,7 +362,19 @@ Reverse: `PixelRoomView` fades out, map fades in with reverse zoom.
 - Same content as current `detail-card` in PresenceSidebar
 - Close: click outside panel area or click X button
 
-## 10. Responsive Behavior
+## 10. Keyboard & Accessibility
+
+- **Escape**: close `EntityDetailPanel`, exit Room View back to Town View
+- **Tab**: cycles through buildings (Town View) or entity sprites (Room View)
+- **Enter/Space**: enter building (Town View) or select entity (Room View)
+- **Ctrl+K**: open search overlay — type to filter entities; matching dots highlight on map, Enter to select
+- Buildings and entity sprites are `<button>` elements with `aria-label` describing room name/entity name
+- `EntityDetailPanel` traps focus when open, returns focus on close
+- Status changes announced via `aria-live="polite"` region in overlay
+
+The search overlay (Ctrl+K) replaces the removed sidebar search box. It renders as a centered input with a dropdown of matching entities, similar to a command palette. Selecting an entity highlights its dot on the map and opens the detail panel.
+
+## 11. Responsive Behavior
 
 ### ≥1200px
 Full town map, all buildings visible with labels and entity dots.
@@ -325,8 +382,8 @@ Full town map, all buildings visible with labels and entity dots.
 ### 920–1200px
 Map scales down, building labels become abbreviated, entity dots shrink.
 
-### ≤920px
-Map becomes a vertical stack of building cards (no spatial positioning). Each card shows room name, occupancy, status, and entity list. Clicking a card enters Room View. This degrades gracefully from spatial experience to structured list.
+### ≤920px (deferred)
+Mobile layout is out of scope for this vertical slice. Set a minimum supported width of 920px. Below that, show a centered message: "Best viewed on a wider screen." Mobile card-based fallback can be a follow-up spec.
 
 ## 11. CSS Architecture
 
@@ -369,6 +426,7 @@ Add a new `pixel-town.css` alongside existing `styles.css`. The existing stylesh
 - Seeded mode populates the town identically to gateway mode
 - Empty rooms show dormant state (dimmed building, "VACANT" label)
 - Disconnected mode shows "OFFLINE" in top overlay, buildings remain visible but entities freeze
+- **Initial load**: seed mode renders immediately (synchronous data). Gateway mode renders empty buildings with entity dots appearing as presence data arrives — no loading spinner needed since the town itself is the loading state
 
 ## 13. Acceptance Criteria
 
@@ -389,17 +447,33 @@ Add a new `pixel-town.css` alongside existing `styles.css`. The existing stylesh
 src/
   App.tsx                        — MODIFY: remove 3-col grid, render PixelTownShell
   pixel-town.css                 — NEW: all pixel town styles
+  types/
+    entities.ts                  — NEW: extract SidebarEntity, ContestantSeat, DetailCard,
+                                   SelectionKind, and helpers (buildSelectionId, parseSelectionId,
+                                   buildAvatar) from App.tsx into shared module
   components/
     PixelTownShell.tsx           — NEW: top-level shell with viewMode state
     PixelTownMap.tsx             — NEW: town view renderer
     PixelRoomView.tsx            — NEW: room view renderer
     TownOverlay.tsx              — NEW: overlay bars
     EntityDetailPanel.tsx        — NEW: slide-in detail panel
+    EntitySearchOverlay.tsx      — NEW: Ctrl+K command palette for entity search
     DemoControlPanel.tsx         — KEEP: unchanged
     PresenceSidebar.tsx          — REMOVE (or keep for reference)
     ConversationDock.tsx         — REMOVE (or keep for reference)
     SpatialRoomFloor.tsx         — REMOVE (logic migrated to PixelRoomView)
   room/
-    townLayout.ts                — NEW: buildTownLayout adapter
+    townLayout.ts                — NEW: buildTownLayout adapter + TownBuilding types
     (everything else unchanged)
 ```
+
+### Prerequisite: Shared Types Extraction
+
+Before building new components, extract these types currently defined inline in `App.tsx` and duplicated in `SpatialRoomFloor.tsx`:
+
+- `SidebarEntity`, `SelectionKind` — entity representation for UI
+- `ContestantSeat` — rich contestant with state, position, team, availability
+- `DetailCard` — entity detail card shape
+- `buildSelectionId`, `parseSelectionId`, `buildAvatar` — utility functions
+
+Target: `src/types/entities.ts` (or extend existing `src/types.ts`). All new and existing components import from this shared module.
