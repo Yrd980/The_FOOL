@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OpenClawGatewayClient } from "./OpenClawGatewayClient";
-import type { ConnectionState, GatewaySessionEntry } from "./types";
+import type { ConnectionState } from "./types";
 
 // Mock WebSocket
 class MockWebSocket {
