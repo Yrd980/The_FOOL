@@ -2,17 +2,19 @@ export { OpenClawGatewayClient } from "./OpenClawGatewayClient";
 export { reduceConnection } from "./connectionReducer";
 export {
   classifyInteractionType,
-  deriveContestantState,
+  deriveContestantStateFromSession,
   mapGatewayMessage,
-  mapPresenceToContestantStates,
+  mapSessionsToContestantStates,
 } from "./gatewayAdapter";
+export { DEFAULT_REGISTRY, lookupContestant } from "./agentRegistry";
+export type { ContestantRegistration, AgentRegistry } from "./agentRegistry";
 export type {
-  AgentPresenceMap,
-  AgentPresenceMapping,
   ConnectionEvent,
   ConnectionState,
   GatewayConfig,
   GatewayMessage,
   GatewayPresenceEntry,
+  GatewaySessionEntry,
+  GatewayStatusResponse,
   Unsubscribe,
 } from "./types";
