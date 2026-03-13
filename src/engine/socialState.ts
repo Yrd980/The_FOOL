@@ -120,6 +120,18 @@ export function updateRelationsFromEvent(agents: AgentState[], event: MemoryEven
     return;
   }
 
+  if (event.type === "joint_attack_signed") {
+    adjustRelation(agents, event.by, event.target, { trust: 8, affinity: 7, debt: -5 });
+    adjustRelation(agents, event.target, event.by, { trust: 8, affinity: 7, debt: -5 });
+    return;
+  }
+
+  if (event.type === "joint_attack_broken") {
+    adjustRelation(agents, event.by, event.target, { trust: -22, affinity: -15, debt: -8 });
+    adjustRelation(agents, event.target, event.by, { trust: -40, affinity: -22, debt: 25 });
+    return;
+  }
+
   if (event.type === "broke_treaty") {
     adjustRelation(agents, event.by, event.target, { trust: -18, affinity: -12, debt: -6 });
     adjustRelation(agents, event.target, event.by, { trust: -34, affinity: -18, debt: 20 });
@@ -150,6 +162,8 @@ export function buildLastRoundSummary(agent: AgentState, roundEvents: MemoryEven
     .map((event) => {
       if (event.type === "signed_treaty") return `signed pact with ${event.target}`;
       if (event.type === "broke_treaty") return event.by === agent.id ? `broke treaty vs ${event.target}` : `${event.by} broke treaty`;
+      if (event.type === "joint_attack_signed") return `formed attack pact with ${event.target} ${event.note ?? ""}`.trim();
+      if (event.type === "joint_attack_broken") return event.by === agent.id ? `broke attack pact vs ${event.target}` : `${event.by} broke attack pact`;
       if (event.type === "attacked") return event.by === agent.id ? `attacked ${event.target}` : `${event.by} attacked you`;
       if (event.type === "won_conflict") return event.by === agent.id ? `won clash vs ${event.target}` : `${event.by} beat you`;
       if (event.type === "lost_area") return event.by === agent.id ? `lost area to ${event.target}` : `${event.by} lost area`;
@@ -263,6 +277,23 @@ export function buildSocialMetrics(agents: AgentState[]): ReplayRound["social_me
   };
 }
 
+export function hasJointAttackTreaty(
+  activeTreaties: Treaty[],
+  attackerId: string,
+  targetEnemyId: string,
+  round: number
+): { found: boolean; allyId: string | null } {
+  const treaty = activeTreaties.find(
+    (t) =>
+      t.type === "joint_attack" &&
+      t.expires_round >= round &&
+      t.target_enemy_id === targetEnemyId &&
+      (t.a === attackerId || t.b === attackerId)
+  );
+  if (!treaty) return { found: false, allyId: null };
+  return { found: true, allyId: treaty.a === attackerId ? treaty.b : treaty.a };
+}
+
 export function hasNoAttackTreaty(activeTreaties: Treaty[], attackerId: string, defenderId: string, round: number): boolean {
   return activeTreaties.some(
     (treaty) =>
@@ -307,6 +338,43 @@ export function updateTreaties({
 
     events.push({ round, type: "signed_treaty", by: proposal.from, target: proposal.to, note: "no_attack" });
     events.push({ round, type: "signed_treaty", by: proposal.to, target: proposal.from, note: "no_attack" });
+  }
+
+  const jointAttackProposals: Array<{ from: string; to: string; duration: number; target_enemy_id: string }> = [];
+
+  for (const decision of decisions) {
+    for (const proposal of decision.treaty_proposals) {
+      if (proposal.type === "joint_attack" && proposal.target_enemy_id) {
+        jointAttackProposals.push({
+          from: decision.agent_id,
+          to: proposal.target_id,
+          duration: proposal.duration_rounds,
+          target_enemy_id: proposal.target_enemy_id
+        });
+      }
+    }
+  }
+
+  for (const proposal of jointAttackProposals) {
+    const reciprocal = jointAttackProposals.find(
+      (c) => c.from === proposal.to && c.to === proposal.from && c.target_enemy_id === proposal.target_enemy_id
+    );
+    if (!reciprocal) continue;
+    const key = [proposal.from, proposal.to, proposal.target_enemy_id].sort().join("::");
+    if (signed.has(key)) continue;
+
+    signed.add(key);
+    const expiresRound = round + Math.min(proposal.duration, reciprocal.duration) - 1;
+    nextTreaties.push({
+      a: proposal.from,
+      b: proposal.to,
+      type: "joint_attack",
+      expires_round: expiresRound,
+      target_enemy_id: proposal.target_enemy_id
+    });
+
+    events.push({ round, type: "joint_attack_signed", by: proposal.from, target: proposal.to, note: `vs ${proposal.target_enemy_id}` });
+    events.push({ round, type: "joint_attack_signed", by: proposal.to, target: proposal.from, note: `vs ${proposal.target_enemy_id}` });
   }
 
   return nextTreaties.filter((treaty) => treaty.expires_round >= round);

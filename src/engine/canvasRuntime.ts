@@ -1,6 +1,6 @@
 import { ACTION_COST } from "./constants";
 import type { EngineContext } from "./engineContext";
-import { hasNoAttackTreaty } from "./socialState";
+import { hasJointAttackTreaty, hasNoAttackTreaty } from "./socialState";
 import type { AgentState, MemoryEvent, Point, ReplayCanvasUpdate, ReplayRound, Treaty, TurnAction } from "../types";
 
 export interface CanvasCell {
@@ -419,13 +419,23 @@ export function applyActionToCanvas({
       events.push({ round, type: "broke_treaty", by: agent.id, target: defenderId });
     }
 
+    const isJointAlly = activeTreaties.some(
+      (t) =>
+        t.type === "joint_attack" &&
+        t.expires_round >= round &&
+        ((t.a === agent.id && t.b === defenderId) || (t.a === defenderId && t.b === agent.id))
+    );
+    if (isJointAlly) return;
+
     agent.energy -= cost;
-    const attackPower =
+    const baseAttackPower =
       1 +
       neighbors * 0.4 +
       agent.emotion.anger * 0.01 +
       agent.emotion.confidence * 0.008 +
       stableUnit(`${agent.id}:${round}:attack:${action.x},${action.y}`) * 0.25;
+    const jointAttack = hasJointAttackTreaty(activeTreaties, agent.id, defenderId, round);
+    const attackPower = baseAttackPower * (1 + (jointAttack.found ? 0.15 : 0));
     const defendPower =
       1 + targetCell.fortify * 0.6 + stableUnit(`${defenderId}:${round}:defend:${action.x},${action.y}`) * 0.25;
 

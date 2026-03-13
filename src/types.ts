@@ -41,7 +41,9 @@ export type MemoryEventType =
   | "lost_area"
   | "won_conflict"
   | "signed_treaty"
-  | "broke_treaty";
+  | "broke_treaty"
+  | "joint_attack_signed"
+  | "joint_attack_broken";
 
 export interface MemoryEvent {
   round: number;
@@ -81,8 +83,9 @@ export interface DigitalTwinProfile {
 export interface Treaty {
   a: string;
   b: string;
-  type: "no_attack";
+  type: "no_attack" | "joint_attack";
   expires_round: number;
+  target_enemy_id?: string;
 }
 
 export interface TreatyProposal {
