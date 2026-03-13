@@ -35,46 +35,8 @@ import type {
   StageId,
   TeamSummary,
 } from "./types";
-
-type SelectionKind = "contestant" | "judge" | "ai" | "listener";
-
-type SidebarEntity = {
-  selectionId: string;
-  refId: string;
-  kind: SelectionKind;
-  group: string;
-  name: string;
-  subtitle: string;
-  status: string;
-  badge: string;
-  accent: string;
-  avatar: string;
-  searchable: string;
-  x?: number;
-  y?: number;
-};
-
-type ContestantSeat = ContestantScorecard &
-  ContestantOpenClawPresence & {
-    selectionId: string;
-    state: OpenClawContestantState;
-    stateLabel: string;
-    meter: number;
-    teamName: string;
-    stageNote: string;
-    availabilityLabel: string;
-    availabilityTone: "available" | "focus" | "busy";
-  };
-
-type DetailCard = {
-  badge: string;
-  title: string;
-  subtitle: string;
-  description: string;
-  stats: Array<{ label: string; value: string }>;
-  chips: string[];
-  actions?: Array<{ id: string; label: string; active?: boolean; disabled?: boolean }>;
-};
+import type { ContestantSeat, DetailCard, SidebarEntity } from "./types/entities";
+import { buildAvatar, buildSelectionId, parseSelectionId } from "./types/entities";
 
 const formatter = new Intl.NumberFormat("zh-CN");
 
@@ -125,27 +87,6 @@ const stateRank: Record<OpenClawContestantState, number> = {
   muted: 4,
 };
 
-const buildSelectionId = (kind: SelectionKind, value: string) => `${kind}:${value}`;
-
-const parseSelectionId = (value: string): [SelectionKind, string] => {
-  const separator = value.indexOf(":");
-
-  if (separator === -1) {
-    return ["contestant", value];
-  }
-
-  return [value.slice(0, separator) as SelectionKind, value.slice(separator + 1)];
-};
-
-const buildAvatar = (value: string) => {
-  const compact = value.replace(/\s+/g, "");
-
-  if (compact.length >= 2) {
-    return `${compact[0]}${compact[compact.length - 1]}`;
-  }
-
-  return compact.slice(0, 2).toUpperCase();
-};
 
 const stateCopy: Record<
   OpenClawContestantState,

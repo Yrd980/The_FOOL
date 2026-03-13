@@ -1,41 +1,6 @@
-import type {
-  AudienceEvent,
-  ContestantOpenClawPresence,
-  ContestantScorecard,
-  OpenClawContestantState,
-} from "../types";
-
-type SelectionKind = "contestant" | "judge" | "ai" | "listener";
-
-type SidebarEntity = {
-  selectionId: string;
-  refId: string;
-  kind: SelectionKind;
-  group: string;
-  name: string;
-  subtitle: string;
-  status: string;
-  badge: string;
-  accent: string;
-  avatar: string;
-  searchable: string;
-  x?: number;
-  y?: number;
-};
-
-type ContestantSeat = ContestantScorecard &
-  ContestantOpenClawPresence & {
-    selectionId: string;
-    state: OpenClawContestantState;
-    stateLabel: string;
-    meter: number;
-    teamName: string;
-    stageNote: string;
-    availabilityLabel: string;
-    availabilityTone: "available" | "focus" | "busy";
-  };
-
-type AudioMode = "nearby" | "focus" | "muted";
+import type { ContestantSeat, SidebarEntity } from "../types/entities";
+import type { AudioMode } from "../room/types";
+import type { AudienceEvent, ContestantScorecard } from "../types";
 
 type SpatialRoomFloorProps = {
   conversationTitle: string;
