@@ -22,7 +22,7 @@ export class OpenClawGatewayClient {
   private ws: WebSocket | null = null;
   private connectionState: ConnectionState = "idle";
   private listeners = new Map<string, Set<Function>>();
-  private pendingRpc = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; method?: string }>();
+  private pendingRpc = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private rpcIdCounter = 0;
   private presenceTimer: ReturnType<typeof setInterval> | null = null;
   private statusTimer: ReturnType<typeof setInterval> | null = null;
@@ -62,7 +62,7 @@ export class OpenClawGatewayClient {
       }
 
       const id = `rpc-${++this.rpcIdCounter}`;
-      this.pendingRpc.set(id, { resolve: resolve as (v: unknown) => void, reject, method });
+      this.pendingRpc.set(id, { resolve: resolve as (v: unknown) => void, reject });
       this.ws.send(JSON.stringify({ type: "req", id, method, params }));
     });
   }
@@ -133,13 +133,6 @@ export class OpenClawGatewayClient {
             this.reconnectAttempt = 0;
             this.startPresencePolling();
             this.startStatusPolling();
-          }
-          // Handle status response synchronously
-          if (pending.method === "status") {
-            const statusPayload = frame.payload as GatewayStatusResponse | undefined;
-            if (statusPayload?.sessions?.recent && Array.isArray(statusPayload.sessions.recent)) {
-              this.emit("status", statusPayload.sessions.recent);
-            }
           }
           pending.resolve(frame.payload);
         } else {
@@ -223,12 +216,16 @@ export class OpenClawGatewayClient {
 
   private startStatusPolling(): void {
     this.stopStatusPolling();
-    const poll = () => {
+    const poll = async () => {
       if (this.connectionState !== "connected" || this.destroyed) return;
-      // Fire the RPC; result is handled synchronously in handleFrame
-      this.call<GatewayStatusResponse>("status").catch(() => {
+      try {
+        const result = await this.call<GatewayStatusResponse>("status");
+        if (result?.sessions?.recent && Array.isArray(result.sessions.recent)) {
+          this.emit("status", result.sessions.recent);
+        }
+      } catch {
         // Polling failure is non-fatal
-      });
+      }
     };
 
     poll();

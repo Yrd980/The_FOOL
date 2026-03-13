@@ -151,7 +151,7 @@ export const useGatewayRoomSource = (
       currentRoomId,
     });
 
-    // Override seat states from gateway presence
+    // Override seat states from gateway sessions
     const overriddenSeats = model.openClawSeats.map((seat) => ({
       ...seat,
       state: contestantStateMap.get(seat.id) ?? seat.state,
