@@ -90,7 +90,7 @@ This ensures no entity appears in two buildings simultaneously. The `RoomListIte
 
 ## 6. Layout Structure
 
-### 5.1 App Shell (replaces 3-column grid)
+### 6.1 App Shell (replaces 3-column grid)
 
 ```
 .pixel-town-app {
@@ -103,7 +103,7 @@ This ensures no entity appears in two buildings simultaneously. The `RoomListIte
 
 No rail, no sidebar, no grid. The map is the entire viewport. UI sits on top as fixed/absolute overlays.
 
-### 5.2 Town View Layout
+### 6.2 Town View Layout
 
 The map ground fills the viewport. Buildings are absolutely positioned within a centered map container that maintains aspect ratio.
 
@@ -121,7 +121,7 @@ Map container (centered, max 1200×800, aspect-fit)
 └── Edge fog (gradient overlay fading to #141010)
 ```
 
-### 5.3 Building Appearance
+### 6.3 Building Appearance
 
 Each building is a rectangular div:
 
@@ -152,7 +152,7 @@ Building themes (roomId → themed name):
 | `team-room-3` | `convenience` | "杂货铺 CONVENIENCE" | Shelf-like internal lines |
 | `quiet-orbit` | `quiet-zone` | "静默区 QUIET ZONE" | Damp green-gray, dimmed |
 
-### 5.4 Room View Layout
+### 6.4 Room View Layout
 
 When user clicks a building, the map zooms to fill that room:
 
@@ -168,9 +168,9 @@ Room container (fills viewport)
 └── Room info overlay (top bar with room name + status)
 ```
 
-## 6. Component Architecture
+## 7. Component Architecture
 
-### 6.1 New Components
+### 7.1 New Components
 
 **`PixelTownShell`** — replaces the `<div className="openclaw-app">` layout
 - Owns `viewMode` and `focusRoomId` state
@@ -206,7 +206,7 @@ type PixelRoomViewProps = {
 };
 ```
 
-Note: `contestantSeats` is the rich `ContestantSeat[]` array computed in `App.tsx` (with names, colors, positions), NOT `roomViewModel.openClawSeats` which is `RoomSeat[]` (id + state only).
+Note: `contestantSeats` is the rich `ContestantSeat[]` array computed in `App.tsx` (with names, colors, positions), NOT `roomViewModel.openClawSeats` which is `RoomSeat[]` (id + state only). Types `RoomListItem` and `AudioMode` are already exported from `src/room/types.ts`. `AudienceEvent` and `ContestantScorecard` from `src/types.ts`. `TownBuildingTheme` from the new `src/room/townLayout.ts`.
 
 **`TownOverlay`** — persistent UI layer
 - Top-left: location label + subtitle
@@ -220,22 +220,28 @@ Note: `contestantSeats` is the rich `ContestantSeat[]` array computed in `App.ts
 - Slides in from right edge, 320px wide
 - Click outside or X to dismiss
 
-### 6.2 Removed Components
+**`EntitySearchOverlay`** — command palette (Ctrl+K)
+- Receives full entity list (contestantSeats + listenerEntities)
+- Centered input field with filtered dropdown
+- On select: calls `onSelectEntity(selectionId)` and closes
+- On escape: closes without selection
+
+### 7.2 Removed Components
 
 - **`PresenceSidebar`** — sidebar eliminated; entity list browsing replaced by clicking dots on map; detail card moved to `EntityDetailPanel`
 - **`ConversationDock`** — speaker row eliminated; speaker status visible via entity sprites in room view; act navigation moved to overlay
 
-### 6.3 Preserved Components
+### 7.3 Preserved Components
 
 - **`DemoControlPanel`** — kept as floating overlay (absolute positioned, toggled by hotkey or small gear icon)
 
-### 6.4 Modified Components
+### 7.4 Modified Components
 
 - **`App.tsx`** — remove 3-column grid, remove PresenceSidebar/ConversationDock usage, render `PixelTownShell` instead. All business logic derivations (contestantDeck, teams, openClawSeats, listenerEntities, etc.) remain unchanged.
 
-## 7. Data Flow
+## 8. Data Flow
 
-### 7.1 Unchanged Boundary
+### 8.1 Unchanged Boundary
 
 ```
 App.tsx
@@ -248,7 +254,7 @@ App.tsx
        └── EntityDetailPanel ← selected entity detail card
 ```
 
-### 7.2 New Adapter: `buildTownLayout`
+### 8.2 New Adapter: `buildTownLayout`
 
 Pure function mapping room directory + entity data to town-specific layout:
 
@@ -297,9 +303,9 @@ const BUILDING_POSITIONS: Record<string, { x: number; y: number; w: number; h: n
 
 Entity positions within buildings: `buildTownLayout` distributes entities evenly in a grid pattern within each building's bounds. The exact `roomX`/`roomY` values from contestant presence data are only used in Room View (by `PixelRoomView`), not in Town View where dots are schematic.
 
-## 8. View Transitions
+## 9. View Transitions
 
-### 8.1 Town → Room
+### 9.1 Town → Room
 
 CSS transition on the map container:
 
@@ -316,19 +322,19 @@ CSS transition on the map container:
 
 After transition completes, swap to `PixelRoomView`. Use a `setTimeout(300)` fallback alongside `onTransitionEnd` to guarantee the swap happens even if the transition event is missed. The zoom target point is computed from the clicked building's center position.
 
-### 8.2 Room → Town
+### 9.2 Room → Town
 
 Reverse: `PixelRoomView` fades out, map fades in with reverse zoom.
 
-### 8.3 Entity Transitions
+### 9.3 Entity Transitions
 
 - Appear: fade-in 200ms
 - Move: CSS transition on left/top 400ms (smooth position updates)
 - Disappear: fade-out 200ms
 
-## 9. Overlay Details
+## 10. Overlay Details
 
-### 9.1 Top Bar
+### 10.1 Top Bar
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -342,7 +348,7 @@ Reverse: `PixelRoomView` fades out, map fades in with reverse zoom.
 - Background: `rgba(20, 16, 16, 0.85)` with `backdrop-filter: blur(8px)`
 - Monospace font, uppercase, small
 
-### 9.2 Bottom Bar
+### 10.2 Bottom Bar
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -354,7 +360,7 @@ Reverse: `PixelRoomView` fades out, map fades in with reverse zoom.
 - Right: audio mode toggle buttons (pixel-styled, 3px border)
 - Same glass background treatment
 
-### 9.3 Entity Detail Panel
+### 10.3 Entity Detail Panel
 
 - Right edge, 320px wide, full height
 - Slides in with `transform: translateX(100%) → translateX(0)`, 250ms
@@ -362,7 +368,7 @@ Reverse: `PixelRoomView` fades out, map fades in with reverse zoom.
 - Same content as current `detail-card` in PresenceSidebar
 - Close: click outside panel area or click X button
 
-## 10. Keyboard & Accessibility
+## 11. Keyboard & Accessibility
 
 - **Escape**: close `EntityDetailPanel`, exit Room View back to Town View
 - **Tab**: cycles through buildings (Town View) or entity sprites (Room View)
@@ -374,7 +380,7 @@ Reverse: `PixelRoomView` fades out, map fades in with reverse zoom.
 
 The search overlay (Ctrl+K) replaces the removed sidebar search box. It renders as a centered input with a dropdown of matching entities, similar to a command palette. Selecting an entity highlights its dot on the map and opens the detail panel.
 
-## 11. Responsive Behavior
+## 12. Responsive Behavior
 
 ### ≥1200px
 Full town map, all buildings visible with labels and entity dots.
@@ -385,9 +391,9 @@ Map scales down, building labels become abbreviated, entity dots shrink.
 ### ≤920px (deferred)
 Mobile layout is out of scope for this vertical slice. Set a minimum supported width of 920px. Below that, show a centered message: "Best viewed on a wider screen." Mobile card-based fallback can be a follow-up spec.
 
-## 11. CSS Architecture
+## 13. CSS Architecture
 
-### 11.1 New Stylesheet Approach
+### 13.1 New Stylesheet Approach
 
 Add a new `pixel-town.css` alongside existing `styles.css`. The existing stylesheet remains for components that survive (DemoControlPanel, shared utilities like `.chip`, `.tiny-label`).
 
@@ -401,7 +407,7 @@ Add a new `pixel-town.css` alongside existing `styles.css`. The existing stylesh
 - `.town-overlay-*` — overlay panels
 - `.entity-panel-*` — detail side panel
 
-### 11.2 Design Tokens
+### 13.2 Design Tokens
 
 ```css
 :root {
@@ -418,7 +424,7 @@ Add a new `pixel-town.css` alongside existing `styles.css`. The existing stylesh
 }
 ```
 
-## 12. OpenClaw Integration (unchanged)
+## 14. OpenClaw Integration (unchanged)
 
 - `presence` → entity appears in correct building (Town View) or correct position (Room View)
 - `message/chat` → speech bubble in Room View, ticker line in overlay
@@ -428,7 +434,7 @@ Add a new `pixel-town.css` alongside existing `styles.css`. The existing stylesh
 - Disconnected mode shows "OFFLINE" in top overlay, buildings remain visible but entities freeze
 - **Initial load**: seed mode renders immediately (synchronous data). Gateway mode renders empty buildings with entity dots appearing as presence data arrives — no loading spinner needed since the town itself is the loading state
 
-## 13. Acceptance Criteria
+## 15. Acceptance Criteria
 
 1. Opening the page shows a pixel-art bird's-eye town, not a dashboard
 2. Buildings correspond to rooms in `roomDirectory`
@@ -441,7 +447,7 @@ Add a new `pixel-town.css` alongside existing `styles.css`. The existing stylesh
 9. Seeded mode drives continuous entity activity
 10. Demo controls remain accessible
 
-## 14. File Plan
+## 16. File Plan
 
 ```
 src/
