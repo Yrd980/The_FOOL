@@ -6,7 +6,7 @@ export function PersonaNotes({ currentRound }: { currentRound: ReplayRound | nul
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-[#13232f]">Persona Notes</h2>
       </div>
-      <ul className="space-y-2 lg:max-h-[320px] lg:overflow-y-auto lg:pr-1">
+      <ul className="space-y-2">
         {(currentRound?.persona_notes.length
           ? currentRound.persona_notes
           : [{ agent_id: "-", note: "暂无人格注释", proactive_score: 0 }]

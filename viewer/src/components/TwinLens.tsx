@@ -15,7 +15,7 @@ export function TwinLens({
   setSelectedLensAgentId: (id: string) => void;
 }) {
   return (
-    <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md lg:max-h-[680px] lg:overflow-y-auto">
+    <article className="rounded-[22px] border border-[#dbcfb4] bg-[rgba(255,252,244,0.88)] p-4 shadow-[0_14px_30px_rgba(17,36,46,0.12)] backdrop-blur-md">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-[#13232f]">Twin Lens</h2>
         <select

@@ -6,7 +6,7 @@ export function PrivateWire({ currentRound }: { currentRound: ReplayRound | null
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-[#13232f]">Private Wire</h2>
       </div>
-      <ul className="space-y-2 lg:max-h-[320px] lg:overflow-y-auto lg:pr-1">
+      <ul className="space-y-2">
         {(currentRound?.private_messages.length
           ? currentRound.private_messages
           : [{ from: "-", to: "-", content: "暂无私聊" }]

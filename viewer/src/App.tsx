@@ -11,6 +11,7 @@ import { PrivateWire } from "./components/PrivateWire";
 import { PersonaNotes } from "./components/PersonaNotes";
 import { TwinLens } from "./components/TwinLens";
 import { ErrorPanel } from "./components/ErrorPanel";
+import { TabPanel } from "./components/TabPanel";
 
 export function App() {
   const {
@@ -171,113 +172,138 @@ export function App() {
   }, [lensSnapshot?.agent_id]);
 
   return (
-    <div className="min-h-screen overflow-x-hidden px-4 py-7 text-[#1f2a30]">
+    <div className="flex h-screen flex-col overflow-hidden text-[#1f2a30]">
       <div className="pointer-events-none fixed right-[-90px] top-[20%] h-[260px] w-[260px] rounded-full bg-[#f7a16a]/40 blur-[42px]" />
       <div className="pointer-events-none fixed bottom-[-40px] left-[-120px] h-[320px] w-[320px] rounded-full bg-[#5bc7b5]/40 blur-[42px]" />
 
-      <main className="relative z-10 mx-auto w-full max-w-[1380px]">
-        <header className="mb-4 flex flex-col justify-between gap-4 xl:flex-row">
-          <div>
-            <p className="m-0 text-xs uppercase tracking-[0.2em] text-[#0f7f78]">AI Digital Twins Arena</p>
-            <h1 className="mt-1 text-[clamp(2.2rem,5vw,4rem)] font-semibold leading-[0.98] text-[#13232f]">Pixel Crowd Theatre</h1>
-            <p className="mt-2 text-sm text-[#5b6a71]">
-              {currentReplayName
-                ? `${currentReplayName} · ${currentReplay?.config.width ?? 0}x${currentReplay?.config.height ?? 0} · ${currentReplay?.config.agent_count ?? 0} twins`
-                : errorText || "加载中..."}
-            </p>
-            <p className="mt-2 font-mono text-xs text-[#0f7f78]">{watchStateText}</p>
-            {schemaWarning ? (
-              <p className="mt-2 rounded-xl border border-[#e0bc62] bg-[#fff4cf] px-3 py-2 text-xs text-[#7a5b15]">{schemaWarning}</p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2 self-start">
-            <select
-              className="rounded-xl border border-[#dbcfb4] bg-white/80 px-3 py-2 text-sm shadow-sm"
-              value={filterMode}
-              onChange={(e) => setFilterMode(e.target.value as "" | "dry-run" | "live")}
-            >
-              <option value="">All modes</option>
-              <option value="dry-run">Dry-run</option>
-              <option value="live">Live</option>
-            </select>
-            <select
-              className="rounded-xl border border-[#dbcfb4] bg-white/80 px-3 py-2 text-sm shadow-sm"
-              value={currentReplayName}
-              onChange={async (event) => {
-                setIsPlaying(false);
-                await loadReplay(event.target.value, { autoPlay: true });
-              }}
-            >
-              {replays.map((entry) => (
-                <option key={entry.name} value={entry.name}>
-                  {entry.name} · {entry.mtime}{entry.mode ? ` · ${entry.mode}` : ""}{entry.agent_count ? ` · ${entry.agent_count}a` : ""}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => loadReplayList({ autoSwitchLatest: followLatest, preserveSelection: true, silent: false })}
-              className="rounded-xl border border-[#dbcfb4] bg-transparent px-4 py-2 text-sm text-[#13232f] shadow-sm transition hover:bg-white/70"
-            >
-              刷新列表
-            </button>
-          </div>
-        </header>
+      {/* ── Compact toolbar ── */}
+      <header className="relative z-10 flex shrink-0 items-center gap-3 border-b border-[#dbcfb4] bg-[rgba(255,252,244,0.92)] px-4 py-2 backdrop-blur-md">
+        <h1 className="text-base font-semibold text-[#13232f]">Pixel War</h1>
+        <span className="font-mono text-xs text-[#5b6a71]">
+          {currentReplayName
+            ? `${currentReplay?.config.width ?? 0}x${currentReplay?.config.height ?? 0} · ${currentReplay?.config.agent_count ?? 0} twins`
+            : errorText || "加载中..."}
+        </span>
+        <span className="font-mono text-xs text-[#0f7f78]">{watchStateText}</span>
+        {schemaWarning ? (
+          <span className="rounded-lg border border-[#e0bc62] bg-[#fff4cf] px-2 py-0.5 text-xs text-[#7a5b15]">{schemaWarning}</span>
+        ) : null}
+        <div className="ml-auto flex items-center gap-2">
+          <select
+            className="rounded-lg border border-[#dbcfb4] bg-white/80 px-2 py-1 text-xs shadow-sm"
+            value={filterMode}
+            onChange={(e) => setFilterMode(e.target.value as "" | "dry-run" | "live")}
+          >
+            <option value="">All</option>
+            <option value="dry-run">Dry-run</option>
+            <option value="live">Live</option>
+          </select>
+          <select
+            className="max-w-[280px] rounded-lg border border-[#dbcfb4] bg-white/80 px-2 py-1 text-xs shadow-sm"
+            value={currentReplayName}
+            onChange={async (event) => {
+              setIsPlaying(false);
+              await loadReplay(event.target.value, { autoPlay: true });
+            }}
+          >
+            {replays.map((entry) => (
+              <option key={entry.name} value={entry.name}>
+                {entry.name}{entry.mode ? ` · ${entry.mode}` : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => loadReplayList({ autoSwitchLatest: followLatest, preserveSelection: true, silent: false })}
+            className="rounded-lg border border-[#dbcfb4] bg-transparent px-2 py-1 text-xs text-[#13232f] transition hover:bg-white/70"
+          >
+            刷新
+          </button>
+        </div>
+      </header>
 
-        <section className="grid gap-4 xl:grid-cols-[minmax(420px,1.08fr)_minmax(360px,1fr)] xl:items-start">
-          <div className="space-y-4 xl:sticky xl:top-6">
-            <ArtMission currentReplay={currentReplay} currentRound={currentRound} aiShowcase={aiShowcase} compositionNotes={compositionNotes} />
-            <BattleCanvas
-              canvasRef={canvasRef}
-              frame={frame}
-              frames={frames}
-              roundIndex={roundIndex}
-              setRoundIndex={setRoundIndex}
-              revealedStepCount={revealedStepCount}
-              setRevealedStepCount={setRevealedStepCount}
-              setRevealedStepUpdateCount={setRevealedStepUpdateCount}
-              isPlaying={isPlaying}
-              setIsPlaying={setIsPlaying}
-              speed={speed}
-              setSpeed={setSpeed}
-              followLatest={followLatest}
-              setFollowLatest={setFollowLatest}
-              loop={loop}
-              setLoop={setLoop}
-              currentActionSteps={currentActionSteps}
-              visibleStepCount={visibleStepCount}
-              totalActionSteps={totalActionSteps}
-              revealedUpdateCount={revealedUpdateCount}
-              totalStepUpdates={totalStepUpdates}
-              revealPercent={revealPercent}
-              activeStepLabel={activeStepLabel}
-            />
-          </div>
+      {/* ── Main content: fill remaining height ── */}
+      <main className="relative z-10 mx-auto grid min-h-0 w-full max-w-[1480px] flex-1 gap-3 p-3 xl:grid-cols-[minmax(440px,1.15fr)_minmax(340px,1fr)]">
+        {/* ── Left: Canvas ── */}
+        <div className="flex min-h-0 flex-col gap-2">
+          <ArtMission currentReplay={currentReplay} currentRound={currentRound} aiShowcase={aiShowcase} compositionNotes={compositionNotes} />
+          <BattleCanvas
+            canvasRef={canvasRef}
+            frame={frame}
+            frames={frames}
+            roundIndex={roundIndex}
+            setRoundIndex={setRoundIndex}
+            revealedStepCount={revealedStepCount}
+            setRevealedStepCount={setRevealedStepCount}
+            setRevealedStepUpdateCount={setRevealedStepUpdateCount}
+            isPlaying={isPlaying}
+            setIsPlaying={setIsPlaying}
+            speed={speed}
+            setSpeed={setSpeed}
+            followLatest={followLatest}
+            setFollowLatest={setFollowLatest}
+            loop={loop}
+            setLoop={setLoop}
+            currentActionSteps={currentActionSteps}
+            visibleStepCount={visibleStepCount}
+            totalActionSteps={totalActionSteps}
+            revealedUpdateCount={revealedUpdateCount}
+            totalStepUpdates={totalStepUpdates}
+            revealPercent={revealPercent}
+            activeStepLabel={activeStepLabel}
+          />
+        </div>
 
-          <div className="space-y-4">
-            <RoundPulse
-              currentRound={currentRound}
-              frame={frame}
-              currentReplay={currentReplay}
-              rankingItems={rankingItems}
-              selectedLensAgentId={selectedLensAgentId}
-              setSelectedLensAgentId={setSelectedLensAgentId}
-            />
-            <ErrorPanel currentRound={currentRound} />
-            <section className="grid gap-4 lg:grid-cols-2">
-              <PublicVoice currentRound={currentRound} />
-              <PrivateWire currentRound={currentRound} />
-              <PersonaNotes currentRound={currentRound} />
-              <TwinLens
-                currentReplay={currentReplay}
-                frame={frame}
-                lensSnapshot={lensSnapshot}
-                selectedLensAgentId={selectedLensAgentId}
-                setSelectedLensAgentId={setSelectedLensAgentId}
-              />
-            </section>
-          </div>
-        </section>
+        {/* ── Right: Tabbed panels ── */}
+        <div className="flex min-h-0 flex-col">
+          <TabPanel
+            tabs={[
+              {
+                id: "stats",
+                label: "Stats",
+                content: (
+                  <div className="space-y-3">
+                    <RoundPulse
+                      currentRound={currentRound}
+                      frame={frame}
+                      currentReplay={currentReplay}
+                      rankingItems={rankingItems}
+                      selectedLensAgentId={selectedLensAgentId}
+                      setSelectedLensAgentId={setSelectedLensAgentId}
+                    />
+                    <ErrorPanel currentRound={currentRound} />
+                  </div>
+                )
+              },
+              {
+                id: "voices",
+                label: "Voices",
+                content: (
+                  <div className="space-y-3">
+                    <PublicVoice currentRound={currentRound} />
+                    <PrivateWire currentRound={currentRound} />
+                  </div>
+                )
+              },
+              {
+                id: "agent",
+                label: "Agent",
+                content: (
+                  <div className="space-y-3">
+                    <TwinLens
+                      currentReplay={currentReplay}
+                      frame={frame}
+                      lensSnapshot={lensSnapshot}
+                      selectedLensAgentId={selectedLensAgentId}
+                      setSelectedLensAgentId={setSelectedLensAgentId}
+                    />
+                    <PersonaNotes currentRound={currentRound} />
+                  </div>
+                )
+              }
+            ]}
+          />
+        </div>
       </main>
     </div>
   );
