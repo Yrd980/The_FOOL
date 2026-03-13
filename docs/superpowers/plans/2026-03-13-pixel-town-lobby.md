@@ -21,7 +21,7 @@
 - Modify: `src/App.tsx`
 - Modify: `src/components/SpatialRoomFloor.tsx`
 
-- [ ] **Step 1: Create `src/types/entities.ts` with types extracted from App.tsx**
+- [x]**Step 1: Create `src/types/entities.ts` with types extracted from App.tsx**
 
 ```typescript
 // src/types/entities.ts
@@ -91,7 +91,7 @@ export const buildAvatar = (value: string) => {
 };
 ```
 
-- [ ] **Step 2: Update `App.tsx` to import from shared types instead of defining inline**
+- [x]**Step 2: Update `App.tsx` to import from shared types instead of defining inline**
 
 Remove the inline `SelectionKind`, `SidebarEntity`, `ContestantSeat`, `DetailCard` type definitions and the `buildSelectionId`, `parseSelectionId`, `buildAvatar` functions from `App.tsx`. Replace with:
 
@@ -102,7 +102,7 @@ import { buildAvatar, buildSelectionId, parseSelectionId } from "./types/entitie
 
 Keep all other code in `App.tsx` unchanged.
 
-- [ ] **Step 3: Update `SpatialRoomFloor.tsx` to import from shared types**
+- [x]**Step 3: Update `SpatialRoomFloor.tsx` to import from shared types**
 
 Remove inline type definitions from `SpatialRoomFloor.tsx` (lines 1-63). Import from shared module:
 
@@ -114,17 +114,17 @@ import type { AudienceEvent, ContestantScorecard } from "../types";
 
 Keep the `SpatialRoomFloorProps` type local to that file (it's component-specific).
 
-- [ ] **Step 4: Run tests to verify no regressions**
+- [x]**Step 4: Run tests to verify no regressions**
 
 Run: `npx vitest run`
 Expected: All existing tests pass (no logic changes, only type extraction)
 
-- [ ] **Step 5: Run type check**
+- [x]**Step 5: Run type check**
 
 Run: `npx tsc -b --noEmit`
 Expected: No type errors
 
-- [ ] **Step 6: Commit**
+- [x]**Step 6: Commit**
 
 ```bash
 git add src/types/entities.ts src/App.tsx src/components/SpatialRoomFloor.tsx
@@ -139,7 +139,7 @@ git commit -m "refactor: extract shared entity types into src/types/entities.ts"
 - Create: `src/room/townLayout.ts`
 - Create: `src/room/townLayout.test.ts`
 
-- [ ] **Step 1: Write failing test for `buildTownLayout`**
+- [x]**Step 1: Write failing test for `buildTownLayout`**
 
 ```typescript
 // src/room/townLayout.test.ts
@@ -251,12 +251,12 @@ describe("buildTownLayout", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x]**Step 2: Run test to verify it fails**
 
 Run: `npx vitest run src/room/townLayout.test.ts`
 Expected: FAIL — module not found
 
-- [ ] **Step 3: Implement `buildTownLayout`**
+- [x]**Step 3: Implement `buildTownLayout`**
 
 ```typescript
 // src/room/townLayout.ts
@@ -379,12 +379,12 @@ export function buildTownLayout(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x]**Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run src/room/townLayout.test.ts`
 Expected: All 5 tests PASS
 
-- [ ] **Step 5: Commit**
+- [x]**Step 5: Commit**
 
 ```bash
 git add src/room/townLayout.ts src/room/townLayout.test.ts
@@ -398,7 +398,7 @@ git commit -m "feat: add buildTownLayout adapter for pixel town map"
 **Files:**
 - Create: `src/pixel-town.css`
 
-- [ ] **Step 1: Create `pixel-town.css` with design tokens and base layout**
+- [x]**Step 1: Create `pixel-town.css` with design tokens and base layout**
 
 ```css
 /* src/pixel-town.css — Pixel Town design system */
@@ -1037,14 +1037,14 @@ git commit -m "feat: add buildTownLayout adapter for pixel town map"
 }
 ```
 
-- [ ] **Step 2: Import `pixel-town.css` in `main.tsx`**
+- [x]**Step 2: Import `pixel-town.css` in `main.tsx`**
 
 Add to `src/main.tsx`:
 ```typescript
 import "./pixel-town.css";
 ```
 
-- [ ] **Step 3: Commit**
+- [x]**Step 3: Commit**
 
 ```bash
 git add src/pixel-town.css src/main.tsx
@@ -1060,7 +1060,7 @@ git commit -m "feat: add pixel town CSS design system with tokens and base style
 **Files:**
 - Create: `src/components/PixelTownMap.tsx`
 
-- [ ] **Step 1: Create `PixelTownMap.tsx`**
+- [x]**Step 1: Create `PixelTownMap.tsx`**
 
 ```typescript
 // src/components/PixelTownMap.tsx
@@ -1134,7 +1134,7 @@ function PixelTownMap({ buildings, onEnterRoom, onSelectEntity }: PixelTownMapPr
 export default PixelTownMap;
 ```
 
-- [ ] **Step 2: Commit**
+- [x]**Step 2: Commit**
 
 ```bash
 git add src/components/PixelTownMap.tsx
@@ -1148,7 +1148,7 @@ git commit -m "feat: add PixelTownMap component with buildings and entity dots"
 **Files:**
 - Create: `src/components/PixelRoomView.tsx`
 
-- [ ] **Step 1: Create `PixelRoomView.tsx`**
+- [x]**Step 1: Create `PixelRoomView.tsx`**
 
 ```typescript
 // src/components/PixelRoomView.tsx
@@ -1285,7 +1285,7 @@ function PixelRoomView({
 export default PixelRoomView;
 ```
 
-- [ ] **Step 2: Commit**
+- [x]**Step 2: Commit**
 
 ```bash
 git add src/components/PixelRoomView.tsx
@@ -1299,7 +1299,7 @@ git commit -m "feat: add PixelRoomView component with sprites and speech bubbles
 **Files:**
 - Create: `src/components/TownOverlay.tsx`
 
-- [ ] **Step 1: Create `TownOverlay.tsx`**
+- [x]**Step 1: Create `TownOverlay.tsx`**
 
 ```typescript
 // src/components/TownOverlay.tsx
@@ -1382,7 +1382,7 @@ function TownOverlay({
 export default TownOverlay;
 ```
 
-- [ ] **Step 2: Commit**
+- [x]**Step 2: Commit**
 
 ```bash
 git add src/components/TownOverlay.tsx
@@ -1396,7 +1396,7 @@ git commit -m "feat: add TownOverlay component with status bars and audio contro
 **Files:**
 - Create: `src/components/EntityDetailPanel.tsx`
 
-- [ ] **Step 1: Create `EntityDetailPanel.tsx`**
+- [x]**Step 1: Create `EntityDetailPanel.tsx`**
 
 ```typescript
 // src/components/EntityDetailPanel.tsx
@@ -1492,7 +1492,7 @@ function EntityDetailPanel({ card, isOpen, onClose, onAction }: EntityDetailPane
 export default EntityDetailPanel;
 ```
 
-- [ ] **Step 2: Commit**
+- [x]**Step 2: Commit**
 
 ```bash
 git add src/components/EntityDetailPanel.tsx
@@ -1506,7 +1506,7 @@ git commit -m "feat: add EntityDetailPanel slide-in component"
 **Files:**
 - Create: `src/components/EntitySearchOverlay.tsx`
 
-- [ ] **Step 1: Create `EntitySearchOverlay.tsx`**
+- [x]**Step 1: Create `EntitySearchOverlay.tsx`**
 
 ```typescript
 // src/components/EntitySearchOverlay.tsx
@@ -1629,7 +1629,7 @@ function EntitySearchOverlay({
 export default EntitySearchOverlay;
 ```
 
-- [ ] **Step 2: Commit**
+- [x]**Step 2: Commit**
 
 ```bash
 git add src/components/EntitySearchOverlay.tsx
@@ -1645,7 +1645,7 @@ git commit -m "feat: add EntitySearchOverlay command palette component"
 **Files:**
 - Create: `src/components/PixelTownShell.tsx`
 
-- [ ] **Step 1: Create `PixelTownShell.tsx`**
+- [x]**Step 1: Create `PixelTownShell.tsx`**
 
 ```typescript
 // src/components/PixelTownShell.tsx
@@ -1873,7 +1873,7 @@ function PixelTownShell({
 export default PixelTownShell;
 ```
 
-- [ ] **Step 2: Commit**
+- [x]**Step 2: Commit**
 
 ```bash
 git add src/components/PixelTownShell.tsx
@@ -1887,7 +1887,7 @@ git commit -m "feat: add PixelTownShell with view state, zoom transitions, and k
 **Files:**
 - Modify: `src/App.tsx`
 
-- [ ] **Step 1: Replace App.tsx rendering with PixelTownShell**
+- [x]**Step 1: Replace App.tsx rendering with PixelTownShell**
 
 In `App.tsx`, make these changes:
 
@@ -1951,26 +1951,26 @@ return (
 
 7. **Remove `simplifiedView` from `detailCard` dependency array** (line 648 of current App.tsx) — it was a stale dependency.
 
-- [ ] **Step 2: Run type check**
+- [x]**Step 2: Run type check**
 
 Run: `npx tsc -b --noEmit`
 Expected: No type errors
 
-- [ ] **Step 3: Run tests**
+- [x]**Step 3: Run tests**
 
 Run: `npx vitest run`
 Expected: All tests pass. Note: `App.room-flow.test.tsx` may need adjustment if it references removed DOM elements like the sidebar. If it fails, fix the selectors in the next step.
 
-- [ ] **Step 4: Fix any broken tests**
+- [x]**Step 4: Fix any broken tests**
 
 If `App.room-flow.test.tsx` fails because it looks for sidebar/dock elements that no longer exist, update the test to use the new pixel town structure instead. The core room-flow logic tests (in `src/room/`) should pass unchanged.
 
-- [ ] **Step 5: Run dev server and visually verify**
+- [x]**Step 5: Run dev server and visually verify**
 
 Run: `npx vite`
 Expected: Browser shows pixel-art town map with buildings, entity dots, and overlay bars. Clicking a building zooms into room view. Clicking entity dots opens detail panel.
 
-- [ ] **Step 6: Commit**
+- [x]**Step 6: Commit**
 
 ```bash
 git add src/App.tsx
@@ -1986,17 +1986,17 @@ git commit -m "feat: wire App.tsx to PixelTownShell, replace dashboard with pixe
 **Files:**
 - Possibly modify: `src/App.room-flow.test.tsx`
 
-- [ ] **Step 1: Run full test suite**
+- [x]**Step 1: Run full test suite**
 
 Run: `npx vitest run`
 Expected: All tests pass
 
-- [ ] **Step 2: Run build**
+- [x]**Step 2: Run build**
 
 Run: `npx tsc -b && npx vite build`
 Expected: Clean build with no errors
 
-- [ ] **Step 3: Fix `App.room-flow.test.tsx`**
+- [x]**Step 3: Fix `App.room-flow.test.tsx`**
 
 The first test ("renders the hallway shell") queries for `role="complementary"` (sidebar), `"conversation dock"`, and `"spatial room floor"` — all removed. Replace with:
 
@@ -2013,13 +2013,13 @@ it("renders the pixel town shell with buildings and overlay", () => {
 
 The remaining tests query `DemoControlPanel` buttons (`/go to main stage/i`, `/pause feed/i`, etc.) which still exist since `DemoControlPanel` is preserved. These tests should pass without changes. The test for "current room" text (line 54) and "hallway guide" text (lines 62, 65) reference `DemoControlPanel` context pills which also survive. Verify these pass; if any query for removed DOM, update the selector to match the new overlay/panel structure.
 
-- [ ] **Step 4: Fix any remaining issues**
+- [x]**Step 4: Fix any remaining issues**
 
 If build fails, fix type errors. Common issues:
 - Unused imports → remove them
 - Stale dependency arrays → remove references to deleted state
 
-- [ ] **Step 4: Commit fixes**
+- [x]**Step 4: Commit fixes**
 
 ```bash
 git add -u
@@ -2030,11 +2030,11 @@ git commit -m "fix: update tests for pixel town layout"
 
 ### Task 12: Final Visual QA Pass
 
-- [ ] **Step 1: Run dev server**
+- [x]**Step 1: Run dev server**
 
 Run: `npx vite`
 
-- [ ] **Step 2: Verify acceptance criteria**
+- [x]**Step 2: Verify acceptance criteria**
 
 Check each item from spec Section 15:
 1. ✅ Page shows pixel-art town, not dashboard
@@ -2048,7 +2048,7 @@ Check each item from spec Section 15:
 9. ✅ Seeded mode drives activity
 10. ✅ Demo controls accessible
 
-- [ ] **Step 3: Test keyboard navigation**
+- [x]**Step 3: Test keyboard navigation**
 
 - Tab through buildings
 - Enter to enter room
@@ -2056,7 +2056,7 @@ Check each item from spec Section 15:
 - Ctrl+K to search
 - Escape to close detail panel
 
-- [ ] **Step 4: Commit any final adjustments**
+- [x]**Step 4: Commit any final adjustments**
 
 ```bash
 git add -u
