@@ -123,6 +123,8 @@ export type ReplayListItem = {
   name: string;
   mtime: string;
   bytes: number;
+  mode?: "dry-run" | "live";
+  agent_count?: number;
 };
 
 export type Frame = {

@@ -37,20 +37,47 @@ function latestReplayName(): string | null {
   return files[0]?.name ?? null;
 }
 
-function replayList() {
+function replayList(query?: URLSearchParams) {
   if (!fs.existsSync(outputRoot)) return [];
-  return fs
+  const items = fs
     .readdirSync(outputRoot)
     .filter((name) => /^replay-.*\.json$/.test(name))
     .map((name) => {
-      const stat = fs.statSync(path.join(outputRoot, name));
+      const filePath = path.join(outputRoot, name);
+      const stat = fs.statSync(filePath);
+      let mode: "dry-run" | "live" = "live";
+      let agent_count = 0;
+      try {
+        const fd = fs.openSync(filePath, "r");
+        const buf = Buffer.alloc(512);
+        fs.readSync(fd, buf, 0, 512, 0);
+        fs.closeSync(fd);
+        const head = buf.toString("utf-8");
+        if (/"dry_run"\s*:\s*true/.test(head)) mode = "dry-run";
+        const agentMatch = head.match(/"agent_count"\s*:\s*(\d+)/);
+        if (agentMatch) agent_count = Number(agentMatch[1]);
+      } catch {}
       return {
         name,
         mtime: new Date(stat.mtimeMs).toISOString(),
-        bytes: stat.size
+        bytes: stat.size,
+        mode,
+        agent_count
       };
     })
     .sort((a, b) => Date.parse(b.mtime) - Date.parse(a.mtime));
+
+  if (!query) return items;
+
+  return items.filter((item) => {
+    const modeFilter = query.get("mode");
+    if (modeFilter && item.mode !== modeFilter) return false;
+    const agentsMin = query.get("agents_min");
+    if (agentsMin && item.agent_count < Number(agentsMin)) return false;
+    const agentsMax = query.get("agents_max");
+    if (agentsMax && item.agent_count > Number(agentsMax)) return false;
+    return true;
+  });
 }
 
 function safeReplayPath(name: string): string | null {
@@ -115,7 +142,7 @@ const server = Bun.serve({
     const url = new URL(req.url);
 
     if (url.pathname === "/api/replays") {
-      return Response.json({ replays: replayList() });
+      return Response.json({ replays: replayList(url.searchParams) });
     }
 
     if (url.pathname === "/api/latest") {

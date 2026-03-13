@@ -23,7 +23,11 @@ export function App() {
     errorText,
     schemaWarning,
     loadReplay: rawLoadReplay,
-    loadReplayList: rawLoadReplayList
+    loadReplayList: rawLoadReplayList,
+    filterMode,
+    setFilterMode,
+    filterAgentsMin,
+    setFilterAgentsMin
   } = useReplayData();
 
   const {
@@ -189,6 +193,15 @@ export function App() {
           <div className="flex flex-wrap items-center gap-2 self-start">
             <select
               className="rounded-xl border border-[#dbcfb4] bg-white/80 px-3 py-2 text-sm shadow-sm"
+              value={filterMode}
+              onChange={(e) => setFilterMode(e.target.value as "" | "dry-run" | "live")}
+            >
+              <option value="">All modes</option>
+              <option value="dry-run">Dry-run</option>
+              <option value="live">Live</option>
+            </select>
+            <select
+              className="rounded-xl border border-[#dbcfb4] bg-white/80 px-3 py-2 text-sm shadow-sm"
               value={currentReplayName}
               onChange={async (event) => {
                 setIsPlaying(false);
@@ -197,7 +210,7 @@ export function App() {
             >
               {replays.map((entry) => (
                 <option key={entry.name} value={entry.name}>
-                  {entry.name} · {entry.mtime}
+                  {entry.name} · {entry.mtime}{entry.mode ? ` · ${entry.mode}` : ""}{entry.agent_count ? ` · ${entry.agent_count}a` : ""}
                 </option>
               ))}
             </select>

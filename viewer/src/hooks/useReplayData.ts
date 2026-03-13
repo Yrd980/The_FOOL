@@ -20,6 +20,8 @@ export function useReplayData() {
   const [loadingList, setLoadingList] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [schemaWarning, setSchemaWarning] = useState("");
+  const [filterMode, setFilterMode] = useState<"" | "dry-run" | "live">("");
+  const [filterAgentsMin, setFilterAgentsMin] = useState("");
 
   const loadReplay = useCallback(
     async (
@@ -72,7 +74,11 @@ export function useReplayData() {
       if (loadingList) return;
       setLoadingList(true);
       try {
-        const data = await fetchJSON<{ replays: ReplayListItem[] }>("/api/replays");
+        const params = new URLSearchParams();
+        if (filterMode) params.set("mode", filterMode);
+        if (filterAgentsMin) params.set("agents_min", filterAgentsMin);
+        const qs = params.toString();
+        const data = await fetchJSON<{ replays: ReplayListItem[] }>(`/api/replays${qs ? `?${qs}` : ""}`);
         const incoming = data.replays || [];
         setReplays(incoming);
 
@@ -111,7 +117,7 @@ export function useReplayData() {
         setLoadingList(false);
       }
     },
-    [currentReplay, currentReplayName, followLatest, loadReplay, loadingList]
+    [currentReplay, currentReplayName, filterMode, filterAgentsMin, followLatest, loadReplay, loadingList]
   );
 
   useEffect(() => {
@@ -137,6 +143,10 @@ export function useReplayData() {
     errorText,
     schemaWarning,
     loadReplay,
-    loadReplayList
+    loadReplayList,
+    filterMode,
+    setFilterMode,
+    filterAgentsMin,
+    setFilterAgentsMin
   };
 }
