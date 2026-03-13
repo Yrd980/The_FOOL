@@ -1,20 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SocialRelation, ReplayData, ReplayListItem, Frame, HydratedReplay } from "./types";
-import {
-  REPLAY_POLL_MS,
-  DEFAULT_SPEED,
-  MIN_REVEAL_TICK_MS,
-  cn,
-  signed,
-  revealChunkSize,
-  actionStepsForRound,
-  stableColorMap,
-  buildAgentDirectory,
-  buildFrames,
-  fetchJSON,
-  normalizedSchemaVersion,
-  schemaWarningFor
-} from "./utils";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { SocialRelation } from "./types";
+import { cn, signed, actionStepsForRound } from "./utils";
+import { useReplayData } from "./hooks/useReplayData";
+import { usePlaybackControl } from "./hooks/usePlaybackControl";
+import { useCanvasRenderer } from "./hooks/useCanvasRenderer";
 
 function MetricCard({ label, value }: { label: string; value: string | number }) {
   return (
@@ -64,274 +53,100 @@ function RelationCard({
 }
 
 export function App() {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [replays, setReplays] = useState<ReplayListItem[]>([]);
-  const [currentReplay, setCurrentReplay] = useState<HydratedReplay | null>(null);
-  const [currentReplayName, setCurrentReplayName] = useState("");
-  const [frames, setFrames] = useState<Frame[]>([]);
-  const [roundIndex, setRoundIndex] = useState(0);
-  const [revealedStepCount, setRevealedStepCount] = useState(0);
-  const [revealedStepUpdateCount, setRevealedStepUpdateCount] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [speed, setSpeed] = useState(DEFAULT_SPEED);
-  const [followLatest, setFollowLatest] = useState(true);
-  const [loop, setLoop] = useState(true);
-  const [watchHint, setWatchHint] = useState("");
-  const [selectedLensAgentId, setSelectedLensAgentId] = useState("");
-  const [loadingList, setLoadingList] = useState(false);
-  const [errorText, setErrorText] = useState("");
-  const [schemaWarning, setSchemaWarning] = useState("");
+  const {
+    replays,
+    currentReplay,
+    currentReplayName,
+    frames,
+    followLatest,
+    setFollowLatest,
+    errorText,
+    schemaWarning,
+    loadReplay: rawLoadReplay,
+    loadReplayList: rawLoadReplayList
+  } = useReplayData();
 
-  const frame = frames[roundIndex] ?? null;
-  const previousFrame = roundIndex > 0 ? frames[roundIndex - 1] : null;
-  const currentRound = frame?.source ?? null;
-  const currentActionSteps = useMemo(() => actionStepsForRound(currentRound), [currentRound]);
-  const totalStepUpdates = useMemo(
-    () => currentActionSteps.reduce((sum, step) => sum + step.updates.length, 0),
-    [currentActionSteps]
+  const {
+    roundIndex,
+    setRoundIndex,
+    revealedStepCount,
+    setRevealedStepCount,
+    revealedStepUpdateCount: _revealedStepUpdateCount,
+    setRevealedStepUpdateCount,
+    isPlaying,
+    setIsPlaying,
+    speed,
+    setSpeed,
+    loop,
+    setLoop,
+    setWatchHint,
+    frame,
+    previousFrame,
+    currentRound,
+    currentActionSteps,
+    totalStepUpdates,
+    revealedUpdateCount,
+    revealPercent,
+    activePlaybackStep,
+    visibleStepCount,
+    totalActionSteps,
+    activeStepLabel,
+    watchStateText
+  } = usePlaybackControl(frames, followLatest, currentReplay);
+
+  const { canvasRef } = useCanvasRenderer(
+    currentReplay,
+    frame,
+    previousFrame,
+    currentActionSteps,
+    revealedStepCount,
+    activePlaybackStep,
+    _revealedStepUpdateCount
   );
-  const revealedUpdateCount = useMemo(() => {
-    let total = 0;
-    for (let i = 0; i < Math.min(revealedStepCount, currentActionSteps.length); i += 1) {
-      total += currentActionSteps[i].updates.length;
-    }
-    if (revealedStepCount < currentActionSteps.length) {
-      total += Math.min(revealedStepUpdateCount, currentActionSteps[revealedStepCount].updates.length);
-    }
-    return total;
-  }, [currentActionSteps, revealedStepCount, revealedStepUpdateCount]);
-  const revealPercent = totalStepUpdates > 0 ? Math.round((revealedUpdateCount / totalStepUpdates) * 100) : 100;
-  const activePlaybackStep = currentActionSteps[revealedStepCount] ?? null;
-  const visibleStepCount = Math.min(
-    currentActionSteps.length,
-    revealedStepCount + (activePlaybackStep ? 1 : 0)
-  );
-  const totalActionSteps = currentActionSteps.length;
-  const activeStepLabel =
-    activePlaybackStep?.label ?? (totalActionSteps > 0 ? currentActionSteps[totalActionSteps - 1]?.label || "Round Complete" : "No Steps");
+
+  const [selectedLensAgentId, setSelectedLensAgentId] = useState("");
 
   const loadReplay = useCallback(
     async (name: string, options?: { autoPlay?: boolean; hint?: string }) => {
-      const data = await fetchJSON<ReplayData>(`/api/replay/${encodeURIComponent(name)}`);
-      const schemaVersion = normalizedSchemaVersion(data.schema_version);
-      const normalizedData: ReplayData = {
-        ...data,
-        schema_version: schemaVersion
-      };
-      const hydrated: HydratedReplay = {
-        ...normalizedData,
-        colorMap: stableColorMap(normalizedData),
-        agentDirectory: buildAgentDirectory(normalizedData)
-      };
-      const builtFrames = buildFrames(normalizedData);
-      const shouldAutoPlay = options?.autoPlay ?? true;
-      const initialSteps = actionStepsForRound(builtFrames[0]?.source);
-
-      setCurrentReplayName(name);
-      setCurrentReplay(hydrated);
-      setFrames(builtFrames);
+      const result = await rawLoadReplay(name, options);
       setRoundIndex(0);
-      setRevealedStepCount(shouldAutoPlay ? 0 : initialSteps.length);
+      setRevealedStepCount(result.initialStepCount);
       setRevealedStepUpdateCount(0);
-      setErrorText("");
-      setSchemaWarning(schemaWarningFor(schemaVersion));
-      setWatchHint(options?.hint ?? "");
+      setWatchHint(result.hint);
       setSelectedLensAgentId((previous) => {
-        if (previous && hydrated.agentDirectory.some((item) => item.id === previous)) return previous;
-        return hydrated.ranking[0]?.agent_id ?? hydrated.agentDirectory[0]?.id ?? "";
+        if (previous && result.hydrated.agentDirectory.some((item) => item.id === previous)) return previous;
+        return result.hydrated.ranking[0]?.agent_id ?? result.hydrated.agentDirectory[0]?.id ?? "";
       });
-
-      if (shouldAutoPlay) {
+      if (result.shouldAutoPlay) {
         setIsPlaying(true);
       } else {
         setIsPlaying(false);
       }
     },
-    []
+    [rawLoadReplay, setRoundIndex, setRevealedStepCount, setRevealedStepUpdateCount, setWatchHint, setIsPlaying]
   );
 
   const loadReplayList = useCallback(
     async (options?: { autoSwitchLatest?: boolean; preserveSelection?: boolean; silent?: boolean }) => {
-      if (loadingList) return;
-      setLoadingList(true);
-      try {
-        const data = await fetchJSON<{ replays: ReplayListItem[] }>("/api/replays");
-        const incoming = data.replays || [];
-        setReplays(incoming);
-
-        if (incoming.length === 0) {
-          setSchemaWarning("");
-          setErrorText("output 目录没有 replay 文件，先运行一局模拟。");
-          return;
+      const result = await rawLoadReplayList(options);
+      if (result) {
+        setRoundIndex(0);
+        setRevealedStepCount(result.initialStepCount);
+        setRevealedStepUpdateCount(0);
+        setWatchHint(result.hint);
+        setSelectedLensAgentId((previous) => {
+          if (previous && result.hydrated.agentDirectory.some((item) => item.id === previous)) return previous;
+          return result.hydrated.ranking[0]?.agent_id ?? result.hydrated.agentDirectory[0]?.id ?? "";
+        });
+        if (result.shouldAutoPlay) {
+          setIsPlaying(true);
+        } else {
+          setIsPlaying(false);
         }
-
-        const newest = incoming[0]?.name ?? "";
-        const previousReplay = currentReplayName;
-        const preserveSelection = options?.preserveSelection ?? true;
-        const autoSwitchLatest = options?.autoSwitchLatest ?? true;
-
-        let target = newest;
-        if (!followLatest && preserveSelection && previousReplay && incoming.some((item) => item.name === previousReplay)) {
-          target = previousReplay;
-        }
-        if (followLatest && autoSwitchLatest) {
-          target = newest;
-        }
-
-        if (!currentReplay || target !== previousReplay) {
-          const switchedByLatest = Boolean(previousReplay) && target === newest && target !== previousReplay && followLatest;
-          await loadReplay(target, {
-            autoPlay: true,
-            hint: switchedByLatest ? "检测到新 replay，已自动切换" : options?.silent ? "" : ""
-          });
-        }
-      } catch (error) {
-        setSchemaWarning("");
-        setErrorText(error instanceof Error ? error.message : String(error));
-      } finally {
-        setLoadingList(false);
       }
     },
-    [currentReplay, currentReplayName, followLatest, loadReplay, loadingList]
+    [rawLoadReplayList, setRoundIndex, setRevealedStepCount, setRevealedStepUpdateCount, setWatchHint, setIsPlaying]
   );
-
-  useEffect(() => {
-    loadReplayList({ autoSwitchLatest: true, preserveSelection: true, silent: false }).catch(() => undefined);
-  }, [loadReplayList]);
-
-  useEffect(() => {
-    if (!followLatest) return undefined;
-    const handle = window.setInterval(() => {
-      loadReplayList({ autoSwitchLatest: true, preserveSelection: true, silent: true }).catch(() => undefined);
-    }, REPLAY_POLL_MS);
-    return () => window.clearInterval(handle);
-  }, [followLatest, loadReplayList]);
-
-  useEffect(() => {
-    if (!isPlaying || !frame) return undefined;
-
-    const totalUnits = currentActionSteps.reduce((sum, step) => {
-      if (step.updates.length === 0) return sum + 1;
-      return sum + Math.max(1, Math.ceil(step.updates.length / revealChunkSize(step.updates.length)));
-    }, 0);
-    const revealTickMs = Math.max(MIN_REVEAL_TICK_MS, Math.round(speed / (Math.max(1, totalUnits) + 2)));
-    const holdMs = Math.max(120, speed - revealTickMs * Math.max(1, totalUnits));
-    const currentStep = currentActionSteps[revealedStepCount] ?? null;
-    const delay = currentStep ? revealTickMs : holdMs;
-
-    const handle = window.setTimeout(() => {
-      if (currentStep) {
-        const totalUpdates = currentStep.updates.length;
-        if (totalUpdates === 0) {
-          setRevealedStepCount((current) => Math.min(currentActionSteps.length, current + 1));
-          setRevealedStepUpdateCount(0);
-          return;
-        }
-
-        if (revealedStepUpdateCount < totalUpdates) {
-          const chunkSize = revealChunkSize(totalUpdates);
-          setRevealedStepUpdateCount((current) => Math.min(totalUpdates, current + chunkSize));
-          return;
-        }
-
-        setRevealedStepCount((current) => Math.min(currentActionSteps.length, current + 1));
-        setRevealedStepUpdateCount(0);
-        return;
-      }
-
-      if (roundIndex >= frames.length - 1) {
-        if (!loop) {
-          setIsPlaying(false);
-          setRevealedStepCount(currentActionSteps.length);
-          setRevealedStepUpdateCount(0);
-          return;
-        }
-        setRoundIndex(0);
-        setRevealedStepCount(0);
-        setRevealedStepUpdateCount(0);
-        return;
-      }
-
-      setRoundIndex(roundIndex + 1);
-      setRevealedStepCount(0);
-      setRevealedStepUpdateCount(0);
-    }, delay);
-
-    return () => window.clearTimeout(handle);
-  }, [currentActionSteps, frame, frames.length, isPlaying, loop, revealedStepCount, revealedStepUpdateCount, roundIndex, speed]);
-
-  useEffect(() => {
-    if (!currentReplay || !frame || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-
-    const cellW = canvas.width / currentReplay.config.width;
-    const cellH = canvas.height / currentReplay.config.height;
-
-    context.fillStyle = "#111";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-
-    for (let y = 0; y < currentReplay.config.height; y += 1) {
-      for (let x = 0; x < currentReplay.config.width; x += 1) {
-        const cell = previousFrame?.board[y]?.[x];
-        if (!cell?.owner) continue;
-        context.fillStyle = cell.color;
-        context.fillRect(Math.floor(x * cellW), Math.floor(y * cellH), Math.ceil(cellW), Math.ceil(cellH));
-      }
-    }
-
-    for (const step of currentActionSteps.slice(0, Math.min(revealedStepCount, currentActionSteps.length))) {
-      for (const update of step.updates) {
-        const px = Math.floor(update.x * cellW);
-        const py = Math.floor(update.y * cellH);
-        const pw = Math.ceil(cellW);
-        const ph = Math.ceil(cellH);
-
-        if (!update.owner) {
-          context.fillStyle = "#111";
-          context.fillRect(px, py, pw, ph);
-          continue;
-        }
-
-        context.fillStyle = update.color;
-        context.fillRect(px, py, pw, ph);
-      }
-    }
-
-    for (const update of activePlaybackStep?.updates.slice(0, revealedStepUpdateCount) ?? []) {
-      const px = Math.floor(update.x * cellW);
-      const py = Math.floor(update.y * cellH);
-      const pw = Math.ceil(cellW);
-      const ph = Math.ceil(cellH);
-
-      if (!update.owner) {
-        context.fillStyle = "#111";
-        context.fillRect(px, py, pw, ph);
-        continue;
-      }
-
-      context.fillStyle = update.color;
-      context.fillRect(px, py, pw, ph);
-    }
-
-    context.strokeStyle = "rgba(255,255,255,0.03)";
-    context.lineWidth = 1;
-    for (let x = 0; x <= currentReplay.config.width; x += Math.max(1, Math.round(currentReplay.config.width / 16))) {
-      const px = x * cellW;
-      context.beginPath();
-      context.moveTo(px, 0);
-      context.lineTo(px, canvas.height);
-      context.stroke();
-    }
-  }, [activePlaybackStep, currentActionSteps, currentReplay, frame, previousFrame, revealedStepCount, revealedStepUpdateCount]);
-
-  const watchStateText = useMemo(() => {
-    const follow = followLatest ? "ON" : "OFF";
-    const loopState = loop ? "ON" : "OFF";
-    const base = `跟随最新:${follow} | 循环:${loopState} | 轮询:${Math.round(REPLAY_POLL_MS / 1000)}s`;
-    return watchHint ? `${base} | ${watchHint}` : base;
-  }, [followLatest, loop, watchHint]);
 
   const metrics = currentRound?.round_metrics ?? {
     expanded: 0,
