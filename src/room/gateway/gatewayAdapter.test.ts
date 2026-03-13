@@ -2,101 +2,123 @@ import { describe, expect, it } from "vitest";
 
 import {
   classifyInteractionType,
-  deriveContestantState,
+  deriveContestantStateFromSession,
   mapGatewayMessage,
-  mapPresenceToContestantStates,
+  mapSessionsToContestantStates,
 } from "./gatewayAdapter";
-import type { GatewayPresenceEntry, AgentPresenceMap } from "./types";
+import type { GatewaySessionEntry } from "./types";
+import type { AgentRegistry } from "./agentRegistry";
 
-const makePresence = (overrides: Partial<GatewayPresenceEntry> = {}): GatewayPresenceEntry => ({
-  instanceId: "inst-1",
-  deviceId: "dev-1",
-  host: "localhost",
-  version: "2026.3.8",
-  deviceFamily: "cli",
-  mode: "agent",
-  lastInputSeconds: 5,
-  text: "Node: localhost (127.0.0.1) · app 2026.3.8 · last input 5s ago · mode agent · reason heartbeat",
-  ts: Date.now(),
+const makeSession = (overrides: Partial<GatewaySessionEntry> = {}): GatewaySessionEntry => ({
+  agentId: "contestant-01",
+  key: "agent:contestant-01:main",
+  kind: "direct",
+  updatedAt: Date.now(),
+  abortedLastRun: false,
+  inputTokens: 3,
+  outputTokens: 5,
+  totalTokens: 12000,
+  model: "claude-opus-4-6",
+  modelProvider: "anthropic",
+  contextTokens: 200000,
   ...overrides,
 });
 
-describe("deriveContestantState", () => {
-  it("0-10s → speaking", () => {
-    expect(deriveContestantState(5)).toBe("speaking");
+describe("deriveContestantStateFromSession", () => {
+  it("undefined session → muted", () => {
+    expect(deriveContestantStateFromSession(undefined)).toBe("muted");
   });
 
-  it("10-30s → raised-hand", () => {
-    expect(deriveContestantState(15)).toBe("raised-hand");
+  it("< 10s idle → speaking", () => {
+    const session = makeSession({ updatedAt: Date.now() - 5_000 });
+    expect(deriveContestantStateFromSession(session)).toBe("speaking");
   });
 
-  it("30-120s → listening", () => {
-    expect(deriveContestantState(60)).toBe("listening");
+  it("10-30s idle → raised-hand", () => {
+    const session = makeSession({ updatedAt: Date.now() - 15_000 });
+    expect(deriveContestantStateFromSession(session)).toBe("raised-hand");
   });
 
-  it("120s+ → muted", () => {
-    expect(deriveContestantState(300)).toBe("muted");
+  it("30-120s idle → listening", () => {
+    const session = makeSession({ updatedAt: Date.now() - 60_000 });
+    expect(deriveContestantStateFromSession(session)).toBe("listening");
+  });
+
+  it("120s+ idle → muted", () => {
+    const session = makeSession({ updatedAt: Date.now() - 300_000 });
+    expect(deriveContestantStateFromSession(session)).toBe("muted");
+  });
+
+  it("abortedLastRun + very recent (< 10s) → raised-hand (not speaking)", () => {
+    const session = makeSession({ abortedLastRun: true, updatedAt: Date.now() - 5_000 });
+    expect(deriveContestantStateFromSession(session)).toBe("raised-hand");
+  });
+
+  it("abortedLastRun + recent (< 30s) → raised-hand", () => {
+    const session = makeSession({ abortedLastRun: true, updatedAt: Date.now() - 15_000 });
+    expect(deriveContestantStateFromSession(session)).toBe("raised-hand");
+  });
+
+  it("abortedLastRun + stale (>= 30s) → muted", () => {
+    const session = makeSession({ abortedLastRun: true, updatedAt: Date.now() - 60_000 });
+    expect(deriveContestantStateFromSession(session)).toBe("muted");
   });
 
   it("boundary: exactly 10s → raised-hand", () => {
-    expect(deriveContestantState(10)).toBe("raised-hand");
+    const session = makeSession({ updatedAt: Date.now() - 10_000 });
+    expect(deriveContestantStateFromSession(session)).toBe("raised-hand");
   });
 
   it("boundary: exactly 30s → listening", () => {
-    expect(deriveContestantState(30)).toBe("listening");
+    const session = makeSession({ updatedAt: Date.now() - 30_000 });
+    expect(deriveContestantStateFromSession(session)).toBe("listening");
   });
 
   it("boundary: exactly 120s → muted", () => {
-    expect(deriveContestantState(120)).toBe("muted");
+    const session = makeSession({ updatedAt: Date.now() - 120_000 });
+    expect(deriveContestantStateFromSession(session)).toBe("muted");
   });
 });
 
-describe("mapPresenceToContestantStates", () => {
+describe("mapSessionsToContestantStates", () => {
+  const registry: AgentRegistry = [
+    { agentId: "contestant-01", contestantId: "c-1", displayName: "Alpha", slot: 1 },
+    { agentId: "contestant-02", contestantId: "c-2", displayName: "Beta", slot: 2 },
+    { agentId: "contestant-03", contestantId: "c-3", displayName: "Gamma", slot: 3 },
+  ];
   const contestantIds = ["c-1", "c-2", "c-3"];
 
-  it("maps agent presences to contestants by ts order", () => {
-    const presences = [
-      makePresence({ instanceId: "b", ts: 200, lastInputSeconds: 5 }),
-      makePresence({ instanceId: "a", ts: 100, lastInputSeconds: 60 }),
+  it("maps sessions to contestant states via registry", () => {
+    const sessions = [
+      makeSession({ agentId: "contestant-01", updatedAt: Date.now() - 5_000 }),
+      makeSession({ agentId: "contestant-02", updatedAt: Date.now() - 60_000 }),
     ];
 
-    const result = mapPresenceToContestantStates(presences, contestantIds, {});
+    const result = mapSessionsToContestantStates(sessions, registry, contestantIds);
 
-    // sorted by ts: a (100) → c-1, b (200) → c-2
-    expect(result.get("c-1")).toBe("listening");
-    expect(result.get("c-2")).toBe("speaking");
-    expect(result.get("c-3")).toBe("muted"); // no presence → muted
+    expect(result.get("c-1")).toBe("speaking");
+    expect(result.get("c-2")).toBe("listening");
+    expect(result.get("c-3")).toBe("muted");
   });
 
-  it("uses config map when provided", () => {
-    const presences = [makePresence({ instanceId: "x", lastInputSeconds: 5 })];
-    const configMap: AgentPresenceMap = {
-      x: { contestantId: "c-3", name: "Test", teamIndex: 0 },
-    };
-
-    const result = mapPresenceToContestantStates(presences, contestantIds, configMap);
-
-    expect(result.get("c-3")).toBe("speaking");
-    expect(result.get("c-1")).toBe("muted"); // unmapped
-  });
-
-  it("filters out cli and gateway mode presences", () => {
-    const presences = [
-      makePresence({ mode: "cli", lastInputSeconds: 5 }),
-      makePresence({ instanceId: "gw", mode: "gateway", lastInputSeconds: 0 }),
+  it("ignores sessions not in registry", () => {
+    const sessions = [
+      makeSession({ agentId: "unknown-agent", updatedAt: Date.now() }),
     ];
-    const result = mapPresenceToContestantStates(presences, contestantIds, {});
 
-    // cli and gateway filtered out, all contestants muted
+    const result = mapSessionsToContestantStates(sessions, registry, contestantIds);
+
     expect(result.get("c-1")).toBe("muted");
+    expect(result.get("c-2")).toBe("muted");
+    expect(result.get("c-3")).toBe("muted");
   });
 
-  it("treats operator/node as listeners, not contestants", () => {
-    const presences = [makePresence({ mode: "operator", lastInputSeconds: 5 })];
-    const result = mapPresenceToContestantStates(presences, contestantIds, {});
+  it("defaults all contestants to muted with empty sessions", () => {
+    const result = mapSessionsToContestantStates([], registry, contestantIds);
 
-    // operator doesn't map to a contestant
-    expect(result.get("c-1")).toBe("muted");
+    for (const id of contestantIds) {
+      expect(result.get(id)).toBe("muted");
+    }
   });
 });
 

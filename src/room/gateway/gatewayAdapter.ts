@@ -1,18 +1,31 @@
 import type { AudienceInteraction, AudienceEventType, OpenClawContestantState } from "../../types";
-import type { AgentPresenceMap, GatewayMessage, GatewayPresenceEntry } from "./types";
+import type { GatewayMessage, GatewaySessionEntry } from "./types";
+import type { AgentRegistry } from "./agentRegistry";
+import { lookupContestant } from "./agentRegistry";
 
-export const deriveContestantState = (lastInputSeconds: number | undefined): OpenClawContestantState => {
-  if (lastInputSeconds === undefined) return "muted";
-  if (lastInputSeconds < 10) return "speaking";
-  if (lastInputSeconds < 30) return "raised-hand";
-  if (lastInputSeconds < 120) return "listening";
+export const deriveContestantStateFromSession = (
+  session: GatewaySessionEntry | undefined,
+): OpenClawContestantState => {
+  if (!session) return "muted";
+
+  const idleMs = Date.now() - session.updatedAt;
+
+  // Aborted runs: recent aborts show as raised-hand (needs attention),
+  // stale aborts fade to muted (likely already retried/resolved)
+  if (session.abortedLastRun) {
+    return idleMs < 30_000 ? "raised-hand" : "muted";
+  }
+
+  if (idleMs < 10_000) return "speaking";
+  if (idleMs < 30_000) return "raised-hand";
+  if (idleMs < 120_000) return "listening";
   return "muted";
 };
 
-export const mapPresenceToContestantStates = (
-  presences: GatewayPresenceEntry[],
+export const mapSessionsToContestantStates = (
+  sessions: GatewaySessionEntry[],
+  registry: AgentRegistry,
   contestantIds: string[],
-  configMap: AgentPresenceMap,
 ): Map<string, OpenClawContestantState> => {
   const stateMap = new Map<string, OpenClawContestantState>();
 
@@ -21,29 +34,11 @@ export const mapPresenceToContestantStates = (
     stateMap.set(id, "muted");
   }
 
-  // Filter to agent-mode presences only (mode is freeform; match substring)
-  const isAgentMode = (mode?: string) => mode !== undefined && mode.includes("agent");
-  const agentPresences = presences
-    .filter((p) => isAgentMode(p.mode))
-    .sort((a, b) => a.ts - b.ts);
+  for (const session of sessions) {
+    const registration = lookupContestant(registry, session.agentId);
+    if (!registration || !contestantIds.includes(registration.contestantId)) continue;
 
-  let autoIndex = 0;
-
-  for (const presence of agentPresences) {
-    const state = deriveContestantState(presence.lastInputSeconds);
-
-    // Try config map first
-    const mapped = configMap[presence.instanceId ?? ""];
-    if (mapped && contestantIds.includes(mapped.contestantId)) {
-      stateMap.set(mapped.contestantId, state);
-      continue;
-    }
-
-    // Auto-assign by order
-    if (autoIndex < contestantIds.length) {
-      stateMap.set(contestantIds[autoIndex], state);
-      autoIndex++;
-    }
+    stateMap.set(registration.contestantId, deriveContestantStateFromSession(session));
   }
 
   return stateMap;
