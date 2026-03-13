@@ -1,7 +1,6 @@
 // src/components/PixelTownShell.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { RoomDirectory } from "../room/types";
-import type { AudioMode, RoomListItem } from "../room/types";
+import type { RoomDirectory, AudioMode } from "../room/types";
 import { buildTownLayout, type TownBuildingTheme } from "../room/townLayout";
 import type { ContestantSeat, DetailCard, SidebarEntity } from "../types/entities";
 import type { AudienceEvent, ContestantScorecard } from "../types";
@@ -213,6 +212,13 @@ function PixelTownShell({
         onSelect={handleSelectEntity}
         onClose={() => setSearchOpen(false)}
       />
+
+      {/* Room callout (always visible for scenario feedback) */}
+      {roomCallout && (
+        <div className="town-overlay" style={{ bottom: "48px", left: "50%", transform: "translateX(-50%)", zIndex: 22 }}>
+          <div className="town-overlay__panel">{roomCallout}</div>
+        </div>
+      )}
 
       {/* DemoControlPanel passed as children */}
       {children}

@@ -33,7 +33,6 @@ function PixelRoomView({
   contestantSeats,
   listenerEntities,
   audibleSignals,
-  contestantMap,
   roomCallout,
   selectedEntityId,
   onSelectEntity,

@@ -8,11 +8,13 @@ afterEach(() => {
 });
 
 describe("App room shell", () => {
-  it("renders the hallway shell with sidebar, conversation dock, and room floor", () => {
+  it("renders the pixel town shell with buildings and overlay", () => {
     render(<App />);
-    expect(screen.getByRole("complementary", { name: /presence sidebar/i })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /conversation dock/i })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /spatial room floor/i })).toBeInTheDocument();
+    // Town map should be present with buildings
+    expect(screen.getByText(/LOBBY PLAZA/i)).toBeInTheDocument();
+    expect(screen.getByText(/PRINT SHOP/i)).toBeInTheDocument();
+    // Overlay should show title
+    expect(screen.getByText(/PIXEL TOWN/i)).toBeInTheDocument();
   });
 
   it("renders room controls for audio mode, room switching, and demo state injection", () => {

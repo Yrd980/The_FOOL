@@ -1,15 +1,12 @@
 import {
   startTransition,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import ConversationDock from "./components/ConversationDock";
 import { DemoControlPanel } from "./components/DemoControlPanel";
-import PresenceSidebar from "./components/PresenceSidebar";
-import SpatialRoomFloor from "./components/SpatialRoomFloor";
+import PixelTownShell from "./components/PixelTownShell";
 import {
   aiJudges,
   audienceHandles,
@@ -53,8 +50,6 @@ const stageTimerMap: Record<StageId, number> = {
   "act-10": 60,
 };
 
-const railItems = ["Hall", "Find", "Room", "Acts", "Feed"];
-
 const listenerSpots = [
   { x: 16, y: 18 },
   { x: 84, y: 18 },
@@ -67,13 +62,6 @@ const listenerSpots = [
   { x: 90, y: 48 },
   { x: 10, y: 48 },
 ];
-
-const miniLegend = {
-  contestant: "#ffb372",
-  judge: "#f3b46c",
-  ai: "#83deff",
-  listener: "#86ea84",
-};
 
 const humanAccentPalette = ["#f3b46c", "#f08f8f", "#ffe19a"];
 const aiAccentPalette = ["#83deff", "#9facff", "#a0e57a"];
@@ -106,18 +94,6 @@ const resolveTeamForContestant = (
 ) =>
   teams.find((team) => team.members.some((member) => member.id === contestantId)) ?? fallbackTeam;
 
-const buildContestantGroup = (state: OpenClawContestantState) => {
-  if (state === "speaking" || state === "listening") {
-    return "On mic";
-  }
-
-  if (state === "raised-hand" || state === "queued") {
-    return "Queue rail";
-  }
-
-  return "Listener orbit";
-};
-
 const buildAvailability = (
   state: OpenClawContestantState,
 ): { label: string; tone: "available" | "focus" | "busy" } => {
@@ -133,18 +109,12 @@ const buildAvailability = (
 };
 
 function App() {
-  const [activeStageId, setActiveStageId] = useState<StageId>(stageDefinitions[0].id);
+  const [activeStageId] = useState<StageId>(stageDefinitions[0].id);
   const [selectedEntityId, setSelectedEntityId] = useState(
     buildSelectionId("contestant", contestants[0].id),
   );
-  const [memberQuery, setMemberQuery] = useState("");
-  const [simplifiedView, setSimplifiedView] = useState(false);
-
-  const deferredQuery = useDeferredValue(memberQuery);
-
   const activeStage =
     stageDefinitions.find((stage) => stage.id === activeStageId) ?? stageDefinitions[0];
-  const activeStageIndex = stageDefinitions.findIndex((stage) => stage.id === activeStageId);
   const activeStageTimer = stageTimerMap[activeStage.id] ?? 90;
   const [countdown, setCountdown] = useState(activeStageTimer);
 
@@ -415,75 +385,21 @@ function App() {
     return [...judgeListeners, ...aiListeners, ...audienceListeners];
   }, [interactions]);
 
-  const contestantSidebar = useMemo<SidebarEntity[]>(
-    () =>
-      speakerSeats.map((seat) => ({
-        selectionId: seat.selectionId,
-        refId: seat.id,
-        kind: "contestant",
-        group: buildContestantGroup(seat.state),
-        name: seat.name,
-        subtitle: `${seat.seatLabel} · ${seat.teamName}`,
-        status: `${seat.availabilityLabel} · ${seat.connectionLabel}`,
-        badge: seat.stateLabel,
-        accent: seat.palette.primary,
-        avatar: seat.avatarGlyph,
-        searchable: `${seat.name} ${seat.title} ${seat.teamName} ${seat.connectionLabel}`,
-      })),
-    [speakerSeats],
-  );
-
-  const filteredContestants = useMemo(() => {
-    const query = deferredQuery.trim().toLowerCase();
-    if (!query) {
-      return contestantSidebar;
-    }
-
-    return contestantSidebar.filter((entity) => entity.searchable.toLowerCase().includes(query));
-  }, [contestantSidebar, deferredQuery]);
-
-  const filteredListeners = useMemo(() => {
-    const query = deferredQuery.trim().toLowerCase();
-    if (!query) {
-      return listenerEntities;
-    }
-
-    return listenerEntities.filter((entity) => entity.searchable.toLowerCase().includes(query));
-  }, [deferredQuery, listenerEntities]);
-
-  const contestantGroups = useMemo(
-    () => ({
-      onMic: filteredContestants.filter((entity) => entity.group === "On mic"),
-      queue: filteredContestants.filter((entity) => entity.group === "Queue rail"),
-      orbit: filteredContestants.filter((entity) => entity.group === "Listener orbit"),
-    }),
-    [filteredContestants],
-  );
-
-  const listenerGroups = useMemo(
-    () => ({
-      observers: filteredListeners.filter((entity) => entity.group === "Observers"),
-      nearby: filteredListeners.filter((entity) => entity.group === "Nearby listeners"),
-    }),
-    [filteredListeners],
-  );
-
   useEffect(() => {
     const allIds = [
-      ...contestantSidebar.map((entity) => entity.selectionId),
+      ...openClawSeats.map((seat) => seat.selectionId),
       ...listenerEntities.map((entity) => entity.selectionId),
     ];
 
     if (allIds.length > 0 && !allIds.includes(selectedEntityId)) {
-      setSelectedEntityId(contestantSidebar[0]?.selectionId ?? allIds[0]);
+      setSelectedEntityId(openClawSeats[0]?.selectionId ?? allIds[0]);
     }
-  }, [contestantSidebar, listenerEntities, selectedEntityId]);
+  }, [openClawSeats, listenerEntities, selectedEntityId]);
 
   const countdownLabel = `${String(Math.floor(countdown / 60)).padStart(2, "0")}:${String(
     countdown % 60,
   ).padStart(2, "0")}`;
   const onlineCount = openClawSeats.length + listenerEntities.length;
-  const { micCount, queueCount } = roomViewModel;
 
   const detailCard = useMemo<DetailCard>(() => {
     if (selectedKind === "contestant") {
@@ -599,7 +515,6 @@ function App() {
     priorityContestantId,
     selectedKind,
     selectedRef,
-    simplifiedView,
     speakerSeats,
     teams,
   ]);
@@ -624,11 +539,6 @@ function App() {
 
     if (actionId === "mute-audio") {
       actions.setAudioMode("muted");
-      return;
-    }
-
-    if (actionId === "toggle-view") {
-      setSimplifiedView((current) => !current);
     }
   };
 
@@ -638,126 +548,45 @@ function App() {
     });
   };
 
-  const moveStage = (direction: -1 | 1) => {
-    const nextIndex = activeStageIndex + direction;
-
-    if (nextIndex < 0 || nextIndex >= stageDefinitions.length) {
-      return;
-    }
-
-    startTransition(() => {
-      setActiveStageId(stageDefinitions[nextIndex].id);
-    });
-  };
-
   return (
-    <div className={`openclaw-app ${simplifiedView ? "is-simplified" : ""}`}>
-      <aside className="app-rail">
-        <div className="rail-brand">OC</div>
-        <div className="rail-actions">
-          {railItems.map((item, index) => (
-            <button
-              className={`rail-button ${index === 2 ? "is-active" : ""}`}
-              key={item}
-              type="button"
-            >
-              {item.slice(0, 2)}
-            </button>
-          ))}
-        </div>
-        <div className="rail-bottom">
-          <button className="rail-button" type="button">
-            +
-          </button>
-          <button className="rail-button" type="button">
-            ?
-          </button>
-        </div>
-      </aside>
-
-      <PresenceSidebar
-        conversationSubtitle={openClawConversation.subtitle}
-        conversationTitle={openClawConversation.title}
-        conversationHostLabel={openClawConversation.hostLabel}
-        memberQuery={memberQuery}
-        onMemberQueryChange={setMemberQuery}
-        activeStageOrder={activeStage.order}
-        activeStageTitle={activeStage.title}
-        activeStageSubtitle={activeStage.subtitle}
-        countdownLabel={countdownLabel}
-        micCount={micCount}
-        queueCount={queueCount}
-        listenerCount={listenerEntities.length}
-        heatIndex={audienceSummary.heatIndex}
-        filteredContestantCount={filteredContestants.length}
-        filteredListenerCount={filteredListeners.length}
-        contestantGroups={contestantGroups}
-        listenerGroups={listenerGroups}
-        selectedEntityId={selectedEntityId}
-        onSelectEntity={selectEntity}
-        detailCard={detailCard}
-        onDetailAction={handleDetailAction}
-        formatter={formatter}
+    <PixelTownShell
+      roomDirectory={roomDirectory}
+      contestantSeats={openClawSeats}
+      listenerEntities={listenerEntities}
+      audibleSignals={audibleSignals}
+      contestantMap={contestantMap}
+      contestantNameById={contestantNameById}
+      roomCallout={roomCallout}
+      audioMode={audioMode}
+      onSetAudioMode={actions.setAudioMode}
+      selectedEntityId={selectedEntityId}
+      onSelectEntity={selectEntity}
+      detailCard={detailCard}
+      onDetailAction={handleDetailAction}
+      activeStageOrder={activeStage.order}
+      conversationTitle={openClawConversation.title}
+      onlineCount={onlineCount}
+      connectionStatus={snapshot.connectionStatus}
+      onSwitchRoom={actions.switchRoom}
+    >
+      <DemoControlPanel
+        currentRoomId={snapshot.currentRoomId}
+        currentRoomName={roomDirectory.currentRoom.name}
+        currentRoomStatus={roomDirectory.currentRoom.statusLabel}
+        currentUserMode={currentUserMode}
+        audioMode={snapshot.audioMode}
+        feedPaused={snapshot.feedPaused}
+        connectionStatus={snapshot.connectionStatus}
+        roomSwitchTargets={roomDirectory.rooms.map((r) => ({ id: r.id, name: r.name }))}
+        onSwitchRoom={actions.switchRoom}
+        onJoinConversation={actions.joinConversation}
+        onLeaveConversation={actions.leaveConversation}
+        onSetAudioMode={actions.setAudioMode}
+        onToggleFeedPaused={actions.toggleFeedPaused}
+        onInjectScenario={actions.injectScenario}
+        onResetDemo={actions.resetDemo}
       />
-
-      <main className="world-shell">
-        <ConversationDock
-          conversationRoomLabel={openClawConversation.roomLabel}
-          focusHeadline={focusTeam.submission.headline}
-          conversationNearbyHint={openClawConversation.nearbyHint}
-          activeStageOrder={activeStage.order}
-          focusTeamName={focusTeam.name}
-          audioMode={audioMode}
-          simplifiedView={simplifiedView}
-          onlineCount={onlineCount}
-          speakerSeats={speakerSeats}
-          selectedEntityId={selectedEntityId}
-          onSelectEntity={selectEntity}
-          onMoveStage={moveStage}
-        />
-        <DemoControlPanel
-          currentRoomId={snapshot.currentRoomId}
-          currentRoomName={roomDirectory.currentRoom.name}
-          currentRoomStatus={roomDirectory.currentRoom.statusLabel}
-          currentUserMode={currentUserMode}
-          audioMode={snapshot.audioMode}
-          feedPaused={snapshot.feedPaused}
-          connectionStatus={snapshot.connectionStatus}
-          roomSwitchTargets={roomDirectory.rooms.map((r) => ({ id: r.id, name: r.name }))}
-          onSwitchRoom={actions.switchRoom}
-          onJoinConversation={actions.joinConversation}
-          onLeaveConversation={actions.leaveConversation}
-          onSetAudioMode={actions.setAudioMode}
-          onToggleFeedPaused={actions.toggleFeedPaused}
-          onInjectScenario={actions.injectScenario}
-          onResetDemo={actions.resetDemo}
-        />
-        <SpatialRoomFloor
-          conversationTitle={openClawConversation.title}
-          activeStageTitle={activeStage.title}
-          activeStageObjective={activeStage.objective}
-          activeStageDeliverables={activeStage.deliverables}
-          focusTeamName={focusTeam.name}
-          focusTeamTheme={focusTeam.theme}
-          conversationSubtitle={openClawConversation.subtitle}
-          conversationHostLabel={openClawConversation.hostLabel}
-          audibleSignals={audibleSignals}
-          contestantMap={contestantMap}
-          listenerEntities={listenerEntities}
-          openClawSeats={openClawSeats}
-          selectedEntityId={selectedEntityId}
-          onSelectEntity={selectEntity}
-          miniLegend={miniLegend}
-          roomCallout={roomCallout}
-          audioMode={audioMode}
-          simplifiedView={simplifiedView}
-          priorityContestantId={priorityContestantId}
-          onSetAudioMode={actions.setAudioMode}
-          onToggleSimplifiedView={() => setSimplifiedView((current) => !current)}
-          onClearPriorityContestant={() => actions.setPriorityContestantId(null)}
-        />
-      </main>
-    </div>
+    </PixelTownShell>
   );
 }
 
