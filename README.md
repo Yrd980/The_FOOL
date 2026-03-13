@@ -1,52 +1,60 @@
-# XTION_TheFool0
+# Pixel Town — OpenClaw Lobby
 
-一个面向 `OpenClaw` 黑客松的产品化运营工作台。项目以 React + TypeScript + Vite 构建，把十幕手册当作活动上下文，而不是页面本身；真正落地的是一套管理 AI 选手、人类互动、组队、项目工作台、评审结算与赛后资产的单页应用。
+全屏像素风城镇地图，作为 OpenClaw 黑客松的观察者模式大厅。用户以鸟瞰视角观看 AI 选手在建筑内的实时状态，点击建筑进入房间细节视图。
 
-## 需求来源
+## 技术栈
 
-- 原始手册：`愚人环节手册.pdf`
-- 仓库最初说明：围绕十幕流程展开，包括选手属性面板、人类弹幕/押注、偏好组队、队内讨论、项目提交、人类点评、AI 评审、颁奖、共创像素画和开放麦收尾
-
-## 当前实现
-
-- 产品总览：用 KPI、风险、生命周期上下文和观众趋势展示整个活动运行状态
-- 选手模块：展示选手画像、状态、偏好关系、能力结构与实时反馈
-- 组队模块：依据选手偏好和能力互补生成队伍，并展示配队风险和接受态度
-- 项目模块：沉淀队内讨论、项目问题定义、核心功能、路线、分工与提交物
-- 评审模块：统一收口人类点评、AI 评分、冠军结果与人格奖
-- 资产模块：归档赛后小诗、像素画和开放麦复盘内容
-- 生命周期条：保留十幕作为 hackathon program context，而不是把十幕直接当页面主体
+React 19 · TypeScript 5.9 · Vite 7 · Vitest 4 · 纯 CSS（无 UI 库）
 
 ## 本地运行
 
 ```bash
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
-默认开发地址由 Vite 输出，通常是 `http://localhost:5173`。
-
-## 构建验证
+## 构建与测试
 
 ```bash
-npm run build
+bun run build
+bunx vitest run
 ```
-
-## Pencil / VS Code
-
-- 仓库根目录已经包含设计文件：`pencil-new.pen`
-- 本仓库提供了项目级 VS Code 配置：`.vscode/settings.json`
-- 该配置会显式保持 `pencil.mcp.integrations.codex` 与 `pencil.mcp.integrations.claudeCode` 为开启状态
-- 按 Pencil 官方当前 VS Code 集成方式，这里不需要额外手写 `.vscode/mcp.json`；Pencil 扩展会自动提供本地 MCP 能力
-- 如果你刚安装或刚修改完扩展设置，重载一次 VS Code 窗口后再打开 `pencil-new.pen` 即可
 
 ## 项目结构
 
 ```text
 src/
-  App.tsx        OpenClaw 产品工作台主界面
-  data.ts        生命周期上下文、选手、评委、初始观众事件
-  logic.ts       组队、汇总、评审、奖项、像素画等纯逻辑
-  styles.css     产品化界面与响应式样式
-  types.ts       数据模型与 UI 兼容类型
+  App.tsx                    主入口：业务派生 → PixelTownShell
+  data.ts                    选手、评委、观众事件等种子数据
+  logic.ts                   组队、评审、观众汇总等纯逻辑
+  types.ts                   核心数据模型
+  types/entities.ts          选手座位、详情卡等 UI 实体类型
+  pixel-town.css             设计系统：tokens、基础重置、全部组件样式
+  main.tsx                   React 挂载入口
+
+  components/
+    PixelTownShell.tsx       顶层 Shell：视图切换、键盘导航、面板管理
+    PixelTownMap.tsx          鸟瞰城镇地图：建筑、街道、实体点 + 大气层
+    PixelRoomView.tsx         房间细节：精灵、语音气泡、座位状态
+    TownOverlay.tsx           顶部/底部 HUD：位置标签、音频控制、状态条
+    EntityDetailPanel.tsx     右侧滑入详情面板
+    EntitySearchOverlay.tsx   Ctrl+K 搜索面板
+    DemoControlPanel.tsx      开发用演示控制台
+
+  town/atmosphere/
+    AtmosphereLayer.tsx       大气层复合组件
+    CivicProps.tsx            街道设施（路灯、长椅、告示栏等）
+    UncannyDetails.tsx        诡异细节（不合理阴影、裂缝发光等）
+    SupernaturalTraces.tsx    超自然痕迹（广场灼痕、热扭曲等）
+    FogDrift.tsx              飘雾动画
+    SpatialFoldBoundary.tsx   空间折叠边界效果
+    atmosphere.css            大气层 CSS 动画
+    layout.ts                 静态大气布局数据
+    types.ts                  大气层类型定义
+
+  room/
+    townLayout.ts             房间状态 → 城镇建筑布局适配器
+    useRoomSource.ts          房间数据源 hook（种子/网关自动切换）
+    gateway/                  WebSocket 网关连接层
+    ...                       房间状态机、ViewModel 构建等
 ```
