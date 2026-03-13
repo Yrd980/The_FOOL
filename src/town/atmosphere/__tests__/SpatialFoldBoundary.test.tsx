@@ -8,7 +8,7 @@ afterEach(cleanup);
 describe("SpatialFoldBoundary", () => {
   it("renders the boundary container with mask and mirror layers", () => {
     const { container } = render(
-      <SpatialFoldBoundary mapWidth={576} mapHeight={576} />
+      <SpatialFoldBoundary />
     );
     expect(container.querySelector(".spatial-fold-boundary")).toBeInTheDocument();
     expect(container.querySelector(".spatial-fold-mirror")).toBeInTheDocument();
@@ -17,7 +17,7 @@ describe("SpatialFoldBoundary", () => {
 
   it("renders fallback gradient when useFallback is true", () => {
     const { container } = render(
-      <SpatialFoldBoundary mapWidth={576} mapHeight={576} useFallback />
+      <SpatialFoldBoundary useFallback />
     );
     expect(container.querySelector(".spatial-fold-mirror")).toBeNull();
     expect(container.querySelector(".spatial-fold-mask")).toBeInTheDocument();

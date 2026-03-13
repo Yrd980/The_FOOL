@@ -19,39 +19,6 @@ type PixelRoomViewProps = {
   onBack: () => void;
 };
 
-type RoomProp = {
-  x: number; y: number;
-  w: number; h: number;
-  color: string;
-  glyph: string;
-};
-
-const ROOM_PROPS: Record<string, RoomProp[]> = {
-  lobby: [
-    { x: 8, y: 12, w: 40, h: 24, color: "var(--pt-dust)", glyph: "📋" },
-    { x: 78, y: 14, w: 36, h: 28, color: "var(--pt-dust)", glyph: "🗄" },
-    { x: 44, y: 82, w: 48, h: 20, color: "var(--pt-gray)", glyph: "🪑" },
-  ],
-  "print-shop": [
-    { x: 6, y: 8, w: 52, h: 20, color: "#E2DDD6", glyph: "🖨" },
-    { x: 72, y: 10, w: 36, h: 24, color: "#E2DDD6", glyph: "📄" },
-    { x: 10, y: 80, w: 44, h: 18, color: "var(--pt-gray)", glyph: "📑" },
-  ],
-  clinic: [
-    { x: 8, y: 10, w: 44, h: 22, color: "#D8DDE0", glyph: "🩺" },
-    { x: 74, y: 12, w: 40, h: 20, color: "#D8DDE0", glyph: "💊" },
-    { x: 30, y: 84, w: 48, h: 16, color: "var(--pt-gray)", glyph: "🛏" },
-  ],
-  convenience: [
-    { x: 6, y: 6, w: 28, h: 70, color: "#DDD8D2", glyph: "🗂" },
-    { x: 76, y: 6, w: 28, h: 70, color: "#DDD8D2", glyph: "📦" },
-    { x: 36, y: 82, w: 36, h: 18, color: "var(--pt-gray)", glyph: "🧾" },
-  ],
-  "quiet-zone": [
-    { x: 10, y: 14, w: 36, h: 20, color: "var(--pt-damp)", glyph: "🪴" },
-    { x: 70, y: 76, w: 40, h: 20, color: "var(--pt-damp)", glyph: "🪑" },
-  ],
-};
 
 const listenerSpots = [
   { x: 16, y: 18 }, { x: 84, y: 18 },
@@ -83,24 +50,7 @@ function PixelRoomView({
       <div className={`pixel-room__ground pixel-room__ground--${theme}`}>
         <div className="pixel-room__conversation-ring" />
 
-        {/* Room props (pixel furniture) */}
-        <div className="pixel-room__props">
-          {(ROOM_PROPS[theme] ?? []).map((prop, i) => (
-            <div
-              key={i}
-              className="pixel-room-prop"
-              style={{
-                left: `${prop.x}px`,
-                top: `${prop.y}px`,
-                width: `${prop.w}px`,
-                height: `${prop.h}px`,
-                background: prop.color,
-              }}
-            >
-              {prop.glyph}
-            </div>
-          ))}
-        </div>
+        {/* Room props removed */}
 
         {/* Contestant sprites */}
         {contestantSeats.map((seat) => {

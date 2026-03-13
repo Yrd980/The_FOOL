@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { DemoControlPanel } from "./components/DemoControlPanel";
 import PixelTownShell from "./components/PixelTownShell";
 import {
   aiJudges,
@@ -230,7 +229,7 @@ function App() {
   // Update the ref so next render uses current interactions
   interactionsRef.current = snapshot.interactions;
 
-  const { interactions, audioMode, currentUserMode, priorityContestantId } = snapshot;
+  const { interactions, audioMode, priorityContestantId } = snapshot;
   const { roomCallout, audibleSignals } = roomViewModel;
 
   const seatStateMap = useMemo(
@@ -555,38 +554,17 @@ function App() {
       listenerEntities={listenerEntities}
       audibleSignals={audibleSignals}
       contestantMap={contestantMap}
-      contestantNameById={contestantNameById}
       roomCallout={roomCallout}
       audioMode={audioMode}
-      onSetAudioMode={actions.setAudioMode}
       selectedEntityId={selectedEntityId}
       onSelectEntity={selectEntity}
       detailCard={detailCard}
       onDetailAction={handleDetailAction}
       activeStageOrder={activeStage.order}
-      conversationTitle={openClawConversation.title}
       onlineCount={onlineCount}
       connectionStatus={snapshot.connectionStatus}
       onSwitchRoom={actions.switchRoom}
-    >
-      <DemoControlPanel
-        currentRoomId={snapshot.currentRoomId}
-        currentRoomName={roomDirectory.currentRoom.name}
-        currentRoomStatus={roomDirectory.currentRoom.statusLabel}
-        currentUserMode={currentUserMode}
-        audioMode={snapshot.audioMode}
-        feedPaused={snapshot.feedPaused}
-        connectionStatus={snapshot.connectionStatus}
-        roomSwitchTargets={roomDirectory.rooms.map((r) => ({ id: r.id, name: r.name }))}
-        onSwitchRoom={actions.switchRoom}
-        onJoinConversation={actions.joinConversation}
-        onLeaveConversation={actions.leaveConversation}
-        onSetAudioMode={actions.setAudioMode}
-        onToggleFeedPaused={actions.toggleFeedPaused}
-        onInjectScenario={actions.injectScenario}
-        onResetDemo={actions.resetDemo}
-      />
-    </PixelTownShell>
+    />
   );
 }
 

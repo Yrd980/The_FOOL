@@ -17,30 +17,21 @@ export function AtmosphereLayer({
   tileSize,
   lowPerformance = false,
 }: AtmosphereLayerProps) {
-  const mapWidth = layout.mapTiles.cols * tileSize;
-  const mapHeight = layout.mapTiles.rows * tileSize;
-
   return (
     <div
       className="atmosphere-layer"
       style={{
         position: "absolute",
         inset: 0,
-        width: `${mapWidth}px`,
-        height: `${mapHeight}px`,
         pointerEvents: "none",
       }}
       aria-hidden="true"
     >
-      <FogDrift mapWidth={mapWidth} />
+      <FogDrift />
       <CivicProps items={layout.civic} tileSize={tileSize} />
       <UncannyDetails items={layout.uncanny} tileSize={tileSize} />
       <SupernaturalTraces items={layout.supernatural} tileSize={tileSize} />
-      <SpatialFoldBoundary
-        mapWidth={mapWidth}
-        mapHeight={mapHeight}
-        useFallback={lowPerformance}
-      />
+      <SpatialFoldBoundary useFallback={lowPerformance} />
       <div className="crt-scanline-overlay" />
     </div>
   );

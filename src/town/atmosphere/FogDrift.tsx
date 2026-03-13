@@ -1,18 +1,13 @@
-type FogDriftProps = {
-  mapWidth: number;
-};
-
-export function FogDrift({ mapWidth }: FogDriftProps) {
+export function FogDrift() {
   return (
     <div className="fog-drift-layer" aria-hidden="true">
       <div
         className="fog-drift-particle"
-        style={{ width: `${mapWidth * 2}px`, top: "20%" }}
+        style={{ top: "20%" }}
       />
       <div
         className="fog-drift-particle"
         style={{
-          width: `${mapWidth * 2}px`,
           top: "60%",
           animationDuration: "45s",
           animationDelay: "-15s",

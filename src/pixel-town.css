@@ -217,6 +217,7 @@ button, input { font: inherit; }
 .pixel-room {
   position: absolute;
   inset: 0;
+  z-index: 1;
   display: grid;
   place-items: center;
   animation: room-fade-in 200ms ease-out;
@@ -229,20 +230,16 @@ button, input { font: inherit; }
 
 .pixel-room__ground {
   position: relative;
-  width: 100%;
-  height: 100%;
-  background-color: var(--pt-paper);
+  width: min(1200px, 90vw);
+  height: min(800px, 80vh);
+  background-color: var(--pt-gray);
   background-image:
-    linear-gradient(rgba(0,0,0,0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,0,0,0.06) 1px, transparent 1px);
+    linear-gradient(var(--pt-dust) 1px, transparent 1px),
+    linear-gradient(90deg, var(--pt-dust) 1px, transparent 1px);
   background-size: var(--pt-tile) var(--pt-tile);
 }
 
-.pixel-room__ground--lobby      { background-color: var(--pt-paper); }
-.pixel-room__ground--print-shop { background-color: #E2DDD6; }
-.pixel-room__ground--clinic     { background-color: #D8DDE0; }
-.pixel-room__ground--convenience { background-color: #DDD8D2; }
-.pixel-room__ground--quiet-zone { background-color: var(--pt-damp); }
+/* All rooms use unified lobby palette */
 
 .pixel-room__conversation-ring {
   position: absolute;
@@ -252,6 +249,7 @@ button, input { font: inherit; }
   height: min(320px, 34vw);
   transform: translate(-50%, -50%);
   border: 2px dashed var(--pt-dust);
+  background: var(--pt-paper);
 }
 
 .pixel-room__back {
@@ -487,12 +485,11 @@ button, input { font: inherit; }
   font-family: var(--pt-font);
   padding: 20px 16px;
   overflow-y: auto;
-  transform: translateX(100%);
-  transition: transform 250ms ease-out;
+  display: none;
 }
 
 .entity-panel.is-open {
-  transform: translateX(0);
+  display: block;
 }
 
 .entity-panel__close {

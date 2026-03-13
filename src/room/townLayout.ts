@@ -32,11 +32,11 @@ const BUILDING_POSITIONS: Record<string, { x: number; y: number; w: number; h: n
 };
 
 const ROOM_THEMES: Record<string, { theme: TownBuildingTheme; name: string }> = {
-  "main-stage":  { theme: "lobby",       name: "大厅 LOBBY PLAZA" },
-  "team-room-1": { theme: "print-shop",  name: "印刷所 PRINT SHOP" },
-  "team-room-2": { theme: "clinic",      name: "诊所 CLINIC" },
-  "team-room-3": { theme: "convenience", name: "杂货铺 CONVENIENCE" },
-  "quiet-orbit": { theme: "quiet-zone",  name: "静默区 QUIET ZONE" },
+  "main-stage":  { theme: "lobby",       name: "LOBBY PLAZA" },
+  "team-room-1": { theme: "print-shop",  name: "PRINT SHOP" },
+  "team-room-2": { theme: "clinic",      name: "CLINIC" },
+  "team-room-3": { theme: "convenience", name: "CONVENIENCE" },
+  "quiet-orbit": { theme: "quiet-zone",  name: "QUIET ZONE" },
 };
 
 const distributePositions = (count: number): Array<{ x: number; y: number }> => {

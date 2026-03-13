@@ -16,20 +16,16 @@ type PixelTownShellProps = {
   listenerEntities: SidebarEntity[];
   audibleSignals: AudienceEvent[];
   contestantMap: Record<string, ContestantScorecard>;
-  contestantNameById: Record<string, string>;
   roomCallout: string;
   audioMode: AudioMode;
-  onSetAudioMode: (mode: AudioMode) => void;
   selectedEntityId: string;
   onSelectEntity: (selectionId: string) => void;
   detailCard: DetailCard;
   onDetailAction: (actionId: string) => void;
   activeStageOrder: number;
-  conversationTitle: string;
   onlineCount: number;
   connectionStatus?: string;
   onSwitchRoom: (roomId: string) => void;
-  children?: React.ReactNode; // for DemoControlPanel
 };
 
 const THEME_MAP: Record<string, TownBuildingTheme> = {
@@ -46,20 +42,16 @@ function PixelTownShell({
   listenerEntities,
   audibleSignals,
   contestantMap,
-  contestantNameById,
   roomCallout,
   audioMode,
-  onSetAudioMode,
   selectedEntityId,
   onSelectEntity,
   detailCard,
   onDetailAction,
   activeStageOrder,
-  conversationTitle,
   onlineCount,
   connectionStatus,
   onSwitchRoom,
-  children,
 }: PixelTownShellProps) {
   const [viewMode, setViewMode] = useState<"town" | "room">("town");
   const [focusRoomId, setFocusRoomId] = useState<string | null>(null);
@@ -94,10 +86,6 @@ function PixelTownShell({
     ? focusBuilding.name
     : "PIXEL TOWN";
 
-  const latestSignal = audibleSignals.length > 0
-    ? audibleSignals[audibleSignals.length - 1]
-    : null;
-
   const handleEnterRoom = useCallback((roomId: string) => {
     const building = buildings.find((b) => b.roomId === roomId);
     if (!building) return;
@@ -111,6 +99,7 @@ function PixelTownShell({
       mapRef.current.style.setProperty("--zoom-y", `${centerY}%`);
     }
 
+    setDetailOpen(false);
     setIsZooming(true);
     setFocusRoomId(roomId);
     onSwitchRoom(roomId);
@@ -123,6 +112,7 @@ function PixelTownShell({
   }, [buildings, onSwitchRoom]);
 
   const handleBackToTown = useCallback(() => {
+    setDetailOpen(false);
     setViewMode("town");
     setFocusRoomId(null);
     onSwitchRoom("main-stage");
@@ -188,13 +178,8 @@ function PixelTownShell({
 
       <TownOverlay
         locationLabel={locationLabel}
-        subtitle={conversationTitle}
         onlineCount={onlineCount}
         activeStageOrder={activeStageOrder}
-        audioMode={audioMode}
-        onSetAudioMode={onSetAudioMode}
-        latestSignal={latestSignal}
-        contestantNameById={contestantNameById}
         connectionStatus={connectionStatus}
       />
 
@@ -213,15 +198,6 @@ function PixelTownShell({
         onClose={() => setSearchOpen(false)}
       />
 
-      {/* Room callout (always visible for scenario feedback) */}
-      {roomCallout && (
-        <div className="town-overlay" style={{ bottom: "48px", left: "50%", transform: "translateX(-50%)", zIndex: 22 }}>
-          <div className="town-overlay__panel">{roomCallout}</div>
-        </div>
-      )}
-
-      {/* DemoControlPanel passed as children */}
-      {children}
     </div>
   );
 }
