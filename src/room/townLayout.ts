@@ -59,6 +59,25 @@ const distributePositions = (count: number): Array<{ x: number; y: number }> => 
   return positions;
 };
 
+export interface StreetSegment {
+  x1: number; y1: number;
+  x2: number; y2: number;
+}
+
+// Streets connect each peripheral building's door to the central lobby's nearest edge
+const STREET_SEGMENTS: StreetSegment[] = [
+  // team-room-1 (right door → lobby left edge)
+  { x1: 27, y1: 30, x2: 30, y2: 38 },
+  // team-room-2 (left door → lobby right edge)
+  { x1: 73, y1: 30, x2: 70, y2: 38 },
+  // team-room-3 (right door → lobby left edge)
+  { x1: 27, y1: 68, x2: 30, y2: 55 },
+  // quiet-orbit (left door → lobby right edge)
+  { x1: 73, y1: 68, x2: 70, y2: 55 },
+];
+
+export { STREET_SEGMENTS };
+
 export function buildTownLayout(
   rooms: RoomListItem[],
   contestantSeats: ContestantSeat[],

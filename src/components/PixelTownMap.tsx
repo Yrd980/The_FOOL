@@ -1,5 +1,5 @@
 // src/components/PixelTownMap.tsx
-import type { TownBuilding } from "../room/townLayout";
+import { STREET_SEGMENTS, type TownBuilding } from "../room/townLayout";
 
 type PixelTownMapProps = {
   buildings: TownBuilding[];
@@ -10,6 +10,17 @@ type PixelTownMapProps = {
 function PixelTownMap({ buildings, onEnterRoom, onSelectEntity }: PixelTownMapProps) {
   return (
     <div className="town-map">
+      {/* Street segments connecting buildings */}
+      <svg className="town-streets" aria-hidden="true">
+        {STREET_SEGMENTS.map((seg, i) => (
+          <line
+            key={i}
+            x1={`${seg.x1}%`} y1={`${seg.y1}%`}
+            x2={`${seg.x2}%`} y2={`${seg.y2}%`}
+          />
+        ))}
+      </svg>
+
       <span className="town-map-x" aria-hidden="true">X</span>
 
       {buildings.map((building) => (
