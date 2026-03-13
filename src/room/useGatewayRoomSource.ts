@@ -5,9 +5,10 @@ import { buildRoomDirectory } from "./rooms";
 import {
   OpenClawGatewayClient,
   buildPresenceContestantMap,
-  mapPresenceToContestantStates,
+  mapSessionsToContestantStates,
   mapGatewayMessage,
   resolveGatewayContestantId,
+  DEFAULT_REGISTRY,
 } from "./gateway";
 import type {
   AudioMode,
@@ -17,7 +18,7 @@ import type {
   SeedRoomSourceResult,
   ScenarioOverride,
 } from "./types";
-import type { ConnectionState, GatewayConfig, GatewayPresenceEntry } from "./gateway/types";
+import type { ConnectionState, GatewayConfig, GatewayPresenceEntry, GatewaySessionEntry } from "./gateway/types";
 import type { AudienceInteraction } from "../types";
 
 const ZERO_PRESENCE_CALLOUT = "Waiting for gateway connections...";
@@ -30,6 +31,7 @@ export const useGatewayRoomSource = (
   const clientRef = useRef<OpenClawGatewayClient | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionState>("idle");
   const [presences, setPresences] = useState<GatewayPresenceEntry[]>([]);
+  const [sessions, setSessions] = useState<GatewaySessionEntry[]>([]);
   const [interactions, setInteractions] = useState<AudienceInteraction[]>([]);
   const [currentRoomId, setCurrentRoomId] = useState("main-stage");
   const [audioMode, setAudioMode] = useState<AudioMode>("nearby");
@@ -65,6 +67,10 @@ export const useGatewayRoomSource = (
       setPresences(entries);
     });
 
+    client.on("status", (entries) => {
+      setSessions(entries);
+    });
+
     client.on("message", (msg) => {
       if (feedPausedRef.current) return;
       const contestantIds = contestantDeckRef.current.map((c) => c.id);
@@ -88,20 +94,21 @@ export const useGatewayRoomSource = (
     };
   }, [config.id, config.url, config.token]);
 
-  // Derive contestant states from presence data
+  // Build presence → contestant identity map (for message routing)
   const presenceContestantMap = useMemo(() => {
     const contestantIds = inputs.contestantDeck.map((c) => c.id);
     return buildPresenceContestantMap(presences, contestantIds, {});
   }, [presences, inputs.contestantDeck]);
   presenceContestantMapRef.current = presenceContestantMap;
 
+  // Derive contestant states from session data
   const contestantStateMap = useMemo(() => {
     const contestantIds = inputs.contestantDeck.map((c) => c.id);
-    return mapPresenceToContestantStates(presences, contestantIds, {});
-  }, [presences, inputs.contestantDeck]);
+    return mapSessionsToContestantStates(sessions, DEFAULT_REGISTRY, contestantIds);
+  }, [sessions, inputs.contestantDeck]);
 
-  const hasAgentPresences = useMemo(
-    () => presences.some((p) => p.mode?.includes("agent")),
+  const connectedClientCount = useMemo(
+    () => presences.filter((p) => p.mode === "ui").length,
     [presences],
   );
 
@@ -169,7 +176,7 @@ export const useGatewayRoomSource = (
     let callout = model.roomCallout;
     if (authFailed) {
       callout = AUTH_FAIL_CALLOUT;
-    } else if (connectionStatus === "connected" && !hasAgentPresences) {
+    } else if (connectionStatus === "connected" && sessions.length === 0 && connectedClientCount === 0) {
       callout = ZERO_PRESENCE_CALLOUT;
     } else if (connectionStatus === "connecting" || connectionStatus === "reconnecting") {
       callout = `Connecting to gateway (${connectionStatus})...`;
@@ -185,7 +192,8 @@ export const useGatewayRoomSource = (
     currentRoomId,
     contestantStateMap,
     connectionStatus,
-    hasAgentPresences,
+    sessions,
+    connectedClientCount,
     authFailed,
     roomDirectory.currentRoom,
   ]);

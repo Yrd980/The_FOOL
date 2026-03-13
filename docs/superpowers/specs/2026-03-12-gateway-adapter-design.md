@@ -3,6 +3,7 @@
 > **Phase:** Live source integration via OpenClaw gateway WebSocket
 > **Prerequisite:** Room-state boundary (completed, merged to main)
 > **Date:** 2026-03-12
+> **Extended by:** [2026-03-13-multi-contestant-gateway-design.md](2026-03-13-multi-contestant-gateway-design.md) — 20-contestant support via agent-id registry + status RPC polling
 
 ## Goal
 

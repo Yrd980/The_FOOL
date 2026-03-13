@@ -49,10 +49,29 @@ export interface GatewayConfig {
   token: string;
 }
 
+export interface GatewaySessionEntry {
+  agentId: string;
+  key: string;
+  kind: string;
+  updatedAt: number;
+  abortedLastRun: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  model: string;
+  modelProvider: string;
+  contextTokens: number;
+}
+
+export interface GatewayStatusResponse {
+  sessions: {
+    recent: GatewaySessionEntry[];
+  };
+}
+
 export interface AgentPresenceMapping {
   contestantId: string;
-  name: string;
-  teamIndex: number;
+  name?: string;
 }
 
 export type AgentPresenceMap = Record<string, AgentPresenceMapping>;

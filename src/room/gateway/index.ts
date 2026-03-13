@@ -3,11 +3,13 @@ export { reduceConnection } from "./connectionReducer";
 export {
   buildPresenceContestantMap,
   classifyInteractionType,
-  deriveContestantState,
+  deriveContestantStateFromSession,
   mapGatewayMessage,
-  mapPresenceToContestantStates,
+  mapSessionsToContestantStates,
   resolveGatewayContestantId,
 } from "./gatewayAdapter";
+export { DEFAULT_REGISTRY, lookupContestant } from "./agentRegistry";
+export type { ContestantRegistration, AgentRegistry } from "./agentRegistry";
 export type {
   AgentPresenceMap,
   AgentPresenceMapping,
@@ -16,5 +18,7 @@ export type {
   GatewayConfig,
   GatewayMessage,
   GatewayPresenceEntry,
+  GatewaySessionEntry,
+  GatewayStatusResponse,
   Unsubscribe,
 } from "./types";

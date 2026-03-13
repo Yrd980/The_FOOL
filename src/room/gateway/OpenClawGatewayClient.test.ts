@@ -186,6 +186,68 @@ describe("OpenClawGatewayClient", () => {
     await expect(outcome).resolves.toMatch(/destroyed|closed|disconnected/i);
   });
 
+  it("sends status RPC after authentication", () => {
+    const client = new OpenClawGatewayClient({ id: "local", url: "ws://localhost:18789", token: "test-token" });
+
+    client.connect();
+    const ws = MockWebSocket.instances[0];
+    ws.triggerOpen();
+
+    // Authenticate
+    ws.simulateMessage({ type: "event", event: "connect.challenge", payload: { nonce: "n", ts: 1 } });
+    const reqId = JSON.parse(ws.sent[0]).id;
+    ws.simulateMessage({ type: "res", id: reqId, ok: true, payload: { type: "hello-ok" } });
+
+    // After auth, client should have sent a status RPC
+    const statusReq = ws.sent.find((s) => {
+      const parsed = JSON.parse(s);
+      return parsed.method === "status";
+    });
+    expect(statusReq).toBeDefined();
+
+    client.destroy();
+  });
+
+  it("emits status event when status response arrives", async () => {
+    const client = new OpenClawGatewayClient({ id: "local", url: "ws://localhost:18789", token: "test-token" });
+
+    const statusEvents: unknown[] = [];
+    client.on("status", (entries) => statusEvents.push(entries));
+
+    client.connect();
+    const ws = MockWebSocket.instances[0];
+    ws.triggerOpen();
+
+    // Authenticate
+    ws.simulateMessage({ type: "event", event: "connect.challenge", payload: { nonce: "n", ts: 1 } });
+    const reqId = JSON.parse(ws.sent[0]).id;
+    ws.simulateMessage({ type: "res", id: reqId, ok: true, payload: { type: "hello-ok" } });
+
+    // Find and respond to status RPC
+    const statusReq = ws.sent.find((s) => JSON.parse(s).method === "status");
+    const statusReqId = JSON.parse(statusReq!).id;
+    ws.simulateMessage({
+      type: "res",
+      id: statusReqId,
+      ok: true,
+      payload: {
+        sessions: {
+          recent: [
+            { agentId: "contestant-01", key: "agent:contestant-01:main", kind: "direct", updatedAt: Date.now(), abortedLastRun: false, inputTokens: 3, outputTokens: 5, totalTokens: 12000, model: "claude-opus-4-6", modelProvider: "anthropic", contextTokens: 200000 },
+          ],
+        },
+      },
+    });
+
+    // Flush microtasks for async poll continuation
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(statusEvents).toHaveLength(1);
+    expect(statusEvents[0]).toHaveLength(1);
+
+    client.destroy();
+  });
+
   it("reconnects after unexpected close with backoff", () => {
     vi.useFakeTimers();
     const client = new OpenClawGatewayClient({ id: "local", url: "ws://localhost:18789", token: "test-token" });

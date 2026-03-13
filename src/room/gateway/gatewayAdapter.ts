@@ -1,13 +1,52 @@
 import type { AudienceInteraction, AudienceEventType, OpenClawContestantState } from "../../types";
-import type { AgentPresenceMap, GatewayMessage, GatewayPresenceEntry } from "./types";
+import type { AgentPresenceMap, GatewayMessage, GatewayPresenceEntry, GatewaySessionEntry } from "./types";
+import type { AgentRegistry } from "./agentRegistry";
+import { lookupContestant } from "./agentRegistry";
 
-export const deriveContestantState = (lastInputSeconds: number | undefined): OpenClawContestantState => {
-  if (lastInputSeconds === undefined) return "muted";
-  if (lastInputSeconds < 10) return "speaking";
-  if (lastInputSeconds < 30) return "raised-hand";
-  if (lastInputSeconds < 120) return "listening";
+export const deriveContestantStateFromSession = (
+  session: GatewaySessionEntry | undefined,
+): OpenClawContestantState => {
+  if (!session) return "muted";
+
+  const idleMs = Date.now() - session.updatedAt;
+
+  // Aborted runs: recent aborts show as raised-hand (needs attention),
+  // stale aborts fade to muted (likely already retried/resolved)
+  if (session.abortedLastRun) {
+    return idleMs < 30_000 ? "raised-hand" : "muted";
+  }
+
+  if (idleMs < 10_000) return "speaking";
+  if (idleMs < 30_000) return "raised-hand";
+  if (idleMs < 120_000) return "listening";
   return "muted";
 };
+
+// --- Session-based contestant state mapping (primary) ---
+
+export const mapSessionsToContestantStates = (
+  sessions: GatewaySessionEntry[],
+  registry: AgentRegistry,
+  contestantIds: string[],
+): Map<string, OpenClawContestantState> => {
+  const stateMap = new Map<string, OpenClawContestantState>();
+
+  // Default all contestants to muted
+  for (const id of contestantIds) {
+    stateMap.set(id, "muted");
+  }
+
+  for (const session of sessions) {
+    const registration = lookupContestant(registry, session.agentId);
+    if (!registration || !contestantIds.includes(registration.contestantId)) continue;
+
+    stateMap.set(registration.contestantId, deriveContestantStateFromSession(session));
+  }
+
+  return stateMap;
+};
+
+// --- Presence-based identity resolution (for message routing) ---
 
 const isAgentMode = (mode?: string) => mode !== undefined && mode.includes("agent");
 
@@ -84,27 +123,7 @@ export const buildPresenceContestantMap = (
   return mapping;
 };
 
-export const mapPresenceToContestantStates = (
-  presences: GatewayPresenceEntry[],
-  contestantIds: string[],
-  configMap: AgentPresenceMap,
-): Map<string, OpenClawContestantState> => {
-  const stateMap = new Map<string, OpenClawContestantState>();
-
-  // Default all contestants to muted
-  for (const id of contestantIds) {
-    stateMap.set(id, "muted");
-  }
-
-  for (const assignment of buildPresenceAssignments(presences, contestantIds, configMap)) {
-    stateMap.set(
-      assignment.contestantId,
-      deriveContestantState(assignment.presence.lastInputSeconds),
-    );
-  }
-
-  return stateMap;
-};
+// --- Message classification & mapping ---
 
 const BET_PATTERN = /(?:下注|bet|押注)\s*(\d+)/i;
 const POSITIVE_PATTERNS = /👍|太棒|厉害|赞|好|nice|great|amazing|awesome/i;

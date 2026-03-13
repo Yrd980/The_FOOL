@@ -4,6 +4,8 @@ import type {
   GatewayConfig,
   GatewayMessage,
   GatewayPresenceEntry,
+  GatewaySessionEntry,
+  GatewayStatusResponse,
   Unsubscribe,
 } from "./types";
 
@@ -12,6 +14,7 @@ type EventMap = {
   "auth-error": string;
   presence: GatewayPresenceEntry[];
   message: GatewayMessage;
+  status: GatewaySessionEntry[];
 };
 
 export class OpenClawGatewayClient {
@@ -22,6 +25,7 @@ export class OpenClawGatewayClient {
   private pendingRpc = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private rpcIdCounter = 0;
   private presenceTimer: ReturnType<typeof setInterval> | null = null;
+  private statusTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private destroyed = false;
@@ -29,6 +33,7 @@ export class OpenClawGatewayClient {
   private static MAX_RETRIES = 3;
   private static BACKOFF_BASE_MS = 1000;
   private static PRESENCE_INTERVAL_MS = 3000;
+  private static STATUS_INTERVAL_MS = 5000;
 
   constructor(config: GatewayConfig) {
     this.config = config;
@@ -107,6 +112,7 @@ export class OpenClawGatewayClient {
 
     this.ws.onclose = () => {
       this.stopPresencePolling();
+      this.stopStatusPolling();
       this.flushPendingRpc(new Error("WebSocket closed"));
       if (!this.destroyed && this.connectionState !== "disconnected") {
         this.transition({ type: "ws-close" });
@@ -135,6 +141,7 @@ export class OpenClawGatewayClient {
               )?.snapshot?.presence,
             );
             this.startPresencePolling();
+            this.startStatusPolling();
           }
           pending.resolve(frame.payload);
         } else {
@@ -232,6 +239,31 @@ export class OpenClawGatewayClient {
     }
   }
 
+  private startStatusPolling(): void {
+    this.stopStatusPolling();
+    const poll = async () => {
+      if (this.connectionState !== "connected" || this.destroyed) return;
+      try {
+        const result = await this.call<GatewayStatusResponse>("status");
+        if (result?.sessions?.recent && Array.isArray(result.sessions.recent)) {
+          this.emit("status", result.sessions.recent);
+        }
+      } catch {
+        // Polling failure is non-fatal
+      }
+    };
+
+    poll();
+    this.statusTimer = setInterval(poll, OpenClawGatewayClient.STATUS_INTERVAL_MS);
+  }
+
+  private stopStatusPolling(): void {
+    if (this.statusTimer) {
+      clearInterval(this.statusTimer);
+      this.statusTimer = null;
+    }
+  }
+
   private scheduleReconnect(): void {
     if (this.destroyed || this.connectionState === "disconnected") return;
 
@@ -251,6 +283,7 @@ export class OpenClawGatewayClient {
 
   private cleanup(): void {
     this.stopPresencePolling();
+    this.stopStatusPolling();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
