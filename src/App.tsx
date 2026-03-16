@@ -14,10 +14,12 @@ import {
   stages,
   summaryStats,
 } from "./data";
+import { useGatewayOverview } from "./openclaw/useGatewayOverview";
 
 function App() {
   const [activeStageId, setActiveStageId] = useState(stages[0]?.id ?? "act-1");
   const activeStage = stages.find((stage) => stage.id === activeStageId) ?? stages[0];
+  const gateway = useGatewayOverview();
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f8fb_0%,#eef1f6_100%)] text-slate-950">
@@ -35,6 +37,7 @@ function App() {
             docs={integrationDocs}
             steps={integrationSteps}
             commands={operatorCommands}
+            gateway={gateway}
           />
         </section>
 

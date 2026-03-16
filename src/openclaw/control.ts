@@ -33,7 +33,15 @@ const ROOM_ALIASES: Record<string, string> = {
   "quiet-zone": "quiet-orbit",
 };
 
-const ROOM_LABELS: Record<string, string> = {
+export const DEFAULT_GATEWAY_ROOM_IDS = [
+  "main-stage",
+  "team-room-1",
+  "team-room-2",
+  "team-room-3",
+  "quiet-orbit",
+] as const;
+
+export const ROOM_LABELS: Record<string, string> = {
   "main-stage": "Main Stage",
   "team-room-1": "Team Room 1",
   "team-room-2": "Team Room 2",
@@ -80,6 +88,26 @@ export const resolveControlRoomId = (room: string): string => {
 
 export const buildGatewaySessionKey = (agentId: string, room: string): string =>
   `agent:${normalizeAgentId(agentId)}:${resolveControlRoomId(room)}`;
+
+const normalizeSessionRoomId = (roomId: string): string =>
+  roomId === "main" ? "main-stage" : roomId;
+
+export const resolveSessionRoomId = (sessionKey: string | undefined): string => {
+  if (!sessionKey) {
+    return "quiet-orbit";
+  }
+
+  const match = sessionKey.match(/^agent:[^:]+:(.+)$/);
+  const roomId = normalizeSessionRoomId(match?.[1] ?? "");
+
+  if (DEFAULT_GATEWAY_ROOM_IDS.includes(roomId as (typeof DEFAULT_GATEWAY_ROOM_IDS)[number])) {
+    return roomId;
+  }
+
+  return "quiet-orbit";
+};
+
+export const getRoomLabel = (roomId: string): string => ROOM_LABELS[roomId] ?? roomId;
 
 export const normalizeControlGatewayUrl = (
   configuredUrl: string | undefined,

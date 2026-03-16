@@ -44,3 +44,28 @@ export interface ReviewLane {
   summary: string;
   bullets: string[];
 }
+
+export interface GatewayRoomCount {
+  roomId: string;
+  label: string;
+  count: number;
+}
+
+export interface GatewaySessionSummary {
+  agentId: string;
+  sessionKey: string;
+  roomId: string;
+  roomLabel: string;
+  updatedAt: number;
+  updatedLabel: string;
+}
+
+export interface GatewayOverview {
+  configured: boolean;
+  gatewayUrl: string | null;
+  connectionState: string;
+  authFailed: boolean;
+  statusMessage: string;
+  roomCounts: GatewayRoomCount[];
+  sessions: GatewaySessionSummary[];
+}
