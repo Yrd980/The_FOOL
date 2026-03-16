@@ -198,6 +198,10 @@ function App() {
   const hookInputs = useMemo(
     () => ({
       contestantDeck,
+      gatewayContestants: contestants.map((contestant) => ({
+        id: contestant.id,
+        name: contestant.name,
+      })),
       teams,
       focusTeam,
       aiResults,
@@ -212,6 +216,7 @@ function App() {
     }),
     [
       contestantDeck,
+      contestants,
       teams,
       focusTeam,
       aiResults,
@@ -231,14 +236,20 @@ function App() {
 
   const { interactions, audioMode, priorityContestantId } = snapshot;
   const { roomCallout, audibleSignals } = roomViewModel;
+  const isGatewayMode = snapshot.connectionStatus !== undefined;
 
   const seatStateMap = useMemo(
-    () =>
-      roomViewModel.openClawSeats.reduce<Record<string, OpenClawContestantState>>((acc, seat) => {
+    () => {
+      if (snapshot.seatStateByContestantId) {
+        return snapshot.seatStateByContestantId as Record<string, OpenClawContestantState>;
+      }
+
+      return roomViewModel.openClawSeats.reduce<Record<string, OpenClawContestantState>>((acc, seat) => {
         acc[seat.id] = seat.state;
         return acc;
-      }, {}),
-    [roomViewModel.openClawSeats],
+      }, {});
+    },
+    [roomViewModel.openClawSeats, snapshot.seatStateByContestantId],
   );
 
   const presenceMap = useMemo(
@@ -398,7 +409,7 @@ function App() {
   const countdownLabel = `${String(Math.floor(countdown / 60)).padStart(2, "0")}:${String(
     countdown % 60,
   ).padStart(2, "0")}`;
-  const onlineCount = openClawSeats.length + listenerEntities.length;
+  const onlineCount = snapshot.onlineCount ?? openClawSeats.length + listenerEntities.length;
 
   const detailCard = useMemo<DetailCard>(() => {
     if (selectedKind === "contestant") {
@@ -422,14 +433,16 @@ function App() {
           seat.connectionLabel,
           seat.availabilityLabel,
         ],
-        actions: [
-          {
-            id: "wave-over",
-            label: seat.state === "speaking" ? "Already live" : "Wave over",
-            active: seat.id === priorityContestantId,
-            disabled: seat.state === "speaking",
-          },
-        ],
+        actions: isGatewayMode
+          ? []
+          : [
+              {
+                id: "wave-over",
+                label: seat.state === "speaking" ? "Already live" : "Wave over",
+                active: seat.id === priorityContestantId,
+                disabled: seat.state === "speaking",
+              },
+            ],
       };
     }
 
@@ -511,6 +524,7 @@ function App() {
     interactions,
     listenerEntities,
     openClawSeats,
+    isGatewayMode,
     priorityContestantId,
     selectedKind,
     selectedRef,

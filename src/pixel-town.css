@@ -325,6 +325,18 @@ button, input { font: inherit; }
   box-shadow: 2px 2px 0 var(--pt-ink), 0 0 0 3px rgba(242, 179, 109, 0.5);
 }
 
+.pixel-sprite__token--listening {
+  box-shadow: 2px 2px 0 var(--pt-ink), 0 0 0 3px rgba(120, 180, 230, 0.45);
+}
+
+.pixel-sprite__token--queued {
+  box-shadow: 2px 2px 0 var(--pt-ink), 0 0 0 3px rgba(230, 220, 100, 0.45);
+}
+
+.pixel-sprite__token--muted {
+  opacity: 0.45;
+}
+
 .pixel-sprite__name {
   font-size: 9px;
   font-weight: 700;

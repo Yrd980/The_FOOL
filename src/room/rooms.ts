@@ -27,9 +27,12 @@ const buildMainStage = (input: BuildRoomDirectoryInput): RoomListItem => {
 
 const buildTeamRooms = (
   input: BuildRoomDirectoryInput,
+  mainStageIds: Set<string>,
 ): RoomListItem[] =>
   input.teams.map((team, index) => {
-    const memberIds = team.members.map((m) => m.id);
+    const memberIds = team.members
+      .map((m) => m.id)
+      .filter((id) => !mainStageIds.has(id));
     return {
       id: `team-room-${index + 1}`,
       name: `Team Room ${index + 1}`,
@@ -46,9 +49,10 @@ const buildTeamRooms = (
 const buildQuietOrbit = (
   input: BuildRoomDirectoryInput,
   mainStageIds: Set<string>,
+  teamRoomIds: Set<string>,
 ): RoomListItem => {
   const nonConversationContestants = input.orderedContestantIds.filter(
-    (id) => !mainStageIds.has(id),
+    (id) => !mainStageIds.has(id) && !teamRoomIds.has(id),
   );
   const memberIds = [...nonConversationContestants, ...input.listenerEntityIds];
 
@@ -66,8 +70,10 @@ const buildQuietOrbit = (
 
 export const buildRoomDirectory = (input: BuildRoomDirectoryInput): RoomDirectory => {
   const mainStage = buildMainStage(input);
-  const teamRooms = buildTeamRooms(input);
-  const quietOrbit = buildQuietOrbit(input, new Set(mainStage.memberIds));
+  const mainStageIds = new Set(mainStage.memberIds);
+  const teamRooms = buildTeamRooms(input, mainStageIds);
+  const teamRoomIds = new Set(teamRooms.flatMap((room) => room.memberIds));
+  const quietOrbit = buildQuietOrbit(input, mainStageIds, teamRoomIds);
 
   const rooms: RoomListItem[] = [mainStage, ...teamRooms, quietOrbit];
 

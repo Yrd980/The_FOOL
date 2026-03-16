@@ -63,9 +63,16 @@ export interface GatewaySessionEntry {
   contextTokens: number;
 }
 
+export interface GatewayStatusByAgent {
+  agentId: string;
+  count: number;
+  recent: GatewaySessionEntry[];
+}
+
 export interface GatewayStatusResponse {
   sessions: {
     recent: GatewaySessionEntry[];
+    byAgent?: GatewayStatusByAgent[];
   };
 }
 

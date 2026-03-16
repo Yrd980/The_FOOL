@@ -5,3 +5,6 @@ dist
 vite.config.js
 vite.config.d.ts
 .DS_Store
+.env.local
+test-results/
+playwright-report/

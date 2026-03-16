@@ -107,6 +107,8 @@ export interface RoomSourceSnapshot {
   scenarioOverride: ScenarioOverride;
   currentUserMode: "perimeter" | "listening";
   connectionStatus?: import("./gateway/types").ConnectionState;
+  onlineCount?: number;
+  seatStateByContestantId?: Partial<Record<string, OpenClawContestantState>>;
 }
 
 export type RoomAction =
@@ -133,6 +135,7 @@ export interface RoomActionApi {
 
 export interface SeedRoomSourceInputs {
   contestantDeck: ReadonlyArray<{ id: string; name: string }>;
+  gatewayContestants: ReadonlyArray<{ id: string; name: string }>;
   teams: ReadonlyArray<{ id: string; name: string; members: ReadonlyArray<{ id: string }> }>;
   focusTeam: {
     id: string;

@@ -4,16 +4,19 @@
 
 ## 技术栈
 
-React 19 · TypeScript 5.9 · Vite 7 · Vitest 4 · 纯 CSS（无 UI 库）
+React 19 · TypeScript 5.9 · Vite 8 · 纯 CSS（无 UI 库）
 
 ## 本地运行
 
 ```bash
 bun install
 bun run dev          # 默认 seed 模式 → http://localhost:5173
-bun run test         # vitest
 bun run build        # 生产构建
 ```
+
+### Playwright MCP 调试
+
+Codex UI 默认以 `main` 作为目标目录。需要用 Playwright MCP 做本地交互排查时，运行 `bun run ui:debug`，然后连到 `http://127.0.0.1:4173`。这条流程只服务于本地 Playwright MCP 交互排查，不影响常规开发或生产构建流程。
 
 ### Gateway 模式（连接 OpenClaw）
 
@@ -39,6 +42,48 @@ bun run dev
 openclaw tui --url ws://<host>:18789 --token <token> \
   --session agent:contestant-XX:main
 ```
+
+### Gateway 模式下的房间语义
+
+当 `VITE_ROOM_SOURCE=gateway` 时，选手在页面里的位置、房间归属、主麦状态和聊天气泡都只由 OpenClaw session 驱动，不再使用前端内置的 seed/stage 逻辑来指挥移动。
+
+当前房间约定：
+
+```text
+agent:contestant-01:main-stage
+agent:contestant-01:main
+agent:contestant-01:team-room-1
+agent:contestant-01:team-room-2
+agent:contestant-01:team-room-3
+agent:contestant-01:quiet-orbit
+```
+
+- `main` 和 `main-stage` 都会映射到主舞台。
+- `team-room-*` 会直接决定选手显示在哪个队伍房间。
+- `quiet-orbit` 会把选手放到静默区。
+- 未识别的 channel 会回退到 `quiet-orbit`。
+
+也就是说，选手要“移动房间”，本质上就是在 OpenClaw 侧切到不同的 session key；前端只负责实时显示。
+
+### OpenClaw 房间控制命令
+
+为了把上面这条 session-key 语义变成可直接复用的本地命令，`main` 里现在提供了一个控制脚本：
+
+```bash
+# 在 main 目录运行
+bun ./scripts/openclaw-control.ts move contestant-01 clinic
+bun ./scripts/openclaw-control.ts say contestant-01 main "Visible browser demo."
+
+# 或者通过 package script 运行
+bun run openclaw:control -- move contestant-01 clinic
+bun run openclaw:control -- say contestant-01 team-room-2 "One short line only."
+```
+
+- `move` 会自动生成一条简短消息，并把选手切到对应房间 session。
+- `say` 会把消息发到你指定的房间 session。
+- 支持的房间别名包括 `main` / `lobby-plaza` / `print-shop` / `clinic` / `convenience` / `quiet-zone`，也支持显式的 `team-room-*` 与 `main-stage`。
+- 脚本会优先读取 `OPENCLAW_GATEWAY_URL` / `OPENCLAW_GATEWAY_TOKEN`，否则回退到 `VITE_OPENCLAW_URL` / `VITE_OPENCLAW_TOKEN` 和 `.env.local`。
+- 如果 `VITE_OPENCLAW_URL` 指向本地 Vite 调试代理（例如 `ws://localhost:5173/ws` 或 `ws://127.0.0.1:4173/ws`），脚本会自动改连真正的本地网关 `ws://127.0.0.1:18789`。
 
 ## 环境变量
 
@@ -67,7 +112,6 @@ src/
     TownOverlay.tsx           顶部/底部 HUD：位置标签、音频控制、状态条
     EntityDetailPanel.tsx     右侧滑入详情面板
     EntitySearchOverlay.tsx   Ctrl+K 搜索面板
-    DemoControlPanel.tsx      开发用演示控制台
 
   town/atmosphere/
     AtmosphereLayer.tsx       大气层复合组件
@@ -82,6 +126,7 @@ src/
 
   room/
     townLayout.ts             房间状态 → 城镇建筑布局适配器
+    gatewayLiveRoom.ts        OpenClaw session → 房间目录 / 房间视图模型
     useRoomSource.ts          构建时 seed/gateway 模式切换
     useSeedRoomSource.ts      种子数据源（开发/演示）
     useGatewayRoomSource.ts   Gateway 数据源（生产）
@@ -93,6 +138,7 @@ src/
       connectionReducer.ts      连接状态机
       gatewayAdapter.ts         session → 选手状态映射 + 消息路由
       agentRegistry.ts          agent-id → 选手 slot 注册表（20 选手）
+      openClawControl.ts        房间别名 / session key / CLI 参数构建
       types.ts                  Gateway 类型定义
 ```
 

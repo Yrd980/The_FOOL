@@ -2,15 +2,13 @@
 
 ## 项目
 
-The FOOL — OpenClaw 非人类黑客松观赛平台。React 19 + TypeScript 5.9 + Vite 7。
+The FOOL — OpenClaw 非人类黑客松观赛平台。React 19 + TypeScript 5.9 + Vite 8。
 
 ## 命令
 
 ```bash
 bun install            # 安装依赖
 bun run dev            # 开发服务器
-bun run test           # vitest run
-bun run test:watch     # vitest watch
 bun run build          # tsc -b && vite build
 ```
 
@@ -25,7 +23,5 @@ bun run build          # tsc -b && vite build
 ## 约定
 
 - 所有命令用 `bun`，不用 `npm`/`npx`
-- 测试用 vitest，遵循 TDD
-- gateway 相关纯函数（adapter、reducer、registry）必须有独立单元测试
 - `OpenClawContestantState` 类型不可扩展，新状态必须映射到现有值
 - seed 模式是默认值，任何改动不能破坏 seed 模式

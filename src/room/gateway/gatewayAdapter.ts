@@ -1,24 +1,29 @@
 import type { AudienceInteraction, AudienceEventType, OpenClawContestantState } from "../../types";
+import type { ConversationState } from "../types";
 import type { AgentPresenceMap, GatewayMessage, GatewayPresenceEntry, GatewaySessionEntry } from "./types";
 import type { AgentRegistry } from "./agentRegistry";
 import { lookupContestant } from "./agentRegistry";
+
+/** Normalize a timestamp that may be seconds-epoch to milliseconds. */
+const normalizeTimestamp = (ts: number): number =>
+  ts < 1e12 ? ts * 1000 : ts;
 
 export const deriveContestantStateFromSession = (
   session: GatewaySessionEntry | undefined,
 ): OpenClawContestantState => {
   if (!session) return "muted";
 
-  const idleMs = Date.now() - session.updatedAt;
+  const idleMs = Date.now() - normalizeTimestamp(session.updatedAt);
 
   // Aborted runs: recent aborts show as raised-hand (needs attention),
   // stale aborts fade to muted (likely already retried/resolved)
   if (session.abortedLastRun) {
-    return idleMs < 30_000 ? "raised-hand" : "muted";
+    return idleMs < 90_000 ? "raised-hand" : "muted";
   }
 
-  if (idleMs < 10_000) return "speaking";
-  if (idleMs < 30_000) return "raised-hand";
-  if (idleMs < 120_000) return "listening";
+  if (idleMs < 45_000) return "speaking";
+  if (idleMs < 90_000) return "raised-hand";
+  if (idleMs < 300_000) return "listening";
   return "muted";
 };
 
@@ -46,9 +51,52 @@ export const mapSessionsToContestantStates = (
   return stateMap;
 };
 
+export const deriveLiveConversationState = (
+  contestantStateMap: ReadonlyMap<string, OpenClawContestantState>,
+  orderedContestantIds: string[],
+  contestantNameById: Record<string, string>,
+  nearbyHint: string,
+): ConversationState | null => {
+  const speakerId =
+    orderedContestantIds.find((id) => contestantStateMap.get(id) === "speaking") ?? null;
+  const raisedHandId =
+    orderedContestantIds.find((id) => contestantStateMap.get(id) === "raised-hand") ?? null;
+  const listeningIds = orderedContestantIds.filter(
+    (id) => contestantStateMap.get(id) === "listening",
+  );
+  const queuedIds = orderedContestantIds.filter(
+    (id) => contestantStateMap.get(id) === "queued",
+  );
+
+  if (!speakerId && !raisedHandId && listeningIds.length === 0 && queuedIds.length === 0) {
+    return null;
+  }
+
+  const speakerName = speakerId ? contestantNameById[speakerId] ?? speakerId : null;
+  const raisedHandName = raisedHandId ? contestantNameById[raisedHandId] ?? raisedHandId : null;
+
+  let callout = nearbyHint;
+  if (speakerName && raisedHandName) {
+    callout = `${speakerName} is on mic. ${raisedHandName} is waiting to jump in.`;
+  } else if (speakerName) {
+    callout = `${speakerName} is on mic.`;
+  } else if (raisedHandName) {
+    callout = `${raisedHandName} is waiting to jump in.`;
+  }
+
+  return {
+    speakerId,
+    raisedHandId,
+    listeningIds,
+    queuedIds,
+    callout,
+  };
+};
+
 // --- Presence-based identity resolution (for message routing) ---
 
-const isAgentMode = (mode?: string) => mode !== undefined && mode.includes("agent");
+const isContestantMode = (mode?: string) =>
+  mode !== undefined && (mode.includes("agent") || mode === "ui");
 
 const normalizeIdentity = (value: string | null | undefined) => value?.trim().toLowerCase() ?? "";
 
@@ -58,7 +106,7 @@ const buildPresenceAssignments = (
   configMap: AgentPresenceMap,
 ) => {
   const agentPresences = presences
-    .filter((presence) => isAgentMode(presence.mode))
+    .filter((presence) => isContestantMode(presence.mode))
     .sort((left, right) => left.ts - right.ts);
   const assignments: Array<{ presence: GatewayPresenceEntry; contestantId: string }> = [];
   const assigned = new Set<string>();
@@ -150,15 +198,18 @@ export const resolveGatewayContestantId = (
   msg: GatewayMessage,
   presenceContestantMap: Map<string, string>,
   contestantIds: string[],
+  registry?: AgentRegistry,
 ): string | null => {
   const candidateKeys = [msg.senderId, msg.senderName].map((value) => normalizeIdentity(value));
 
+  // 1. Try presence-contestant map
   for (const key of candidateKeys) {
     if (presenceContestantMap.has(key)) {
       return presenceContestantMap.get(key) ?? null;
     }
   }
 
+  // 2. Try fuzzy match against contestant IDs
   for (const key of candidateKeys) {
     if (!key) {
       continue;
@@ -170,6 +221,28 @@ export const resolveGatewayContestantId = (
 
     if (matchedContestantId) {
       return matchedContestantId;
+    }
+  }
+
+  // 3. Try agent registry lookup (handles session keys like "agent:contestant-01:main")
+  if (registry) {
+    for (const key of candidateKeys) {
+      if (!key) continue;
+
+      // Direct agentId lookup
+      const direct = lookupContestant(registry, key);
+      if (direct && contestantIds.includes(direct.contestantId)) {
+        return direct.contestantId;
+      }
+
+      // Extract agentId from session key format: "agent:{agentId}:{channel}"
+      const sessionKeyMatch = key.match(/^agent:([^:]+):/);
+      if (sessionKeyMatch) {
+        const fromKey = lookupContestant(registry, sessionKeyMatch[1]);
+        if (fromKey && contestantIds.includes(fromKey.contestantId)) {
+          return fromKey.contestantId;
+        }
+      }
     }
   }
 

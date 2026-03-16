@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deriveConversationState } from "./deriveConversationState";
-import { buildRoomViewModel } from "./buildRoomViewModel";
-import { buildRoomDirectory } from "./rooms";
 import {
   OpenClawGatewayClient,
+  buildAgentRegistry,
   buildPresenceContestantMap,
+  lookupContestant,
   mapSessionsToContestantStates,
   mapGatewayMessage,
   resolveGatewayContestantId,
-  DEFAULT_REGISTRY,
 } from "./gateway";
+import { buildLiveRoomDirectory, buildLiveRoomViewModel, resolveSessionRoomId } from "./gatewayLiveRoom";
 import type {
   AudioMode,
   RoomActionApi,
@@ -41,9 +40,17 @@ export const useGatewayRoomSource = (
   const [authFailed, setAuthFailed] = useState(false);
   const feedPausedRef = useRef(feedPaused);
   feedPausedRef.current = feedPaused;
-  const contestantDeckRef = useRef(inputs.contestantDeck);
-  contestantDeckRef.current = inputs.contestantDeck;
   const presenceContestantMapRef = useRef(new Map<string, string>());
+  const gatewayRegistry = useMemo(
+    () => buildAgentRegistry(inputs.gatewayContestants),
+    [inputs.gatewayContestants],
+  );
+  const gatewayRegistryRef = useRef(gatewayRegistry);
+  gatewayRegistryRef.current = gatewayRegistry;
+  const gatewayContestantIds = useMemo(
+    () => inputs.gatewayContestants.map((contestant) => contestant.id),
+    [inputs.gatewayContestants],
+  );
 
   // Connect on mount
   useEffect(() => {
@@ -73,11 +80,12 @@ export const useGatewayRoomSource = (
 
     client.on("message", (msg) => {
       if (feedPausedRef.current) return;
-      const contestantIds = contestantDeckRef.current.map((c) => c.id);
+      const contestantIds = gatewayRegistryRef.current.map((registration) => registration.contestantId);
       const contestantId = resolveGatewayContestantId(
         msg,
         presenceContestantMapRef.current,
         contestantIds,
+        gatewayRegistryRef.current,
       );
       if (!contestantId) {
         return;
@@ -96,78 +104,55 @@ export const useGatewayRoomSource = (
 
   // Build presence → contestant identity map (for message routing)
   const presenceContestantMap = useMemo(() => {
-    const contestantIds = inputs.contestantDeck.map((c) => c.id);
+    const contestantIds = inputs.gatewayContestants.map((contestant) => contestant.id);
     return buildPresenceContestantMap(presences, contestantIds, {});
-  }, [presences, inputs.contestantDeck]);
+  }, [presences, inputs.gatewayContestants]);
   presenceContestantMapRef.current = presenceContestantMap;
 
   // Derive contestant states from session data
   const contestantStateMap = useMemo(() => {
     const contestantIds = inputs.contestantDeck.map((c) => c.id);
-    return mapSessionsToContestantStates(sessions, DEFAULT_REGISTRY, contestantIds);
-  }, [sessions, inputs.contestantDeck]);
+    return mapSessionsToContestantStates(sessions, gatewayRegistry, contestantIds);
+  }, [gatewayRegistry, sessions, inputs.contestantDeck]);
+
+  const contestantRoomIds = useMemo(() => {
+    const roomIds = new Map<string, string>();
+    for (const session of sessions) {
+      const registration = lookupContestant(gatewayRegistry, session.agentId);
+      if (!registration || !gatewayContestantIds.includes(registration.contestantId)) {
+        continue;
+      }
+      roomIds.set(registration.contestantId, resolveSessionRoomId(session.key));
+    }
+    return roomIds;
+  }, [gatewayContestantIds, gatewayRegistry, sessions]);
 
   const connectedClientCount = useMemo(
     () => presences.filter((p) => p.mode === "ui").length,
     [presences],
   );
 
-  // Build conversation state
-  const stageConversation = useMemo(() => {
-    const orderedContestantIds = inputs.contestantDeck.map((c) => c.id);
-    const focusIds = inputs.focusTeam.members.map((m) => m.id);
-    const championTeam = inputs.teams.find(
-      (team) => team.id === inputs.aiResults.summaries[0]?.teamId,
-    );
-    const championIds = championTeam?.members.map((m) => m.id) ?? [];
-    const stageFocusTeamName =
-      inputs.activeStageId === "act-8" && championIds.length > 0
-        ? (championTeam?.name ?? inputs.focusTeam.name)
-        : inputs.focusTeam.name;
-
-    return deriveConversationState({
-      activeStageId: inputs.activeStageId,
-      activeStageTitle: inputs.activeStageTitle,
-      orderedContestantIds,
-      focusIds,
-      championIds,
-      leadingContestantId: inputs.audienceSummary.leadingContestantId ?? null,
-      defaultSpeakerId: focusIds[0] ?? orderedContestantIds[0] ?? null,
-      selectedContestantId: inputs.selectedContestantId,
-      focusTeamName: stageFocusTeamName,
-      focusHeadline: inputs.focusHeadline,
-      nearbyHint: inputs.nearbyHint,
-      contestantNameById: inputs.contestantNameById,
-      priorityContestantId: null,
-    });
-  }, [inputs]);
-
   // Build room directory
   const roomDirectory = useMemo(
-    () =>
-      buildRoomDirectory({
-        currentRoomId,
-        conversationState: stageConversation,
-        teams: inputs.teams,
-        orderedContestantIds: inputs.contestantDeck.map((c) => c.id),
-        listenerEntityIds: inputs.listenerEntityIds,
-      }),
-    [currentRoomId, stageConversation, inputs.teams, inputs.contestantDeck, inputs.listenerEntityIds],
+    () => buildLiveRoomDirectory({
+      currentRoomId,
+      orderedContestantIds: gatewayContestantIds,
+      listenerEntityIds: inputs.listenerEntityIds,
+      contestantRoomIds,
+    }),
+    [currentRoomId, gatewayContestantIds, inputs.listenerEntityIds, contestantRoomIds],
   );
 
-  // Build room view model with gateway-derived overrides
+  // Build room view model from openclaw-only live state
   const roomViewModel = useMemo(() => {
-    const model = buildRoomViewModel({
-      conversationState: stageConversation,
-      orderedContestantIds: inputs.contestantDeck.map((c) => c.id),
+    const model = buildLiveRoomViewModel({
+      orderedContestantIds: gatewayContestantIds,
+      currentRoom: roomDirectory.currentRoom,
+      contestantStateMap,
       interactions,
       audioMode,
       nearbyHint: inputs.nearbyHint,
       contestantNameById: inputs.contestantNameById,
-      teams: inputs.teams,
-      focusTeamId: inputs.focusTeam.id,
-      currentRoom: roomDirectory.currentRoom,
-      seatStateOverrides: Object.fromEntries(contestantStateMap),
       scenarioOverride,
       currentRoomId,
     });
@@ -184,18 +169,19 @@ export const useGatewayRoomSource = (
 
     return { ...model, roomCallout: callout };
   }, [
-    stageConversation,
-    inputs,
+    gatewayContestantIds,
+    roomDirectory.currentRoom,
+    contestantStateMap,
     interactions,
     audioMode,
+    inputs.nearbyHint,
+    inputs.contestantNameById,
     scenarioOverride,
     currentRoomId,
-    contestantStateMap,
     connectionStatus,
     sessions,
     connectedClientCount,
     authFailed,
-    roomDirectory.currentRoom,
   ]);
 
   // Build snapshot
@@ -211,8 +197,22 @@ export const useGatewayRoomSource = (
       scenarioOverride,
       currentUserMode,
       connectionStatus,
+      onlineCount: connectedClientCount,
+      seatStateByContestantId: Object.fromEntries(contestantStateMap),
     }),
-    [inputs.activeStageId, currentRoomId, inputs.selectedContestantId, audioMode, feedPaused, interactions, scenarioOverride, currentUserMode, connectionStatus],
+    [
+      inputs.activeStageId,
+      currentRoomId,
+      inputs.selectedContestantId,
+      audioMode,
+      feedPaused,
+      interactions,
+      scenarioOverride,
+      currentUserMode,
+      connectionStatus,
+      connectedClientCount,
+      contestantStateMap,
+    ],
   );
 
   // Actions

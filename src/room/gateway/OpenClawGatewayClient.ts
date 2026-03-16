@@ -9,6 +9,13 @@ import type {
   Unsubscribe,
 } from "./types";
 
+interface HealthAgent {
+  agentId: string;
+  sessions?: {
+    recent?: Array<{ key: string; updatedAt: number }>;
+  };
+}
+
 type EventMap = {
   "connection-change": ConnectionState;
   "auth-error": string;
@@ -29,6 +36,7 @@ export class OpenClawGatewayClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private destroyed = false;
+  private lastSessions: GatewaySessionEntry[] = [];
 
   private static MAX_RETRIES = 3;
   private static BACKOFF_BASE_MS = 1000;
@@ -108,6 +116,7 @@ export class OpenClawGatewayClient {
 
     this.ws.onerror = () => {
       this.transition({ type: "ws-error" });
+      this.scheduleReconnect();
     };
 
     this.ws.onclose = () => {
@@ -133,13 +142,14 @@ export class OpenClawGatewayClient {
           if (payload?.type === "hello-ok") {
             this.transition({ type: "auth-ok" });
             this.reconnectAttempt = 0;
-            this.emitPresenceFromPayload(
-              (
-                frame.payload as {
-                  snapshot?: { presence?: GatewayPresenceEntry[] };
-                }
-              )?.snapshot?.presence,
-            );
+            const helloPayload = frame.payload as {
+              snapshot?: {
+                presence?: GatewayPresenceEntry[];
+                health?: { agents?: HealthAgent[] };
+              };
+            };
+            this.emitPresenceFromPayload(helloPayload?.snapshot?.presence);
+            this.emitSessionsFromHealthAgents(helloPayload?.snapshot?.health?.agents);
             this.startPresencePolling();
             this.startStatusPolling();
           }
@@ -175,6 +185,12 @@ export class OpenClawGatewayClient {
 
       if (frame.event === "chat") {
         this.emitChatPayload(frame.payload);
+        return;
+      }
+
+      if (frame.event === "health") {
+        const healthPayload = frame.payload as { agents?: HealthAgent[] } | undefined;
+        this.emitSessionsFromHealthAgents(healthPayload?.agents);
       }
     }
   }
@@ -189,20 +205,15 @@ export class OpenClawGatewayClient {
         minProtocol: 3,
         maxProtocol: 3,
         client: {
-          id: `thefool-${this.config.id}`,
+          id: "gateway-client",
           instanceId: this.config.id,
           version: "0.1.0",
           platform: "web",
-          mode: "operator",
+          mode: "backend",
         },
         auth: { token: this.config.token },
         role: "operator",
         scopes: ["operator.read"],
-        device: {
-          id: `thefool-device-${this.config.id}`,
-          platform: "web",
-          deviceFamily: "browser",
-        },
       },
     };
 
@@ -224,7 +235,8 @@ export class OpenClawGatewayClient {
           this.emit("presence", result);
         }
       } catch {
-        // Polling failure is non-fatal
+        // Scope denied — stop polling, health events provide fallback data
+        this.stopPresencePolling();
       }
     };
 
@@ -245,11 +257,25 @@ export class OpenClawGatewayClient {
       if (this.connectionState !== "connected" || this.destroyed) return;
       try {
         const result = await this.call<GatewayStatusResponse>("status");
-        if (result?.sessions?.recent && Array.isArray(result.sessions.recent)) {
+        if (!result?.sessions) return;
+
+        // Prefer byAgent (returns all agents) over recent (capped at 10)
+        if (Array.isArray(result.sessions.byAgent)) {
+          const allSessions: GatewaySessionEntry[] = [];
+          for (const group of result.sessions.byAgent) {
+            if (Array.isArray(group.recent) && group.recent.length > 0) {
+              allSessions.push(group.recent[0]);
+            }
+          }
+          this.lastSessions = allSessions;
+          this.emit("status", allSessions);
+        } else if (Array.isArray(result.sessions.recent)) {
+          this.lastSessions = result.sessions.recent;
           this.emit("status", result.sessions.recent);
         }
       } catch {
-        // Polling failure is non-fatal
+        // Scope denied — stop polling, health events provide fallback data
+        this.stopStatusPolling();
       }
     };
 
@@ -265,7 +291,7 @@ export class OpenClawGatewayClient {
   }
 
   private scheduleReconnect(): void {
-    if (this.destroyed || this.connectionState === "disconnected") return;
+    if (this.destroyed || this.connectionState === "disconnected" || this.reconnectTimer) return;
 
     this.reconnectAttempt++;
     if (this.reconnectAttempt > OpenClawGatewayClient.MAX_RETRIES) {
@@ -275,6 +301,7 @@ export class OpenClawGatewayClient {
 
     const delay = OpenClawGatewayClient.BACKOFF_BASE_MS * Math.pow(2, this.reconnectAttempt - 1);
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       if (!this.destroyed) {
         this.openWebSocket();
       }
@@ -305,6 +332,44 @@ export class OpenClawGatewayClient {
       pending.reject(error);
     }
     this.pendingRpc.clear();
+  }
+
+  private emitSessionsFromHealthAgents(agents: HealthAgent[] | undefined): void {
+    if (!Array.isArray(agents)) return;
+
+    console.debug("[GW] health event — %d agents", agents.length);
+
+    const sessions: GatewaySessionEntry[] = [];
+    for (const agent of agents) {
+      const recent = agent.sessions?.recent?.[0];
+      if (!recent) continue;
+
+      console.debug(
+        "[GW]   agent=%s  updatedAt=%o  idleMs=%d",
+        agent.agentId,
+        recent.updatedAt,
+        Date.now() - (recent.updatedAt < 1e12 ? recent.updatedAt * 1000 : recent.updatedAt),
+      );
+
+      sessions.push({
+        agentId: agent.agentId,
+        key: recent.key,
+        kind: "agent",
+        updatedAt: recent.updatedAt,
+        abortedLastRun: false,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        model: "",
+        modelProvider: "",
+        contextTokens: 0,
+      });
+    }
+
+    if (sessions.length > 0) {
+      this.lastSessions = sessions;
+      this.emit("status", sessions);
+    }
   }
 
   private emitPresenceFromPayload(payload: unknown): void {
@@ -347,11 +412,14 @@ export class OpenClawGatewayClient {
       sessionKey?: string;
       message?: { timestamp?: number; content?: unknown };
     } | undefined;
-    const content = this.extractTextFromChatMessage(chatPayload?.message?.content);
 
-    if (!chatPayload?.sessionKey || !content) {
-      return;
-    }
+    if (!chatPayload?.sessionKey) return;
+
+    // Update session timestamp for real-time contestant state transitions
+    this.touchSessionFromKey(chatPayload.sessionKey, chatPayload.message?.timestamp);
+
+    const content = this.extractTextFromChatMessage(chatPayload?.message?.content);
+    if (!content) return;
 
     this.emit("message", {
       id: chatPayload.runId ?? `${chatPayload.sessionKey}-${chatPayload.message?.timestamp ?? Date.now()}`,
@@ -360,6 +428,39 @@ export class OpenClawGatewayClient {
       content,
       ts: chatPayload.message?.timestamp ?? Date.now(),
     });
+  }
+
+  private touchSessionFromKey(sessionKey: string, ts?: number): void {
+    // Extract agentId from session key format: "agent:{agentId}:{channel}"
+    const match = sessionKey.match(/^agent:([^:]+):/);
+    if (!match) return;
+
+    const agentId = match[1];
+    const now = ts ?? Date.now();
+
+    // Update existing session or create a new entry
+    const updated = this.lastSessions.map((s) =>
+      s.agentId === agentId ? { ...s, updatedAt: now, abortedLastRun: false } : s,
+    );
+
+    if (!updated.some((s) => s.agentId === agentId)) {
+      updated.push({
+        agentId,
+        key: sessionKey,
+        kind: "agent",
+        updatedAt: now,
+        abortedLastRun: false,
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        model: "",
+        modelProvider: "",
+        contextTokens: 0,
+      });
+    }
+
+    this.lastSessions = updated;
+    this.emit("status", updated);
   }
 
   private extractTextFromChatMessage(content: unknown): string | null {
