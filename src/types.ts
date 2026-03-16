@@ -57,6 +57,13 @@ export interface GatewayRoomCount {
   count: number;
 }
 
+export interface GatewayStateCount {
+  state: "speaking" | "raised-hand" | "listening" | "muted";
+  label: string;
+  count: number;
+  tone: "critical" | "active" | "warm" | "idle";
+}
+
 export interface GatewaySessionSummary {
   agentId: string;
   sessionKey: string;
@@ -76,6 +83,12 @@ export interface GatewayOverview {
   authFailed: boolean;
   statusMessage: string;
   totalActiveSessions: number;
+  stateCounts: GatewayStateCount[];
   roomCounts: GatewayRoomCount[];
+  roomRosters: Array<{
+    roomId: string;
+    label: string;
+    sessions: GatewaySessionSummary[];
+  }>;
   sessions: GatewaySessionSummary[];
 }

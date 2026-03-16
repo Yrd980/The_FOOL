@@ -22,6 +22,13 @@ export function StageWorkspace({
     };
   });
 
+  const toneClasses = {
+    critical: "bg-rose-100 text-rose-700",
+    active: "bg-amber-100 text-amber-700",
+    warm: "bg-emerald-100 text-emerald-700",
+    idle: "bg-slate-100 text-slate-500",
+  };
+
   return (
     <section className="space-y-6">
       <div className="overflow-hidden rounded-[1.8rem] border border-slate-900 bg-slate-950 text-white shadow-[0_24px_60px_rgba(15,23,42,0.22)]">
@@ -110,6 +117,75 @@ export function StageWorkspace({
           </article>
         </div>
 
+        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+          <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                Contestant State Pulse
+              </p>
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+                live
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {gateway.stateCounts.map((state) => (
+                <article
+                  key={state.state}
+                  className="rounded-[1.1rem] border border-slate-200 bg-white px-3 py-3"
+                >
+                  <span className={`inline-flex rounded-full px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] ${toneClasses[state.tone]}`}>
+                    {state.label}
+                  </span>
+                  <p className="mt-3 text-2xl font-semibold text-slate-950">{state.count}</p>
+                  <p className="text-xs text-slate-500">contestants</p>
+                </article>
+              ))}
+            </div>
+          </article>
+
+          <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+              Room Occupancy
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {gateway.roomRosters.map((room) => (
+                <article
+                  key={room.roomId}
+                  className="rounded-[1.1rem] border border-slate-200 bg-white px-3 py-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+                      {room.label}
+                    </p>
+                    <span className="text-sm font-semibold text-slate-950">
+                      {room.sessions.length}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {room.sessions.length > 0 ? (
+                      room.sessions.slice(0, 3).map((session) => (
+                        <div
+                          key={session.sessionKey}
+                          className="flex items-center justify-between gap-3 rounded-[0.9rem] bg-slate-50 px-2.5 py-2"
+                        >
+                          <span className="font-mono text-[0.72rem] text-slate-700">
+                            {session.agentId}
+                          </span>
+                          <span className={`rounded-full px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] ${toneClasses[session.stateTone]}`}>
+                            {session.stateLabel}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs leading-6 text-slate-500">No live sessions</p>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </article>
+        </div>
+
         <div className="mt-6 grid gap-4 xl:grid-cols-3">
           <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
             <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
@@ -181,15 +257,7 @@ export function StageWorkspace({
                       {session.agentId}
                     </p>
                     <span
-                      className={`rounded-full px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] ${
-                        session.stateTone === "critical"
-                          ? "bg-rose-100 text-rose-700"
-                          : session.stateTone === "active"
-                            ? "bg-amber-100 text-amber-700"
-                            : session.stateTone === "warm"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-slate-100 text-slate-500"
-                      }`}
+                      className={`rounded-full px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] ${toneClasses[session.stateTone]}`}
                     >
                       {session.stateLabel}
                     </span>

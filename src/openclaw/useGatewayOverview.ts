@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { GatewayOverview } from "../types";
+import type { GatewayOverview, GatewayStateCount } from "../types";
 import {
   DEFAULT_GATEWAY_ROOM_IDS,
   getRoomLabel,
@@ -104,10 +104,21 @@ export function useGatewayOverview(): GatewayOverview {
         authFailed: false,
         statusMessage: "OpenClaw not configured in this environment.",
         totalActiveSessions: 0,
+        stateCounts: [
+          { state: "speaking", label: "Speaking", count: 0, tone: "critical" },
+          { state: "raised-hand", label: "Raised Hand", count: 0, tone: "active" },
+          { state: "listening", label: "Listening", count: 0, tone: "warm" },
+          { state: "muted", label: "Muted", count: 0, tone: "idle" },
+        ],
         roomCounts: DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
           roomId,
           label: getRoomLabel(roomId),
           count: 0,
+        })),
+        roomRosters: DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
+          roomId,
+          label: getRoomLabel(roomId),
+          sessions: [],
         })),
         sessions: [],
       };
@@ -139,6 +150,39 @@ export function useGatewayOverview(): GatewayOverview {
         };
       });
 
+    const stateCounts: GatewayStateCount[] = [
+      {
+        state: "speaking",
+        label: "Speaking",
+        count: sessionSummaries.filter((session) => session.state === "speaking").length,
+        tone: "critical",
+      },
+      {
+        state: "raised-hand",
+        label: "Raised Hand",
+        count: sessionSummaries.filter((session) => session.state === "raised-hand").length,
+        tone: "active",
+      },
+      {
+        state: "listening",
+        label: "Listening",
+        count: sessionSummaries.filter((session) => session.state === "listening").length,
+        tone: "warm",
+      },
+      {
+        state: "muted",
+        label: "Muted",
+        count: sessionSummaries.filter((session) => session.state === "muted").length,
+        tone: "idle",
+      },
+    ];
+
+    const roomRosters = DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
+      roomId,
+      label: getRoomLabel(roomId),
+      sessions: sessionSummaries.filter((session) => session.roomId === roomId),
+    }));
+
     let statusMessage = "Connected to the gateway and reading active contestant sessions.";
     if (authFailed) {
       statusMessage = AUTH_FAIL_MESSAGE;
@@ -161,7 +205,9 @@ export function useGatewayOverview(): GatewayOverview {
       authFailed,
       statusMessage,
       totalActiveSessions: sessions.length,
+      stateCounts,
       roomCounts,
+      roomRosters,
       sessions: sessionSummaries,
     };
   }, [authFailed, configured, connectionState, gatewayUrl, sessions]);
