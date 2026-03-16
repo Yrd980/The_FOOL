@@ -17,6 +17,28 @@ const AUTH_FAIL_MESSAGE =
 
 const normalizeTimestamp = (ts: number): number => (ts < 1e12 ? ts * 1000 : ts);
 
+const deriveContestantState = (
+  session: GatewaySessionEntry,
+): "speaking" | "raised-hand" | "listening" | "muted" => {
+  const idleMs = Date.now() - normalizeTimestamp(session.updatedAt);
+
+  if (session.abortedLastRun) {
+    return idleMs < 90_000 ? "raised-hand" : "muted";
+  }
+
+  if (idleMs < 45_000) return "speaking";
+  if (idleMs < 90_000) return "raised-hand";
+  if (idleMs < 300_000) return "listening";
+  return "muted";
+};
+
+const stateMeta = {
+  speaking: { label: "Speaking", tone: "critical" as const },
+  "raised-hand": { label: "Raised Hand", tone: "active" as const },
+  listening: { label: "Listening", tone: "warm" as const },
+  muted: { label: "Muted", tone: "idle" as const },
+};
+
 const formatUpdatedLabel = (updatedAt: number): string => {
   const deltaMs = Date.now() - normalizeTimestamp(updatedAt);
   if (deltaMs < 60_000) {
@@ -81,6 +103,7 @@ export function useGatewayOverview(): GatewayOverview {
         connectionState: "idle",
         authFailed: false,
         statusMessage: "OpenClaw not configured in this environment.",
+        totalActiveSessions: 0,
         roomCounts: DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
           roomId,
           label: getRoomLabel(roomId),
@@ -102,6 +125,7 @@ export function useGatewayOverview(): GatewayOverview {
       .slice(0, 8)
       .map((session) => {
         const roomId = resolveSessionRoomId(session.key);
+        const state = deriveContestantState(session);
         return {
           agentId: session.agentId,
           sessionKey: session.key,
@@ -109,6 +133,9 @@ export function useGatewayOverview(): GatewayOverview {
           roomLabel: getRoomLabel(roomId),
           updatedAt: normalizeTimestamp(session.updatedAt),
           updatedLabel: formatUpdatedLabel(session.updatedAt),
+          state,
+          stateLabel: stateMeta[state].label,
+          stateTone: stateMeta[state].tone,
         };
       });
 
@@ -133,6 +160,7 @@ export function useGatewayOverview(): GatewayOverview {
       connectionState,
       authFailed,
       statusMessage,
+      totalActiveSessions: sessions.length,
       roomCounts,
       sessions: sessionSummaries,
     };

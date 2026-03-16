@@ -11,6 +11,7 @@ import {
   operatorCommands,
   productSurfaces,
   reviewLanes,
+  stageRuntimeGuides,
   stages,
   summaryStats,
 } from "./data";
@@ -32,7 +33,12 @@ function App() {
             activeStageId={activeStageId}
             onSelectStage={setActiveStageId}
           />
-          <StageWorkspace stage={activeStage} summaryStats={summaryStats} />
+          <StageWorkspace
+            stage={activeStage}
+            runtimeGuide={stageRuntimeGuides[activeStage.id]}
+            summaryStats={summaryStats}
+            gateway={gateway}
+          />
           <IntegrationRail
             docs={integrationDocs}
             steps={integrationSteps}

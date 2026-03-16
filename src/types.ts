@@ -14,6 +14,12 @@ export interface StageDefinition {
   systemSignals: string[];
 }
 
+export interface StageRuntimeGuide {
+  operatorHint: string;
+  successSignal: string;
+  preferredRoomIds: string[];
+}
+
 export interface ProductSurface {
   title: string;
   summary: string;
@@ -58,6 +64,9 @@ export interface GatewaySessionSummary {
   roomLabel: string;
   updatedAt: number;
   updatedLabel: string;
+  state: "speaking" | "raised-hand" | "listening" | "muted";
+  stateLabel: string;
+  stateTone: "critical" | "active" | "warm" | "idle";
 }
 
 export interface GatewayOverview {
@@ -66,6 +75,7 @@ export interface GatewayOverview {
   connectionState: string;
   authFailed: boolean;
   statusMessage: string;
+  totalActiveSessions: number;
   roomCounts: GatewayRoomCount[];
   sessions: GatewaySessionSummary[];
 }

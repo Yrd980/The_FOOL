@@ -1,14 +1,27 @@
-import type { StageDefinition, SummaryStat } from "../types";
+import type { GatewayOverview, StageDefinition, StageRuntimeGuide, SummaryStat } from "../types";
 
 interface StageWorkspaceProps {
   stage: StageDefinition;
+  runtimeGuide: StageRuntimeGuide;
   summaryStats: SummaryStat[];
+  gateway: GatewayOverview;
 }
 
 export function StageWorkspace({
   stage,
+  runtimeGuide,
   summaryStats,
+  gateway,
 }: StageWorkspaceProps) {
+  const focusRooms = runtimeGuide.preferredRoomIds.map((roomId) => {
+    const roomCount = gateway.roomCounts.find((room) => room.roomId === roomId);
+    return {
+      roomId,
+      label: roomCount?.label ?? roomId,
+      count: roomCount?.count ?? 0,
+    };
+  });
+
   return (
     <section className="space-y-6">
       <div className="overflow-hidden rounded-[1.8rem] border border-slate-900 bg-slate-950 text-white shadow-[0_24px_60px_rgba(15,23,42,0.22)]">
@@ -56,6 +69,47 @@ export function StageWorkspace({
           {stage.summary}
         </p>
 
+        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
+          <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+              Operator Hint
+            </p>
+            <p className="mt-3 text-sm leading-7 text-slate-700">
+              {runtimeGuide.operatorHint}
+            </p>
+            <p className="mt-4 rounded-[1rem] border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm leading-7 text-emerald-800">
+              {runtimeGuide.successSignal}
+            </p>
+          </article>
+
+          <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                Focus Rooms
+              </p>
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+                {gateway.totalActiveSessions} sessions
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {focusRooms.map((room) => (
+                <article
+                  key={room.roomId}
+                  className="rounded-[1.1rem] border border-slate-200 bg-white px-3 py-3"
+                >
+                  <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                    {room.label}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-950">
+                    {room.count}
+                  </p>
+                  <p className="text-xs text-slate-500">active sessions</p>
+                </article>
+              ))}
+            </div>
+          </article>
+        </div>
+
         <div className="mt-6 grid gap-4 xl:grid-cols-3">
           <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
             <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
@@ -98,6 +152,63 @@ export function StageWorkspace({
               ))}
             </ul>
           </article>
+        </div>
+
+        <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                Live Contestant Sessions
+              </p>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                最近活跃的 OpenClaw contestant session 会直接决定选手在哪个房间、此刻是否在说话，以及舞台是否真的活着。
+              </p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+              {gateway.connectionState}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {gateway.sessions.length > 0 ? (
+              gateway.sessions.map((session) => (
+                <article
+                  key={session.sessionKey}
+                  className="rounded-[1.2rem] border border-slate-200 bg-white p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-sm font-medium text-slate-950">
+                      {session.agentId}
+                    </p>
+                    <span
+                      className={`rounded-full px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] ${
+                        session.stateTone === "critical"
+                          ? "bg-rose-100 text-rose-700"
+                          : session.stateTone === "active"
+                            ? "bg-amber-100 text-amber-700"
+                            : session.stateTone === "warm"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {session.stateLabel}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-700">{session.roomLabel}</p>
+                  <p className="mt-1 text-xs text-slate-500">{session.updatedLabel}</p>
+                  <code className="mt-3 block break-all font-mono text-[0.72rem] leading-6 text-slate-500">
+                    {session.sessionKey}
+                  </code>
+                </article>
+              ))
+            ) : (
+              <div className="md:col-span-2 xl:col-span-3 rounded-[1.2rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
+                {gateway.configured
+                  ? "Gateway 已配置，但还没有看到 contestant session。把 agent 接到 `agent:{agentId}:{room}` 之后，这里会开始出现活跃态。"
+                  : "当前环境还没配置 OpenClaw gateway。配置 `VITE_OPENCLAW_URL` 和 `VITE_OPENCLAW_TOKEN` 后，这里会显示实时选手会话。"}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </section>

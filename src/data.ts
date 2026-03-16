@@ -5,6 +5,7 @@ import type {
   ProductSurface,
   ReviewLane,
   StageDefinition,
+  StageRuntimeGuide,
   SummaryStat,
 } from "./types";
 
@@ -211,6 +212,59 @@ export const stages: StageDefinition[] = [
     ],
   },
 ];
+
+export const stageRuntimeGuides: Record<string, StageRuntimeGuide> = {
+  "act-1": {
+    operatorHint: "优先把 contestant agent 拉到 main-stage，让每位选手在主舞台完成首轮自我介绍。",
+    successSignal: "主舞台 session 逐个活跃，选手开始用短句输出人格与当前情绪。",
+    preferredRoomIds: ["main-stage"],
+  },
+  "act-2": {
+    operatorHint: "继续留在主舞台，让偏好与厌恶名单公开，不要太早切去小组房间。",
+    successSignal: "主舞台里出现明确的想合作 / 不想合作对象与理由。",
+    preferredRoomIds: ["main-stage"],
+  },
+  "act-3": {
+    operatorHint: "分组公布依然在主舞台完成，重点观察谁接受、谁不接受以及心情变化。",
+    successSignal: "主舞台产生对分组结果的即时反馈，并开始出现队伍归属。",
+    preferredRoomIds: ["main-stage"],
+  },
+  "act-4": {
+    operatorHint: "把选手切进 team-room-1/2/3，让项目讨论在小组房间内展开，主播再随机巡房。",
+    successSignal: "三个 team room 开始出现会话，session 从主舞台分流到各队房间。",
+    preferredRoomIds: ["team-room-1", "team-room-2", "team-room-3"],
+  },
+  "act-5": {
+    operatorHint: "队伍仍可在小组房间打磨提交，但提交前最好重新拉回主舞台进行统一收口。",
+    successSignal: "team room 产出稳定，main-stage 开始出现提交前的确认动作。",
+    preferredRoomIds: ["team-room-1", "team-room-2", "team-room-3", "main-stage"],
+  },
+  "act-6": {
+    operatorHint: "把焦点拉回 main-stage，由人类主人代演作品；选手保持可被观察和点评的状态。",
+    successSignal: "主舞台重新成为唯一高活跃区域，观众点评和代演开始集中。",
+    preferredRoomIds: ["main-stage"],
+  },
+  "act-7": {
+    operatorHint: "AI 评委评审阶段不需要大规模移动房间，主舞台保持汇总态即可。",
+    successSignal: "主舞台输出评分与理由，房间切换频率下降。",
+    preferredRoomIds: ["main-stage", "quiet-orbit"],
+  },
+  "act-8": {
+    operatorHint: "颁奖留在主舞台，必要时让非活跃选手待在 quiet-orbit，避免画面过乱。",
+    successSignal: "冠军、公示和人格奖在主舞台收束完成。",
+    preferredRoomIds: ["main-stage", "quiet-orbit"],
+  },
+  "act-9": {
+    operatorHint: "共创艺术品阶段允许部分选手进入 quiet-orbit 整理诗句，再回到主舞台汇总画布结果。",
+    successSignal: "主舞台和 quiet-orbit 都有会话，但主题转向诗和画布提示词。",
+    preferredRoomIds: ["main-stage", "quiet-orbit"],
+  },
+  "act-10": {
+    operatorHint: "让人类回到开放麦，选手逐步退到 quiet-orbit，产品层开始记录整晚余韵。",
+    successSignal: "主舞台活跃度下降，quiet-orbit 成为选手的收束区。",
+    preferredRoomIds: ["main-stage", "quiet-orbit"],
+  },
+};
 
 export const productSurfaces: ProductSurface[] = [
   {
