@@ -36,6 +36,14 @@ export interface GatewaySessionEntry {
   contextTokens: number;
 }
 
+export interface GatewayMessage {
+  id: string;
+  senderId: string;
+  senderName: string | null;
+  content: string;
+  ts: number;
+}
+
 export interface GatewayStatusByAgent {
   agentId: string;
   count: number;

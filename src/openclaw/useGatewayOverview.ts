@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { GatewayOverview, GatewayStateCount } from "../types";
+import type { GatewayActivity, GatewayOverview, GatewayStateCount } from "../types";
 import {
   DEFAULT_GATEWAY_ROOM_IDS,
   getRoomLabel,
@@ -9,6 +9,7 @@ import { OpenClawGatewayClient } from "./gateway/OpenClawGatewayClient";
 import type {
   ConnectionState,
   GatewayConfig,
+  GatewayMessage,
   GatewaySessionEntry,
 } from "./gateway/types";
 
@@ -50,6 +51,11 @@ const formatUpdatedLabel = (updatedAt: number): string => {
   return `${Math.round(deltaMs / 3_600_000)}h ago`;
 };
 
+const formatActivityLabel = (timestamp: number): string => {
+  const date = new Date(timestamp);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+};
+
 export function useGatewayOverview(): GatewayOverview {
   const gatewayUrl = import.meta.env.VITE_OPENCLAW_URL?.trim() || "";
   const gatewayToken = import.meta.env.VITE_OPENCLAW_TOKEN?.trim() || "";
@@ -57,6 +63,7 @@ export function useGatewayOverview(): GatewayOverview {
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [authFailed, setAuthFailed] = useState(false);
   const [sessions, setSessions] = useState<GatewaySessionEntry[]>([]);
+  const [messages, setMessages] = useState<GatewayMessage[]>([]);
 
   useEffect(() => {
     if (!configured) {
@@ -82,6 +89,9 @@ export function useGatewayOverview(): GatewayOverview {
       }),
       client.on("status", (entries) => {
         setSessions(entries);
+      }),
+      client.on("message", (message) => {
+        setMessages((previous) => [message, ...previous].slice(0, 24));
       }),
     ];
 
@@ -121,6 +131,7 @@ export function useGatewayOverview(): GatewayOverview {
           sessions: [],
         })),
         sessions: [],
+        activities: [],
       };
     }
 
@@ -183,6 +194,35 @@ export function useGatewayOverview(): GatewayOverview {
       sessions: sessionSummaries.filter((session) => session.roomId === roomId),
     }));
 
+    const activities: GatewayActivity[] = messages
+      .map((message) => {
+        const relatedSession =
+          sessionSummaries.find((session) => session.agentId === message.senderId) ??
+          sessions
+            .map((session) => {
+              const roomId = resolveSessionRoomId(session.key);
+              return {
+                agentId: session.agentId,
+                roomId,
+                roomLabel: getRoomLabel(roomId),
+              };
+            })
+            .find((session) => session.agentId === message.senderId);
+
+        const roomId = relatedSession?.roomId ?? "quiet-orbit";
+
+        return {
+          id: message.id,
+          agentId: message.senderId,
+          roomId,
+          roomLabel: relatedSession?.roomLabel ?? getRoomLabel(roomId),
+          content: message.content,
+          timestamp: normalizeTimestamp(message.ts),
+          timestampLabel: formatActivityLabel(normalizeTimestamp(message.ts)),
+        };
+      })
+      .slice(0, 12);
+
     let statusMessage = "Connected to the gateway and reading active contestant sessions.";
     if (authFailed) {
       statusMessage = AUTH_FAIL_MESSAGE;
@@ -209,6 +249,7 @@ export function useGatewayOverview(): GatewayOverview {
       roomCounts,
       roomRosters,
       sessions: sessionSummaries,
+      activities,
     };
-  }, [authFailed, configured, connectionState, gatewayUrl, sessions]);
+  }, [authFailed, configured, connectionState, gatewayUrl, messages, sessions]);
 }

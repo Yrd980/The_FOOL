@@ -64,6 +64,16 @@ export interface GatewayStateCount {
   tone: "critical" | "active" | "warm" | "idle";
 }
 
+export interface GatewayActivity {
+  id: string;
+  agentId: string;
+  roomId: string;
+  roomLabel: string;
+  content: string;
+  timestamp: number;
+  timestampLabel: string;
+}
+
 export interface GatewaySessionSummary {
   agentId: string;
   sessionKey: string;
@@ -91,4 +101,5 @@ export interface GatewayOverview {
     sessions: GatewaySessionSummary[];
   }>;
   sessions: GatewaySessionSummary[];
+  activities: GatewayActivity[];
 }

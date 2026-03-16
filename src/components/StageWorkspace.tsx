@@ -278,6 +278,51 @@ export function StageWorkspace({
             )}
           </div>
         </div>
+
+        <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                Live Room Feed
+              </p>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                这里开始显示选手在 OpenClaw 会话里刚刚说了什么，帮助操作者判断哪一队正在推进、哪一幕已经真正开始。
+              </p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+              {gateway.activities.length} events
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {gateway.activities.length > 0 ? (
+              gateway.activities.map((activity) => (
+                <article
+                  key={activity.id}
+                  className="rounded-[1.2rem] border border-slate-200 bg-white p-4"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span className="font-mono uppercase tracking-[0.16em]">
+                      {activity.roomLabel}
+                    </span>
+                    <span>•</span>
+                    <span>{activity.timestampLabel}</span>
+                  </div>
+                  <div className="mt-3 flex items-start gap-3">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.16em] text-slate-600">
+                      {activity.agentId}
+                    </span>
+                    <p className="text-sm leading-7 text-slate-700">{activity.content}</p>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className="rounded-[1.2rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
+                还没有收到 live room chat event。等 contestant agent 通过 OpenClaw 说话之后，这里会开始滚动。
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );

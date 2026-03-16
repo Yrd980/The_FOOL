@@ -2,6 +2,7 @@ import { reduceConnection } from "./connectionReducer";
 import type {
   ConnectionState,
   GatewayConfig,
+  GatewayMessage,
   GatewaySessionEntry,
   GatewayStatusResponse,
   Unsubscribe,
@@ -18,6 +19,7 @@ type EventMap = {
   "connection-change": ConnectionState;
   "auth-error": string;
   status: GatewaySessionEntry[];
+  message: GatewayMessage;
 };
 
 export class OpenClawGatewayClient {
@@ -27,6 +29,7 @@ export class OpenClawGatewayClient {
   private connectionListeners = new Set<(data: ConnectionState) => void>();
   private authErrorListeners = new Set<(data: string) => void>();
   private statusListeners = new Set<(data: GatewaySessionEntry[]) => void>();
+  private messageListeners = new Set<(data: GatewayMessage) => void>();
   private pendingRpc = new Map<
     string,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
@@ -64,9 +67,15 @@ export class OpenClawGatewayClient {
       return () => this.authErrorListeners.delete(listener);
     }
 
-    const listener = cb as (data: GatewaySessionEntry[]) => void;
-    this.statusListeners.add(listener);
-    return () => this.statusListeners.delete(listener);
+    if (event === "status") {
+      const listener = cb as (data: GatewaySessionEntry[]) => void;
+      this.statusListeners.add(listener);
+      return () => this.statusListeners.delete(listener);
+    }
+
+    const listener = cb as (data: GatewayMessage) => void;
+    this.messageListeners.add(listener);
+    return () => this.messageListeners.delete(listener);
   }
 
   destroy(): void {
@@ -77,6 +86,7 @@ export class OpenClawGatewayClient {
     this.connectionListeners.clear();
     this.authErrorListeners.clear();
     this.statusListeners.clear();
+    this.messageListeners.clear();
   }
 
   async call<T = unknown>(
@@ -182,6 +192,11 @@ export class OpenClawGatewayClient {
       if (frame.event === "health") {
         const healthPayload = frame.payload as { agents?: HealthAgent[] } | undefined;
         this.emitSessionsFromHealthAgents(healthPayload?.agents);
+        return;
+      }
+
+      if (frame.event === "chat") {
+        this.emitChatPayload(frame.payload);
       }
     }
   }
@@ -330,6 +345,59 @@ export class OpenClawGatewayClient {
     }
   }
 
+  private emitChatPayload(payload: unknown): void {
+    const chatPayload = payload as {
+      runId?: string;
+      sessionKey?: string;
+      message?: { timestamp?: number; content?: unknown };
+    } | undefined;
+
+    if (!chatPayload?.sessionKey) {
+      return;
+    }
+
+    const content = this.extractTextFromChatMessage(chatPayload.message?.content);
+    if (!content) {
+      return;
+    }
+
+    const match = chatPayload.sessionKey.match(/^agent:([^:]+):/);
+    const agentId = match?.[1] ?? chatPayload.sessionKey;
+    const timestamp = chatPayload.message?.timestamp ?? Date.now();
+
+    this.emit("message", {
+      id: chatPayload.runId ?? `${chatPayload.sessionKey}-${timestamp}`,
+      senderId: agentId,
+      senderName: null,
+      content,
+      ts: timestamp,
+    });
+  }
+
+  private extractTextFromChatMessage(content: unknown): string | null {
+    if (typeof content === "string") {
+      return content;
+    }
+
+    if (!Array.isArray(content)) {
+      return null;
+    }
+
+    const parts = content
+      .map((item) =>
+        typeof item === "object" &&
+        item !== null &&
+        "type" in item &&
+        (item as { type?: unknown }).type === "text" &&
+        typeof (item as { text?: unknown }).text === "string"
+          ? (item as { text: string }).text
+          : null,
+      )
+      .filter((value): value is string => Boolean(value));
+
+    return parts.length > 0 ? parts.join("\n") : null;
+  }
+
   private transition(event: { type: string; reason?: string }): void {
     const next = reduceConnection(this.connectionState, event as never);
     if (next !== this.connectionState) {
@@ -342,14 +410,17 @@ export class OpenClawGatewayClient {
     let listeners:
       | Set<(data: ConnectionState) => void>
       | Set<(data: string) => void>
-      | Set<(data: GatewaySessionEntry[]) => void>;
+      | Set<(data: GatewaySessionEntry[]) => void>
+      | Set<(data: GatewayMessage) => void>;
 
     if (event === "connection-change") {
       listeners = this.connectionListeners;
     } else if (event === "auth-error") {
       listeners = this.authErrorListeners;
-    } else {
+    } else if (event === "status") {
       listeners = this.statusListeners;
+    } else {
+      listeners = this.messageListeners;
     }
 
     if (listeners.size === 0) {
