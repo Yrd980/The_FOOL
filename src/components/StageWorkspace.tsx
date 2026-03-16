@@ -1,4 +1,11 @@
-import type { GatewayOverview, StageDefinition, StageRuntimeGuide, SummaryStat } from "../types";
+import { useState } from "react";
+import type {
+  GatewayContestantSummary,
+  GatewayOverview,
+  StageDefinition,
+  StageRuntimeGuide,
+  SummaryStat,
+} from "../types";
 
 interface StageWorkspaceProps {
   stage: StageDefinition;
@@ -6,6 +13,137 @@ interface StageWorkspaceProps {
   summaryStats: SummaryStat[];
   gateway: GatewayOverview;
 }
+
+interface RankedContestant extends GatewayContestantSummary {
+  isInFocusRoom: boolean;
+  stageFitLabel: string;
+  stageFitTone: "critical" | "active" | "warm" | "idle";
+  attentionLabel: string;
+  attentionNote: string;
+  attentionTone: "critical" | "active" | "warm" | "idle";
+}
+
+const toneClasses = {
+  critical: "bg-rose-100 text-rose-700",
+  active: "bg-amber-100 text-amber-700",
+  warm: "bg-emerald-100 text-emerald-700",
+  idle: "bg-slate-100 text-slate-500",
+};
+
+const statePriority = {
+  speaking: 3,
+  "raised-hand": 4,
+  listening: 2,
+  muted: 1,
+};
+
+const truncateCopy = (content: string, length: number): string =>
+  content.length <= length ? content : `${content.slice(0, length - 3)}...`;
+
+const buildStageFit = (
+  contestant: GatewayContestantSummary,
+  focusRoomIds: Set<string>,
+): Pick<RankedContestant, "isInFocusRoom" | "stageFitLabel" | "stageFitTone"> => {
+  if (focusRoomIds.has(contestant.roomId)) {
+    return {
+      isInFocusRoom: true,
+      stageFitLabel: "On Script",
+      stageFitTone: "warm",
+    };
+  }
+
+  if (contestant.roomId === "quiet-orbit") {
+    return {
+      isInFocusRoom: false,
+      stageFitLabel: "Holding",
+      stageFitTone: "idle",
+    };
+  }
+
+  return {
+    isInFocusRoom: false,
+    stageFitLabel: "Side Room",
+    stageFitTone: "active",
+  };
+};
+
+const buildAttention = (
+  contestant: GatewayContestantSummary,
+  isInFocusRoom: boolean,
+  primaryFocusRoomLabel: string | null,
+): Pick<RankedContestant, "attentionLabel" | "attentionNote" | "attentionTone"> => {
+  if (contestant.state === "raised-hand" && isInFocusRoom) {
+    return {
+      attentionLabel: "Give Next Turn",
+      attentionNote: "选手已经在当前 act 的焦点房间里举手，适合优先给麦或点名回应。",
+      attentionTone: "active",
+    };
+  }
+
+  if (contestant.state === "raised-hand") {
+    return {
+      attentionLabel: `Pull To ${primaryFocusRoomLabel ?? "Focus Room"}`,
+      attentionNote: "选手正在请求注意力，但人还不在当前 act 的焦点房间里，适合被拉回现场。",
+      attentionTone: "active",
+    };
+  }
+
+  if (contestant.state === "speaking" && isInFocusRoom) {
+    return {
+      attentionLabel: "Keep Live",
+      attentionNote: "选手已经在正确的房间里发声，适合继续保留镜头或顺手截取高光。",
+      attentionTone: "critical",
+    };
+  }
+
+  if (contestant.state === "speaking") {
+    return {
+      attentionLabel: "Monitor Side Signal",
+      attentionNote: "选手正在侧房间输出内容，可能值得巡房，也可能需要被拉回主舞台。",
+      attentionTone: "warm",
+    };
+  }
+
+  if (contestant.state === "muted" && isInFocusRoom) {
+    return {
+      attentionLabel: "Ping Heartbeat",
+      attentionNote: "选手已经在焦点房间落位，但长时间没反应，适合发 heartbeat 或轻推一把。",
+      attentionTone: "idle",
+    };
+  }
+
+  if (isInFocusRoom) {
+    return {
+      attentionLabel: "Watch Reactions",
+      attentionNote: "选手在正确房间里保持倾听状态，暂时不必介入，但值得继续观察。",
+      attentionTone: "warm",
+    };
+  }
+
+  return {
+    attentionLabel: "Let Team Cook",
+    attentionNote: "选手目前不在焦点房间，且没有强烈信号，适合暂时放在侧线继续推进。",
+    attentionTone: "idle",
+  };
+};
+
+const sortContestants = (left: RankedContestant, right: RankedContestant): number => {
+  if (left.isInFocusRoom !== right.isInFocusRoom) {
+    return Number(right.isInFocusRoom) - Number(left.isInFocusRoom);
+  }
+
+  if (left.state !== right.state) {
+    return statePriority[right.state] - statePriority[left.state];
+  }
+
+  if (left.activityCount !== right.activityCount) {
+    return right.activityCount - left.activityCount;
+  }
+
+  const rightSignal = Math.max(right.updatedAt, right.recentActivity?.timestamp ?? 0);
+  const leftSignal = Math.max(left.updatedAt, left.recentActivity?.timestamp ?? 0);
+  return rightSignal - leftSignal;
+};
 
 export function StageWorkspace({
   stage,
@@ -21,13 +159,25 @@ export function StageWorkspace({
       count: roomCount?.count ?? 0,
     };
   });
+  const focusRoomIds = new Set(runtimeGuide.preferredRoomIds);
+  const primaryFocusRoomLabel = focusRooms[0]?.label ?? null;
+  const contestants = gateway.contestants
+    .map((contestant) => {
+      const stageFit = buildStageFit(contestant, focusRoomIds);
+      return {
+        ...contestant,
+        ...stageFit,
+        ...buildAttention(contestant, stageFit.isInFocusRoom, primaryFocusRoomLabel),
+      };
+    })
+    .sort(sortContestants);
+  const focusedContestantCount = contestants.filter((contestant) => contestant.isInFocusRoom).length;
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(
+    contestants[0]?.agentId ?? null,
+  );
 
-  const toneClasses = {
-    critical: "bg-rose-100 text-rose-700",
-    active: "bg-amber-100 text-amber-700",
-    warm: "bg-emerald-100 text-emerald-700",
-    idle: "bg-slate-100 text-slate-500",
-  };
+  const selectedContestant =
+    contestants.find((contestant) => contestant.agentId === selectedAgentId) ?? contestants[0] ?? null;
 
   return (
     <section className="space-y-6">
@@ -133,7 +283,9 @@ export function StageWorkspace({
                   key={state.state}
                   className="rounded-[1.1rem] border border-slate-200 bg-white px-3 py-3"
                 >
-                  <span className={`inline-flex rounded-full px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] ${toneClasses[state.tone]}`}>
+                  <span
+                    className={`inline-flex rounded-full px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] ${toneClasses[state.tone]}`}
+                  >
                     {state.label}
                   </span>
                   <p className="mt-3 text-2xl font-semibold text-slate-950">{state.count}</p>
@@ -171,7 +323,9 @@ export function StageWorkspace({
                           <span className="font-mono text-[0.72rem] text-slate-700">
                             {session.agentId}
                           </span>
-                          <span className={`rounded-full px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] ${toneClasses[session.stateTone]}`}>
+                          <span
+                            className={`rounded-full px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] ${toneClasses[session.stateTone]}`}
+                          >
                             {session.stateLabel}
                           </span>
                         </div>
@@ -230,53 +384,254 @@ export function StageWorkspace({
           </article>
         </div>
 
-        <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
-                Live Contestant Sessions
-              </p>
-              <p className="mt-2 text-sm leading-7 text-slate-600">
-                最近活跃的 OpenClaw contestant session 会直接决定选手在哪个房间、此刻是否在说话，以及舞台是否真的活着。
-              </p>
+        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+          <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                  Contestant Roster
+                </p>
+                <p className="mt-2 text-sm leading-7 text-slate-600">
+                  这里不再只是原始 session 卡片，而是把选手按当前 act 的焦点房间、活跃度和最新发言重新排序。
+                </p>
+              </div>
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+                {focusedContestantCount}/{contestants.length} in focus
+              </span>
             </div>
-            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
-              {gateway.connectionState}
-            </span>
-          </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {gateway.sessions.length > 0 ? (
-              gateway.sessions.map((session) => (
-                <article
-                  key={session.sessionKey}
-                  className="rounded-[1.2rem] border border-slate-200 bg-white p-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="font-mono text-sm font-medium text-slate-950">
-                      {session.agentId}
-                    </p>
-                    <span
-                      className={`rounded-full px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.18em] ${toneClasses[session.stateTone]}`}
+            <div className="mt-4 max-h-[34rem] space-y-3 overflow-y-auto pr-1">
+              {contestants.length > 0 ? (
+                contestants.map((contestant) => {
+                  const isSelected = contestant.agentId === selectedContestant?.agentId;
+
+                  return (
+                    <button
+                      key={contestant.sessionKey}
+                      type="button"
+                      onClick={() => setSelectedAgentId(contestant.agentId)}
+                      className={`w-full rounded-[1.2rem] border p-4 text-left transition ${
+                        isSelected
+                          ? "border-[#e01b24] bg-[#fff1f2] shadow-[0_12px_30px_rgba(224,27,36,0.12)]"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                      }`}
                     >
-                      {session.stateLabel}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-mono text-sm font-medium text-slate-950">
+                            {contestant.agentId}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {contestant.roomLabel} · {contestant.updatedLabel}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] ${toneClasses[contestant.stateTone]}`}
+                        >
+                          {contestant.stateLabel}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span
+                          className={`rounded-full px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] ${toneClasses[contestant.stageFitTone]}`}
+                        >
+                          {contestant.stageFitLabel}
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] ${toneClasses[contestant.attentionTone]}`}
+                        >
+                          {contestant.attentionLabel}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-600">
+                          {contestant.activityCount} lines
+                        </span>
+                      </div>
+
+                      <p className="mt-3 text-sm leading-7 text-slate-700">
+                        {contestant.recentActivity
+                          ? truncateCopy(contestant.recentActivity.content, 118)
+                          : "No recent room line captured yet. Keep heartbeat alive and wait for the next signal."}
+                      </p>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="rounded-[1.2rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
+                  {gateway.configured
+                    ? "Gateway 已连接，但当前还没有可聚合的 contestant roster。等 agent 真正进房发言后，这里会立刻长出来。"
+                    : "当前环境还没配置 OpenClaw gateway。配置 `VITE_OPENCLAW_URL` 和 `VITE_OPENCLAW_TOKEN` 后，这里会出现实时选手总表。"}
+                </div>
+              )}
+            </div>
+          </article>
+
+          <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+            {selectedContestant ? (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                      Selected Contestant
+                    </p>
+                    <h4 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                      {selectedContestant.agentId}
+                    </h4>
+                    <p className="mt-2 text-sm leading-7 text-slate-600">
+                      围绕当前 act 的选手详情视图。先看这个人是不是在正确房间、有没有最近发言、现在适不适合被操作者处理。
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span
+                      className={`rounded-full px-2.5 py-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] ${toneClasses[selectedContestant.stateTone]}`}
+                    >
+                      {selectedContestant.stateLabel}
+                    </span>
+                    <span
+                      className={`rounded-full px-2.5 py-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] ${toneClasses[selectedContestant.stageFitTone]}`}
+                    >
+                      {selectedContestant.stageFitLabel}
                     </span>
                   </div>
-                  <p className="mt-3 text-sm text-slate-700">{session.roomLabel}</p>
-                  <p className="mt-1 text-xs text-slate-500">{session.updatedLabel}</p>
-                  <code className="mt-3 block break-all font-mono text-[0.72rem] leading-6 text-slate-500">
-                    {session.sessionKey}
-                  </code>
-                </article>
-              ))
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <article className="rounded-[1.1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Current Room
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">
+                      {selectedContestant.roomLabel}
+                    </p>
+                    <p className="text-xs text-slate-500">{selectedContestant.sessionKey}</p>
+                  </article>
+                  <article className="rounded-[1.1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Last Seen
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">
+                      {selectedContestant.updatedLabel}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {selectedContestant.recentActivity?.timestampLabel ?? "No room quote yet"}
+                    </p>
+                  </article>
+                  <article className="rounded-[1.1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Room Lines
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">
+                      {selectedContestant.activityCount}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      captured live messages in this operator window
+                    </p>
+                  </article>
+                </div>
+
+                <div
+                  className={`mt-4 rounded-[1.2rem] border px-4 py-4 ${
+                    selectedContestant.attentionTone === "critical"
+                      ? "border-rose-200 bg-rose-50"
+                      : selectedContestant.attentionTone === "active"
+                        ? "border-amber-200 bg-amber-50"
+                        : selectedContestant.attentionTone === "warm"
+                          ? "border-emerald-200 bg-emerald-50"
+                          : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                    Operator Cue
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {selectedContestant.attentionLabel}
+                  </p>
+                  <p className="mt-2 text-sm leading-7 text-slate-700">
+                    {selectedContestant.attentionNote}
+                  </p>
+                </div>
+
+                <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                  <article className="rounded-[1.2rem] border border-slate-200 bg-white p-4">
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                      Stage Placement
+                    </p>
+                    <p className="mt-3 text-sm leading-7 text-slate-700">
+                      {selectedContestant.isInFocusRoom
+                        ? `这位选手已经在 ${stage.title} 的焦点房间里，可以直接作为当前幕的可处理对象。`
+                        : `这位选手当前不在 ${stage.title} 的焦点房间里，操作者应优先观察是否需要把它拉向 ${focusRooms.map((room) => room.label).join(" / ")}。`}
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {focusRooms.map((room) => (
+                        <span
+                          key={room.roomId}
+                          className={`rounded-full px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] ${
+                            room.roomId === selectedContestant.roomId
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {room.label}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 rounded-[1rem] border border-slate-200 bg-slate-50 px-3 py-3">
+                      <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                        Recent Room Quote
+                      </p>
+                      <p className="mt-2 text-sm leading-7 text-slate-700">
+                        {selectedContestant.recentActivity
+                          ? selectedContestant.recentActivity.content
+                          : "This contestant has no captured quote yet. Keep the room open and wait for the next message."}
+                      </p>
+                    </div>
+                  </article>
+
+                  <article className="rounded-[1.2rem] border border-slate-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                        Recent Voice Trail
+                      </p>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-600">
+                        {selectedContestant.recentActivities.length} clips
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {selectedContestant.recentActivities.length > 0 ? (
+                        selectedContestant.recentActivities.map((activity) => (
+                          <article
+                            key={activity.id}
+                            className="rounded-[1rem] border border-slate-200 bg-slate-50 p-3"
+                          >
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              <span className="font-mono uppercase tracking-[0.16em]">
+                                {activity.roomLabel}
+                              </span>
+                              <span>•</span>
+                              <span>{activity.timestampLabel}</span>
+                            </div>
+                            <p className="mt-2 text-sm leading-7 text-slate-700">
+                              {activity.content}
+                            </p>
+                          </article>
+                        ))
+                      ) : (
+                        <div className="rounded-[1rem] border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-7 text-slate-500">
+                          这位选手还没有留下可回看的 voice trail。等它真正说话后，这里会连续显示最近几条房间内容。
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                </div>
+              </>
             ) : (
-              <div className="md:col-span-2 xl:col-span-3 rounded-[1.2rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
-                {gateway.configured
-                  ? "Gateway 已配置，但还没有看到 contestant session。把 agent 接到 `agent:{agentId}:{room}` 之后，这里会开始出现活跃态。"
-                  : "当前环境还没配置 OpenClaw gateway。配置 `VITE_OPENCLAW_URL` 和 `VITE_OPENCLAW_TOKEN` 后，这里会显示实时选手会话。"}
+              <div className="rounded-[1.2rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
+                还没有选手详情可展示。等 contestant session 出现后，这里会显示当前 act 最值得关注的选手。
               </div>
             )}
-          </div>
+          </article>
         </div>
 
         <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">

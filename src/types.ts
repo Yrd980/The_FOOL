@@ -86,6 +86,12 @@ export interface GatewaySessionSummary {
   stateTone: "critical" | "active" | "warm" | "idle";
 }
 
+export interface GatewayContestantSummary extends GatewaySessionSummary {
+  activityCount: number;
+  recentActivity: GatewayActivity | null;
+  recentActivities: GatewayActivity[];
+}
+
 export interface GatewayOverview {
   configured: boolean;
   gatewayUrl: string | null;
@@ -101,5 +107,6 @@ export interface GatewayOverview {
     sessions: GatewaySessionSummary[];
   }>;
   sessions: GatewaySessionSummary[];
+  contestants: GatewayContestantSummary[];
   activities: GatewayActivity[];
 }

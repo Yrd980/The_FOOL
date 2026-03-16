@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import type { GatewayActivity, GatewayOverview, GatewayStateCount } from "../types";
+import type {
+  GatewayActivity,
+  GatewayContestantSummary,
+  GatewayOverview,
+  GatewayStateCount,
+  GatewaySessionSummary,
+} from "../types";
 import {
   DEFAULT_GATEWAY_ROOM_IDS,
   getRoomLabel,
@@ -131,6 +137,7 @@ export function useGatewayOverview(): GatewayOverview {
           sessions: [],
         })),
         sessions: [],
+        contestants: [],
         activities: [],
       };
     }
@@ -142,9 +149,8 @@ export function useGatewayOverview(): GatewayOverview {
         .length,
     }));
 
-    const sessionSummaries = [...sessions]
+    const allSessionSummaries: GatewaySessionSummary[] = [...sessions]
       .sort((left, right) => normalizeTimestamp(right.updatedAt) - normalizeTimestamp(left.updatedAt))
-      .slice(0, 8)
       .map((session) => {
         const roomId = resolveSessionRoomId(session.key);
         const state = deriveContestantState(session);
@@ -161,29 +167,40 @@ export function useGatewayOverview(): GatewayOverview {
         };
       });
 
+    const visibleSessions = allSessionSummaries.slice(0, 8);
+    const roomByAgent = new Map(
+      allSessionSummaries.map((session) => [
+        session.agentId,
+        {
+          roomId: session.roomId,
+          roomLabel: session.roomLabel,
+        },
+      ]),
+    );
+
     const stateCounts: GatewayStateCount[] = [
       {
         state: "speaking",
         label: "Speaking",
-        count: sessionSummaries.filter((session) => session.state === "speaking").length,
+        count: allSessionSummaries.filter((session) => session.state === "speaking").length,
         tone: "critical",
       },
       {
         state: "raised-hand",
         label: "Raised Hand",
-        count: sessionSummaries.filter((session) => session.state === "raised-hand").length,
+        count: allSessionSummaries.filter((session) => session.state === "raised-hand").length,
         tone: "active",
       },
       {
         state: "listening",
         label: "Listening",
-        count: sessionSummaries.filter((session) => session.state === "listening").length,
+        count: allSessionSummaries.filter((session) => session.state === "listening").length,
         tone: "warm",
       },
       {
         state: "muted",
         label: "Muted",
-        count: sessionSummaries.filter((session) => session.state === "muted").length,
+        count: allSessionSummaries.filter((session) => session.state === "muted").length,
         tone: "idle",
       },
     ];
@@ -191,37 +208,49 @@ export function useGatewayOverview(): GatewayOverview {
     const roomRosters = DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
       roomId,
       label: getRoomLabel(roomId),
-      sessions: sessionSummaries.filter((session) => session.roomId === roomId),
+      sessions: allSessionSummaries.filter((session) => session.roomId === roomId),
     }));
 
-    const activities: GatewayActivity[] = messages
+    const allActivities: GatewayActivity[] = messages
       .map((message) => {
-        const relatedSession =
-          sessionSummaries.find((session) => session.agentId === message.senderId) ??
-          sessions
-            .map((session) => {
-              const roomId = resolveSessionRoomId(session.key);
-              return {
-                agentId: session.agentId,
-                roomId,
-                roomLabel: getRoomLabel(roomId),
-              };
-            })
-            .find((session) => session.agentId === message.senderId);
-
-        const roomId = relatedSession?.roomId ?? "quiet-orbit";
+        const relatedRoom = roomByAgent.get(message.senderId);
+        const roomId = relatedRoom?.roomId ?? "quiet-orbit";
 
         return {
           id: message.id,
           agentId: message.senderId,
           roomId,
-          roomLabel: relatedSession?.roomLabel ?? getRoomLabel(roomId),
+          roomLabel: relatedRoom?.roomLabel ?? getRoomLabel(roomId),
           content: message.content,
           timestamp: normalizeTimestamp(message.ts),
           timestampLabel: formatActivityLabel(normalizeTimestamp(message.ts)),
         };
+      });
+
+    const contestants: GatewayContestantSummary[] = allSessionSummaries
+      .map((session) => {
+        const recentActivities = allActivities
+          .filter((activity) => activity.agentId === session.agentId)
+          .slice(0, 3);
+
+        return {
+          ...session,
+          activityCount: allActivities.filter((activity) => activity.agentId === session.agentId)
+            .length,
+          recentActivity: recentActivities[0] ?? null,
+          recentActivities,
+        };
       })
-      .slice(0, 12);
+      .sort((left, right) => {
+        const rightSignal = Math.max(
+          right.updatedAt,
+          right.recentActivity?.timestamp ?? 0,
+        );
+        const leftSignal = Math.max(left.updatedAt, left.recentActivity?.timestamp ?? 0);
+        return rightSignal - leftSignal;
+      });
+
+    const activities = allActivities.slice(0, 12);
 
     let statusMessage = "Connected to the gateway and reading active contestant sessions.";
     if (authFailed) {
@@ -248,7 +277,8 @@ export function useGatewayOverview(): GatewayOverview {
       stateCounts,
       roomCounts,
       roomRosters,
-      sessions: sessionSummaries,
+      sessions: visibleSessions,
+      contestants,
       activities,
     };
   }, [authFailed, configured, connectionState, gatewayUrl, messages, sessions]);
