@@ -51,8 +51,8 @@ const distributePositions = (count: number): Array<{ x: number; y: number }> => 
     const col = i % cols;
     const row = Math.floor(i / cols);
     positions.push({
-      x: ((col + 0.5) / cols) * 100,
-      y: ((row + 0.5) / rows) * 100,
+      x: 18 + ((col + 0.5) / cols) * 64,
+      y: 18 + ((row + 0.5) / rows) * 56,
     });
   }
 

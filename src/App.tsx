@@ -575,6 +575,8 @@ function App() {
       detailCard={detailCard}
       onDetailAction={handleDetailAction}
       activeStageOrder={activeStage.order}
+      activeStageTitle={activeStage.title}
+      activeStageSubtitle={activeStage.subtitle}
       onlineCount={onlineCount}
       connectionStatus={snapshot.connectionStatus}
       onSwitchRoom={actions.switchRoom}

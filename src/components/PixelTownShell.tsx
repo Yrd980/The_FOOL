@@ -4,6 +4,8 @@ import type { RoomDirectory, AudioMode } from "../room/types";
 import { buildTownLayout, type TownBuildingTheme } from "../room/townLayout";
 import type { ContestantSeat, DetailCard, SidebarEntity } from "../types/entities";
 import type { AudienceEvent, ContestantScorecard } from "../types";
+import { cn } from "../lib/cn";
+import { rootBackdropClass, shellCrossClass, sideRailClass } from "../pixelTownTheme";
 import PixelTownMap from "./PixelTownMap";
 import PixelRoomView from "./PixelRoomView";
 import TownOverlay from "./TownOverlay";
@@ -23,6 +25,8 @@ type PixelTownShellProps = {
   detailCard: DetailCard;
   onDetailAction: (actionId: string) => void;
   activeStageOrder: number;
+  activeStageTitle: string;
+  activeStageSubtitle: string;
   onlineCount: number;
   connectionStatus?: string;
   onSwitchRoom: (roomId: string) => void;
@@ -49,6 +53,8 @@ function PixelTownShell({
   detailCard,
   onDetailAction,
   activeStageOrder,
+  activeStageTitle,
+  activeStageSubtitle,
   onlineCount,
   connectionStatus,
   onSwitchRoom,
@@ -146,11 +152,40 @@ function PixelTownShell({
   }, [searchOpen, detailOpen, viewMode, handleBackToTown]);
 
   return (
-    <div className="pixel-town-app">
+    <div
+      className={cn(
+        "relative h-screen w-screen overflow-hidden text-[#120c0d] [font-family:var(--font-mono)]",
+        rootBackdropClass,
+      )}
+    >
+      <div
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute left-1/2 top-[48%] z-0 h-[min(62vw,720px)] w-[min(62vw,720px)] -translate-x-1/2 -translate-y-1/2 -rotate-12 opacity-25 blur-[1px] max-[720px]:top-[42%] max-[720px]:h-[96vw] max-[720px]:w-[96vw]",
+          shellCrossClass,
+        )}
+      />
+      <div
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute right-[18px] top-[18px] z-0 h-[calc(100%-36px)] w-4 rounded-full opacity-[0.18] max-[920px]:hidden",
+          sideRailClass,
+        )}
+      />
+
       {viewMode === "town" && (
         <div
           ref={mapRef}
-          className={`town-map-container ${isZooming ? "is-zooming" : ""}`}
+          className={cn(
+            "absolute inset-0 z-[1] grid place-items-center px-[clamp(1rem,3vw,2.5rem)] pt-[clamp(20.5rem,39vh,22.5rem)] pb-[clamp(6rem,8.5vh,7rem)] transition-[transform,opacity] duration-[360ms] ease-out",
+            "max-[920px]:px-4 max-[920px]:pt-[10.5rem] max-[920px]:pb-[8.5rem]",
+            "max-[720px]:px-3 max-[720px]:pt-[9.3rem] max-[720px]:pb-[8rem]",
+            "max-[520px]:pt-[10.6rem] max-[520px]:pb-[8.2rem]",
+            isZooming && "pointer-events-none opacity-0",
+          )}
+          style={isZooming
+            ? { transform: "scale(2.6) translate(var(--zoom-x, 0%), var(--zoom-y, 0%))" }
+            : undefined}
         >
           <PixelTownMap
             buildings={buildings}
@@ -172,7 +207,6 @@ function PixelTownShell({
           audioMode={audioMode}
           selectedEntityId={selectedEntityId}
           onSelectEntity={handleSelectEntity}
-          onBack={handleBackToTown}
         />
       )}
 
@@ -180,7 +214,12 @@ function PixelTownShell({
         locationLabel={locationLabel}
         onlineCount={onlineCount}
         activeStageOrder={activeStageOrder}
+        stageTitle={activeStageTitle}
+        stageSubtitle={activeStageSubtitle}
         connectionStatus={connectionStatus}
+        isRoomView={viewMode === "room"}
+        isDetailOpen={detailOpen}
+        onBack={viewMode === "room" ? handleBackToTown : undefined}
       />
 
       <EntityDetailPanel
@@ -197,7 +236,6 @@ function PixelTownShell({
         onSelect={handleSelectEntity}
         onClose={() => setSearchOpen(false)}
       />
-
     </div>
   );
 }
