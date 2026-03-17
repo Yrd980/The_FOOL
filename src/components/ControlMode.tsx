@@ -15,6 +15,7 @@ interface ControlModeProps {
   stage: StageDefinition;
   stages: StageDefinition[];
   activeStageId: string;
+  authorityStageId: string | null;
   onSelectStage: (stageId: string) => void;
   runtimeGuide: StageRuntimeGuide;
   gateway: GatewayOverview;
@@ -27,6 +28,7 @@ export function ControlMode({
   stage,
   stages,
   activeStageId,
+  authorityStageId,
   onSelectStage,
   runtimeGuide,
   gateway,
@@ -140,6 +142,7 @@ export function ControlMode({
         <StageSidebar
           stages={stages}
           activeStageId={activeStageId}
+          authorityStageId={authorityStageId}
           onSelectStage={onSelectStage}
         />
         <StageWorkspace

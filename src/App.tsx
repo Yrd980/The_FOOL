@@ -3,8 +3,8 @@ import { ControlHeader } from "./components/ControlHeader";
 import { ControlMode } from "./components/ControlMode";
 import { ShowMode } from "./components/ShowMode";
 import {
+  buildOperatorCommands,
   integrationDocs,
-  operatorCommands,
   stageRuntimeGuides,
   stages,
   summaryStats,
@@ -23,9 +23,23 @@ const getModeFromPath = (): AppMode => {
 
 function App() {
   const [mode, setMode] = useState<AppMode>(getModeFromPath);
-  const [activeStageId, setActiveStageId] = useState(stages[0]?.id ?? "act-1");
-  const activeStage = stages.find((stage) => stage.id === activeStageId) ?? stages[0];
   const gateway = useGatewayOverview();
+  const [fallbackStageId, setFallbackStageId] = useState(
+    stages[0]?.id ?? "act-1-intro",
+  );
+  const activeStageId =
+    gateway.authorityStageId &&
+    stages.some((stage) => stage.id === gateway.authorityStageId)
+      ? gateway.authorityStageId
+      : fallbackStageId;
+  const activeStage = stages.find((stage) => stage.id === activeStageId) ?? stages[0];
+  const activeRuntimeGuide = stageRuntimeGuides[activeStage.id];
+  const commands = buildOperatorCommands({
+    stage: activeStage,
+    stages,
+    runtimeGuide: activeRuntimeGuide,
+    gateway,
+  });
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -77,7 +91,7 @@ function App() {
         <ShowMode
           stage={activeStage}
           stages={stages}
-          runtimeGuide={stageRuntimeGuides[activeStage.id]}
+          runtimeGuide={activeRuntimeGuide}
           gateway={gateway}
         />
       ) : (
@@ -85,12 +99,13 @@ function App() {
           stage={activeStage}
           stages={stages}
           activeStageId={activeStageId}
-          onSelectStage={setActiveStageId}
-          runtimeGuide={stageRuntimeGuides[activeStage.id]}
+          authorityStageId={gateway.authorityStageId}
+          onSelectStage={setFallbackStageId}
+          runtimeGuide={activeRuntimeGuide}
           gateway={gateway}
           summaryStats={summaryStats}
           docs={integrationDocs}
-          commands={operatorCommands}
+          commands={commands}
         />
       )}
     </div>

@@ -41,6 +41,7 @@ export function ShowMode({
   const emptyState = buildShowEmptyState(gateway, stage);
   const showState = buildShowStateCopy(focusContestant, stage);
   const showEvents = buildShowEvents(gateway, contestants).slice(0, 8);
+  const latestPlatformCue = gateway.domainEvents[0] ?? null;
   const stageIndex = stages.findIndex((item) => item.id === stage.id);
   const livePulse = Math.min(
     99,
@@ -147,6 +148,48 @@ export function ShowMode({
                 </p>
               </article>
             </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <article className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
+                <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+                  Authority Stage
+                </p>
+                <p className="mt-3 text-lg font-semibold text-white">
+                  {gateway.activityRun?.currentStageId ?? "local-preview"}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  {gateway.activityRun
+                    ? "这次镜头切到哪一幕，优先由平台权威状态决定。"
+                    : "还没接到权威 stage 时，节目先使用本地预演幕。"}
+                </p>
+              </article>
+              <article className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
+                <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+                  Stage Timer
+                </p>
+                <p className="mt-3 text-lg font-semibold text-white">
+                  {gateway.activeTimer?.remainingLabel ?? "--:--"}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  {gateway.activeTimer
+                    ? `${gateway.activeTimer.stateLabel} · ${gateway.activeTimer.stageId ?? "current-stage"}`
+                    : "当前还没有平台计时信息。"}
+                </p>
+              </article>
+              <article className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
+                <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
+                  Submission Lock
+                </p>
+                <p className="mt-3 text-lg font-semibold text-white">
+                  {gateway.lockedSubmissionCount}/{gateway.totalSubmissionCount}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  {gateway.totalSubmissionCount > 0
+                    ? "观众侧也能直接看到结构化提交是否锁定。"
+                    : "这一幕还没有 submission 进度。"}
+                </p>
+              </article>
+            </div>
           </div>
 
           <aside className="space-y-4">
@@ -168,15 +211,17 @@ export function ShowMode({
                 </div>
                 <div className="rounded-[1rem] border border-white/8 bg-white/6 px-3 py-3">
                   <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-400">
-                    Backstage Thread
+                    Platform Cue
                   </p>
                   <p className="mt-2 text-xl font-semibold text-white">
-                    {sideStoryContestant?.agentId ?? "下一条支线还在孵化"}
+                    {latestPlatformCue?.title ?? "平台还没推来新的编排事件"}
                   </p>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
-                    {sideStoryContestant
-                      ? `${sideStoryContestant.roomLabel} 里还有另一条剧情线在偷偷抬头，随时可能被切进主舞台。`
-                      : "一旦有侧房开始连续冒台词，这里会先提醒哪条暗线在升温。"}
+                    {latestPlatformCue
+                      ? latestPlatformCue.detail
+                      : sideStoryContestant
+                        ? `${sideStoryContestant.roomLabel} 里还有另一条剧情线在偷偷抬头，随时可能被切进主舞台。`
+                        : "一旦平台开始推送 stage / timer / submission 事件，这里会先把它们顶上来。"}
                   </p>
                 </div>
               </div>

@@ -367,8 +367,7 @@ export const buildShowEvents = (
   contestants: RankedContestant[],
 ): ShowEventSummary[] => {
   const contestantById = new Map(contestants.map((contestant) => [contestant.agentId, contestant]));
-
-  return gateway.activities.map((activity) => {
+  const activityEvents = gateway.activities.map((activity) => {
     const contestant = contestantById.get(activity.agentId);
 
     let headline = `${activity.agentId} 刚往 ${activity.roomLabel} 扔进一句能剪预告的台词`;
@@ -390,8 +389,32 @@ export const buildShowEvents = (
       roomLabel: activity.roomLabel,
       timestampLabel: activity.timestampLabel,
       tone: contestant?.stateTone ?? "warm",
+      sortTimestamp: activity.timestamp,
     };
   });
+
+  const domainEvents = gateway.domainEvents.map((event) => ({
+    id: event.id,
+    eyebrow: "Platform Cue",
+    headline: event.title,
+    body: event.detail,
+    roomLabel: event.stageId ?? "platform",
+    timestampLabel: event.timestampLabel,
+    tone: event.tone,
+    sortTimestamp: event.timestamp,
+  }));
+
+  return [...domainEvents, ...activityEvents]
+    .sort((left, right) => right.sortTimestamp - left.sortTimestamp)
+    .map((event) => ({
+      id: event.id,
+      eyebrow: event.eyebrow,
+      headline: event.headline,
+      body: event.body,
+      roomLabel: event.roomLabel,
+      timestampLabel: event.timestampLabel,
+      tone: event.tone,
+    }));
 };
 
 export const buildShowEmptyState = (

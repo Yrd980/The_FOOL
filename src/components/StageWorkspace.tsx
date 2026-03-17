@@ -127,6 +127,62 @@ export function StageWorkspace({
           </article>
         </div>
 
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <article className="rounded-[1.2rem] border border-slate-200 bg-slate-50 p-4">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+              Authority Stage
+            </p>
+            <p className="mt-3 text-xl font-semibold text-slate-950">
+              {gateway.activityRun?.currentStageId ?? "local-preview"}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {gateway.activityRun
+                ? "当前幕已经来自平台权威状态，show/control 会跟着它走。"
+                : "还没接到平台快照时，导演台先退回本地预演切幕。"}
+            </p>
+          </article>
+
+          <article className="rounded-[1.2rem] border border-slate-200 bg-slate-50 p-4">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+              Stage Timer
+            </p>
+            <p className="mt-3 text-xl font-semibold text-slate-950">
+              {gateway.activeTimer?.remainingLabel ?? "--:--"}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {gateway.activeTimer
+                ? `${gateway.activeTimer.stateLabel} · ${gateway.activeTimer.stageId ?? "current-stage"}`
+                : "当前还没有收到平台计时器。"}
+            </p>
+          </article>
+
+          <article className="rounded-[1.2rem] border border-slate-200 bg-slate-50 p-4">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+              Submission Lock
+            </p>
+            <p className="mt-3 text-xl font-semibold text-slate-950">
+              {gateway.lockedSubmissionCount}/{gateway.totalSubmissionCount}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {gateway.totalSubmissionCount > 0
+                ? "提交锁定进度已经进入导演台，可以直接判断是否该切下一幕。"
+                : "当前还没有收到结构化 submission 状态。"}
+            </p>
+          </article>
+
+          <article className="rounded-[1.2rem] border border-slate-200 bg-slate-50 p-4">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+              Event Sequence
+            </p>
+            <p className="mt-3 text-xl font-semibold text-slate-950">
+              {gateway.lastSequence ?? "n/a"}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              最近一次平台领域事件序号，用来确认导演台跟权威事件流是否对齐。
+            </p>
+          </article>
+        </div>
+
         <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-center justify-between gap-3">
@@ -492,6 +548,49 @@ export function StageWorkspace({
               </div>
             )}
           </article>
+        </div>
+
+        <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                Platform Event Feed
+              </p>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                这条流不是聊天室文本，而是平台编排层刚刚发生的关键事件。
+              </p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+              {gateway.domainEvents.length} orchestration events
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-2">
+            {gateway.domainEvents.length > 0 ? (
+              gateway.domainEvents.slice(0, 6).map((event) => (
+                <article
+                  key={event.id}
+                  className="rounded-[1.2rem] border border-slate-200 bg-white p-4"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span className="font-mono uppercase tracking-[0.16em]">
+                      {event.type}
+                    </span>
+                    <span>•</span>
+                    <span>{event.timestampLabel}</span>
+                  </div>
+                  <h4 className="mt-3 text-base font-semibold text-slate-950">
+                    {event.title}
+                  </h4>
+                  <p className="mt-2 text-sm leading-7 text-slate-700">{event.detail}</p>
+                </article>
+              ))
+            ) : (
+              <div className="rounded-[1.2rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
+                还没有收到 stage、timer、submission、award 这类平台事件。接上后，这里会成为导演判断切幕的主线证据。
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">

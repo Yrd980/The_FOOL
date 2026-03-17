@@ -39,6 +39,11 @@ export function IntegrationRail({
           导演台此刻拿到的房间信号
         </h2>
         <p className="mt-3 text-sm leading-7 text-slate-600">{gateway.statusMessage}</p>
+        {gateway.gatewayWarning ? (
+          <div className="mt-3 rounded-[1rem] border border-amber-200 bg-amber-50 px-3 py-3 text-sm leading-7 text-amber-900">
+            {gateway.gatewayWarning}
+          </div>
+        ) : null}
         {gateway.gatewayUrl ? (
           <p className="mt-2 break-all font-mono text-xs leading-6 text-slate-500">
             {gateway.gatewayUrl}
@@ -92,8 +97,28 @@ export function IntegrationRail({
           Floor Commands
         </p>
         <h2 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
-          真正能让选手动起来的本地指令
+          房间调度和平台编排都从这里发出去
         </h2>
+        <p className="mt-3 text-sm leading-7 text-slate-600">
+          `move` / `say` 会直接打到 agent；`stage` / `start-timer` / `lock-submission` 会生成正式
+          command envelope。若未配置 `OPENCLAW_COMMAND_METHOD`，脚本会安全回退成 JSON 预览。
+        </p>
+        {gateway.orchestrationContractNote ? (
+          <div
+            className={`mt-4 rounded-[1rem] border px-3 py-3 text-sm leading-7 ${
+              gateway.orchestrationContractStatus === "available"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : gateway.orchestrationContractStatus === "blocked"
+                  ? "border-rose-200 bg-rose-50 text-rose-900"
+                  : "border-amber-200 bg-amber-50 text-amber-900"
+            }`}
+          >
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em]">
+              Orchestrator Contract
+            </p>
+            <p className="mt-2">{gateway.orchestrationContractNote}</p>
+          </div>
+        ) : null}
         <div className="mt-4 space-y-4">
           {commands.map((command) => (
             <article key={command.label} className="rounded-[1.2rem] border border-slate-200 bg-slate-50 p-4">
