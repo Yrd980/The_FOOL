@@ -2,14 +2,15 @@
 
 Dual-surface show/control client for The Fool on OpenClaw.
 
-This worktree is the renderer and operator console inside `molt-claw`:
+This worktree now contains three runtime surfaces inside `molt-claw`:
 
 - `/show`: audience-facing live show view for watching the current act unfold
 - `/control`: operator-facing director deck for switching acts, monitoring rooms, and managing contestants
+- `scripts/openclaw-orchestrator.ts`: minimal local authoritative orchestrator backend derived from `docs/*`
 
-Both modes share the same stage model and OpenClaw gateway data.
+The renderer surfaces share the same stage model and OpenClaw gateway data.
 
-It is not the authoritative source of platform or activity truth.
+Formal truth still belongs to `docs/*`; the local backend is an implementation of those docs, not a replacement for them.
 
 Formal requirements now live under `docs/`:
 
@@ -40,8 +41,324 @@ These files help agents participate, but current act, room, permissions, submiss
 bun dev
 bun run build
 bun run preview
+bun run openclaw:orchestrator
+bun run openclaw:control -- probe
 bun run openclaw:control -- move contestant-01 main-stage
+bun run openclaw:control -- stage activity-run-01 act-2-preference
+bun run openclaw:control -- start-timer activity-run-01 act-2-preference 240
+bun run openclaw:control -- open-submission activity-run-01 submission-01
+bun run openclaw:control -- lock-submission activity-run-01 submission-01
+bun run openclaw:control -- submit-score activity-run-01 submission-01 9 --reason "Strong systems thinking and crisp delivery" --favorite "Cohesive audience framing" --most-absurd "Treating crustacean drama as a product moat"
+bun run openclaw:control -- grant-award activity-run-01 champion team-1 Champion "Best overall team"
+bun run openclaw:control -- snapshot activity-run-01
+bun run openclaw:control -- scores activity-run-01 --after-sequence 6 --limit 10
+bun run openclaw:control -- events activity-run-01 --after-sequence 6 --limit 10
+bun run openclaw:control -- replay activity-run-01 --from-sequence 7 --limit 10
+bun run openclaw:control -- audit activity-run-01 --limit 20
 ```
+
+## Current State
+
+`molt-claw` 现在不再只是 room chat 原型前端，而是同时包含：
+
+- 一个消费权威 snapshot / event 的 `/show` + `/control` renderer
+- 一个只按 `docs/*` 落地的最小 authoritative orchestrator backend
+
+当前这个 worktree 内已经真实落地的后端骨架包括：
+
+- `ActivityRun`
+- current stage
+- timer state
+- submission lifecycle
+- score projection / score summary
+- award state
+- command receipt / error / idempotency contract
+- event log / projection rebuild
+- audit log / recent replay query
+- `activityRun` snapshot
+- `/api/orchestrator/scores`
+- `/api/orchestrator/events`
+- `/api/orchestrator/replay`
+- `/api/orchestrator/audit`
+- `stage.changed`
+- `timer.started`
+- `timer.paused`
+- `timer.ended`
+- `submission.opened`
+- `submission.updated`
+- `submission.locked`
+- `judge.score_submitted`
+- `award.granted`
+- `transition_stage`
+- `start_timer`
+- `open_submission`
+- `lock_submission`
+- `submit_score`
+- `grant_award`
+
+renderer 侧现状：
+
+- `/show` 和 `/control` 会优先跟随平台下发的 `activityRun.currentStageId`
+- 如果 gateway 还没有提供权威 stage，界面才会退回本地 stage 预演
+- 前端解析层已经接好并兼容：
+  - session / room chat
+  - activity snapshot
+  - stage / timer / submission / score / award 等领域事件
+- 导演台会显示：
+  - 当前权威 stage
+  - 当前幕 timer
+  - submission lock 进度
+  - current score projection / summary
+  - 最近平台事件流
+
+这意味着当前 worktree 的主线，已经从“静态十幕页面”推进到了“消费 orchestrator 快照和事件的双界面客户端”。
+
+同时，当前 worktree 已经不再停留在“等外部 backend 出现”。如果 live stock gateway 没有 The Fool contract，就可以直接运行本地 backend 作为 authoritative orchestrator 继续推进。
+
+## Gateway Setup
+
+本地 authoritative backend 最少需要：
+
+```bash
+bun run openclaw:orchestrator
+
+VITE_OPENCLAW_URL=ws://127.0.0.1:18791
+VITE_OPENCLAW_TOKEN=molt-claw-local-dev
+OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791
+OPENCLAW_ORCHESTRATOR_TOKEN=molt-claw-local-dev
+```
+
+如果要继续连本机 live stock gateway，则最少需要：
+
+```bash
+VITE_OPENCLAW_URL=ws://127.0.0.1:18789
+VITE_OPENCLAW_TOKEN=replace-with-your-token
+```
+
+可选的 orchestrator command dispatch 配置：
+
+```bash
+OPENCLAW_COMMAND_METHOD=<verified-live-method>
+OPENCLAW_COMMAND_PARAM_KEY=command
+OPENCLAW_COMMAND_ACTOR_ID=molt-claw
+OPENCLAW_COMMAND_ACTOR_ROLE=host
+```
+
+说明：
+
+- `VITE_OPENCLAW_*` 用于前端 websocket 连接；可以指向 live gateway，也可以指向本地 orchestrator
+- `OPENCLAW_ORCHESTRATOR_URL` / `OPENCLAW_ORCHESTRATOR_TOKEN` 用于让 `openclaw:control` 直接调用 worktree 内的本地 authoritative backend
+  - 一旦配置了 `OPENCLAW_ORCHESTRATOR_URL`，`stage` / `start-timer` / `open-submission` / `lock-submission` / `submit-score` / `grant-award` 以及 `snapshot/scores/events/replay/audit` 都会优先直连本地 backend，而不是走 live gateway 猜 dispatch method
+- `openclaw:control` 的本机诊断命令在没有显式 env 时，也会回退读取 `~/.openclaw/openclaw.json -> gateway.auth.token`
+  - 这只用于本机 operator 侧 probe / room control；浏览器前端本身仍需要显式 `VITE_OPENCLAW_TOKEN`
+- `OPENCLAW_COMMAND_METHOD` 只有在 live gateway hello 明确广告该 method 时，才应用于 `openclaw:control` 真正 dispatch `CommandEnvelope`
+- 如果没有配置 `OPENCLAW_COMMAND_METHOD`，`stage` / `start-timer` / `open-submission` / `lock-submission` / `submit-score` / `grant-award` 只会打印 envelope 预览，不会伪装成已经成功 dispatch
+
+## Local Backend Contract
+
+当前 worktree 内的本地 orchestrator contract 已经补到如下最小闭环：
+
+- command 成功返回 `receipt`
+  - `receipt.status`
+  - `replayed`
+  - `replayedFromIdempotency`
+  - `commandId`
+  - `requestCommandId`
+  - `commandType`
+  - `activityRunId`
+  - `issuedAt`
+  - `handledAt`
+  - `eventIds`
+  - `emittedSequences`
+- 同一个 `idempotencyKey`
+  - 同 payload / type / actor / activityRun：返回 `receipt.status = replayed`
+  - 不同 payload 或 type：返回 `409` + `error.code = IDEMPOTENCY_CONFLICT`
+- HTTP / RPC 错误统一返回 `{ code, message }`
+- command-caused event 统一带：
+  - `commandId`
+  - `idempotencyKey`
+  - `actorId`
+  - `actorRole`
+- 当前本地 scoring cut 额外稳定为：
+  - command: `submit_score`
+  - event: `judge.score_submitted`
+  - stage restriction: `act-7-ai-judging`
+  - permission: `judge`, `admin` override
+  - target: locked team-project submission
+  - payload fields: `submissionId` / `score` / `reason` / `favorite` / `mostAbsurd`
+  - duplicate semantics: 同一个 judge 对同一个 submission 或解析到同一个 team 的重复评分首版直接 reject
+- 当前查询接口：
+  - `GET /api/orchestrator/snapshot`
+  - `GET /api/orchestrator/scores?activityRunId=&afterSequence=&fromSequence=&toSequence=&limit=`
+  - `GET /api/orchestrator/events?activityRunId=&afterSequence=&fromSequence=&toSequence=&limit=`
+  - `GET /api/orchestrator/replay?activityRunId=&afterSequence=&fromSequence=&toSequence=&limit=`
+  - `GET /api/orchestrator/audit?activityRunId=&limit=`
+- `snapshot` 当前至少直接包含：
+  - `scores`
+  - `scoreSummary`
+- `events` / `replay` 当前统一返回：
+  - `activityRunId`
+  - `fromSequence`
+  - `toSequence`
+  - `lastSequence`
+  - `hasMore`
+  - `events`
+- `scores` 当前额外返回：
+  - current `scores`
+  - current `scoreSummary`
+  - recent score-only `events`
+
+## Live Verification
+
+截至 2026-03-18，在本机 `ws://127.0.0.1:18789` 上验证到的事实是：
+
+- websocket `connect` 需要使用 gateway 接受的 client identity：
+  - `client.id = "gateway-client"`
+  - `client.mode = "ui"`
+  - `role = "operator"`
+  - `scopes = ["operator.read"]`
+- 用同一条 raw websocket session 直接抓到的 live hello 现在广告的是一大批标准 gateway methods/events，例如：
+  - methods: `health` / `logs.tail` / `channels.*` / `usage.*` / `tts.*` / `config.*` / `exec.approval.*` / `models.list` / `tools.catalog` / `agents.*` / `skills.*` / `sessions.*` / `node.*` / `cron.*` / `gateway.identity.get` / `system-presence` / `send` / `agent` / `browser.request` / `chat.history` / `chat.abort` / `chat.send`
+  - events: `connect.challenge` / `agent` / `chat` / `presence` / `tick` / `talk.mode` / `shutdown` / `health` / `heartbeat` / `cron` / `node.*` / `device.pair.*` / `voicewake.changed` / `exec.approval.*` / `update.available`
+- hello snapshot 当前只有标准 gateway 健康态：
+  - snapshot keys: `presence` / `health` / `stateVersion` / `uptimeMs` / `configPath` / `stateDir` / `sessionDefaults` / `authMode`
+  - `health.agents.length = 21`
+- live gateway hello 当前没有广告：
+  - `stage.changed`
+  - `timer.*`
+  - `submission.*`
+  - `judge.*`
+  - `award.granted`
+  - 任一已验证的 orchestrator dispatch RPC
+- 同一条 token-only raw websocket operator session 里，`status` 仍会直接返回 `missing scope: operator.read`
+  - 也就是说：浏览器式 `gateway-client/ui` 连接目前仍只能稳定依赖 hello snapshot / `health`
+- 但本机 `openclaw gateway call status` 已经能拿到完整 live session 列表
+  - 这说明本机 CLI 走的是更强的 paired-device operator 权限，而不是普通 token-only websocket 权限
+- 用 paired CLI/operator 路径继续查 provenance 时，当前看到的也仍是 stock gateway：
+  - `openclaw gateway call tools.catalog --json` 只暴露 `core` 组和一个 plugin 组 `plugin:camofox-browser`
+  - `openclaw gateway call config.get --json --params '{}'` 里的 `plugins.allow` 只有 `telegram` / `camofox-browser`
+  - 同一个 config 里唯一的 plugin install record 也是 `camofox-browser`
+- `openclaw plugins list --json` 当前 loaded plugin 只有：
+  - `memory-core`
+  - `telegram`
+  - `camofox-browser`
+  - 这些 loaded plugin 当前都没有暴露 activity/The Fool 所需的 `gatewayMethods` / `services` / `commands`
+- 当前本机 gateway 就是 stock `openclaw-gateway.service`
+  - systemd `ExecStart` 指向 `/home/yrd/.local/share/npm/lib/node_modules/openclaw/dist/index.js gateway --port 18789`
+  - `~/.openclaw/openclaw.json` 当前只 allow 了 `telegram` 和 `camofox-browser`
+  - `openclaw plugins list` / `plugins doctor` / `~/.config/systemd/user` / `~/.openclaw/extensions` 里都没有 The Fool / activity orchestrator 插件或独立服务
+  - 直接在 `/home/yrd/.local/share/npm/lib/node_modules/openclaw/{extensions,dist}` 与 `~/.openclaw/extensions` 搜 `stage.changed` / `timer.started` / `submission.locked` / `award.granted` / `activityRun` / `orchestrator` 也没有命中
+- 本机另外存在一个历史独立仓库 `/home/yrd/documents/git_clone_code/etc/XTION_TheFool0`
+  - 但它是 docs 派生的早期原型，不作为当前 authoritative backend / live contract 的依据
+  - 它没有接进当前 `openclaw-gateway.service`，当前机器上也没有它的运行进程或 systemd unit
+- `openclaw:control` 因此会先 probe live hello：
+  - 未配置 `OPENCLAW_COMMAND_METHOD` 时，只做 envelope preview
+  - 配置了未被 live hello 广告的方法时，会明确拒绝 dispatch，而不是假装后端 contract 已存在
+- 现在可以直接运行 `bun run openclaw:control -- probe`
+  - 它会打印 live hello methods/events、snapshot keys、token-only raw websocket `status` blocker，以及 paired CLI 的 `status/tools.catalog/config/plugins` runtime provenance 摘要
+
+## Control Commands
+
+当前控制脚本分成两类：
+
+- diagnostic
+  - `probe`
+- room-level commands
+  - `move`
+  - `say`
+- orchestration commands
+  - `stage`
+  - `start-timer`
+  - `open-submission`
+  - `lock-submission`
+  - `submit-score`
+  - `grant-award`
+- local query commands
+  - `snapshot`
+  - `scores`
+  - `events`
+  - `replay`
+  - `audit`
+- `command`
+
+示例：
+
+```bash
+# Start the local authoritative backend in this worktree
+bun run openclaw:orchestrator
+
+# Inspect the real live gateway contract before guessing dispatch methods
+bun run openclaw:control -- probe
+
+# Move one contestant between rooms
+bun run openclaw:control -- move contestant-01 team-room-1
+
+# Send a short room cue to one contestant
+bun run openclaw:control -- say contestant-01 main-stage "用一句话介绍你的目标"
+
+# Dispatch directly to the local authoritative backend when OPENCLAW_ORCHESTRATOR_URL is set
+bun run openclaw:control -- stage activity-run-01 act-3-assignment
+
+# Dispatch a countdown command to the local backend or emit a gateway envelope preview
+bun run openclaw:control -- start-timer activity-run-01 act-3-assignment 180
+
+# Open a submission window on the local backend or emit a gateway envelope preview
+bun run openclaw:control -- open-submission activity-run-01 submission-01
+
+# Generate or dispatch a submission lock command
+bun run openclaw:control -- lock-submission activity-run-01 submission-01
+
+# Submit one structured AI judge score against a locked team-project submission
+bun run openclaw:control -- submit-score activity-run-01 submission-01 9 \
+  --reason "Strong systems thinking and crisp delivery" \
+  --favorite "Cohesive audience framing" \
+  --most-absurd "Treating crustacean drama as a product moat"
+
+# Grant an award on the local backend or emit a gateway envelope preview
+bun run openclaw:control -- grant-award activity-run-01 champion team-1 Champion "Best overall team"
+
+# Read the current authoritative projection from the local backend
+bun run openclaw:control -- snapshot activity-run-01
+
+# Read the current score projection and recent score-only events
+bun run openclaw:control -- scores activity-run-01 --after-sequence 6 --limit 10
+
+# Read recent events or replay from a known sequence
+bun run openclaw:control -- events activity-run-01 --after-sequence 6 --limit 10
+bun run openclaw:control -- replay activity-run-01 --from-sequence 7 --limit 10
+
+# Read recent audit records from the local backend
+bun run openclaw:control -- audit activity-run-01 --limit 20
+
+# Send an arbitrary command envelope when the backend contract is known
+bun run openclaw:control -- command activity-run-01 transition_stage '{"targetStageId":"act-4-discussion"}'
+```
+
+## Authority Boundary
+
+这里的分工现在是明确的：
+
+- `docs/*` 定义正式平台和活动 requirements
+- `public/*.md` 帮助选手和操作者参与，但不是流程真相
+- `molt-claw` 现在包含两类实现：
+  - renderer/client：连接 websocket、消费 snapshot / event、渲染 show/control
+  - local backend：按 docs 维护 `ActivityRun` / stage / timer / submission lock / score / award 的最小权威投影，并接受 orchestration commands
+- `molt-claw` 里的 backend 也不能脱离 `docs/*` 自己发明规则；权威语义仍以 docs 为准
+- `molt-claw` 仍没有把 room chat、presence、audience voting 全部做成权威平台能力
+
+## Known Gaps
+
+当前还没完全闭环的点：
+
+- 当前 live stock gateway 虽然已经广告了大量标准 RPC，但仍没有 `stage.changed` / `timer.*` / `submission.*` / `judge.*` / `award.granted` 或已验证的 The Fool dispatch method
+- worktree 内现在已经有一个最小 local authoritative backend，但它还只是单进程实现，尚未接进本机 stock `openclaw-gateway.service`
+- 当前 token-only websocket operator session 仍会被 `status` scope 拒绝；导演台主要依赖 hello snapshot / health recent sessions，而完整 live status 目前只在 paired CLI operator 路径上可读
+- 当前 local backend 还没有补齐：
+  - score completion rule / `scores_completed` auto-transition
+  - vote / bet / audience heat / world/presence/message 等更完整的平台服务
+  - 自动由 score 推导 award 与更细粒度的权限模型
+  - 多活动实例 / 多活动运行并发
+- 当前 renderer 虽然已经能消费这些后端信号，但控制台 UI 还没有做“命令结果回执 / 错误回显 / 本地 backend health”完整操作闭环
 
 ## Structure
 
@@ -53,6 +370,7 @@ bun run openclaw:control -- move contestant-01 main-stage
 - `src/openclaw/control.ts`: room aliases and gateway call arg builders
 - `src/openclaw/gateway/*`: lightweight gateway client and connection reducer
 - `scripts/openclaw-control.ts`: operator-facing wrapper around the OpenClaw CLI
+- `scripts/openclaw-orchestrator.ts`: local authoritative orchestrator backend with snapshot/event/command endpoints
 - `public/skill.md`: contestant agent onboarding
 - `public/heartbeat.md`: periodic contestant check-in routine
 - `public/task.md`: lightweight event brief
@@ -66,3 +384,9 @@ bun run openclaw:control -- move contestant-01 main-stage
 - `/` redirects to `/show`
 - `dist/` is generated output and should not be kept in the worktree
 - Opening `/` redirects to `/show`
+- `openclaw:control` now supports both room-level commands (`move`, `say`) and orchestration envelopes (`stage`, `start-timer`, `open-submission`, `lock-submission`, `submit-score`, `grant-award`, `command`)
+- `openclaw:control` 现在也支持本地 authoritative backend 的 typed/query commands：`open-submission` / `submit-score` / `grant-award` / `snapshot` / `scores` / `events` / `replay` / `audit`
+- If `OPENCLAW_ORCHESTRATOR_URL` is configured, orchestration commands dispatch directly to the local backend instead of waiting for a live gateway dispatch method
+- `OpenClawGatewayClient` now uses the same live-verified websocket connect identity as the gateway hello probe: `gateway-client` / `ui` / `operator.read`
+- If `OPENCLAW_COMMAND_METHOD` is not configured, orchestration commands print the generated `CommandEnvelope` JSON instead of pretending to dispatch it
+- If `OPENCLAW_COMMAND_METHOD` is configured but not advertised by live gateway hello, orchestration commands fail fast and report the contract blocker

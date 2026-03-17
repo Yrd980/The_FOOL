@@ -98,6 +98,12 @@ Phaser、Godot、Unity 都落在这一层。
 
 这是整个平台最重要的边界。
 
+首版最小实现可以先把 Orchestrator、Submission、Realtime Gateway 放在同一进程里，但仍必须满足：
+
+- `ActivityRun` / current stage / timer / submission lock / award 这些投影由后端持有
+- renderer/client 只能消费 snapshot / event，不能自己成为流程真相源
+- 阶段切换、计时与锁定必须对应真实命令与真实事件
+
 ### 3.4 Rules/Effects Engine
 
 职责：
@@ -183,11 +189,14 @@ Phaser、Godot、Unity 都落在这一层。
 
 - `activity_run_view`
 - `stage_view`
+- `timer_view`
 - `world_view`
 - `presence_view`
 - `team_view`
 - `submission_view`
+- `submission_lock_view`
 - `scoring_view`
+- `award_view`
 - `skill_binding_view`
 
 ## 5. 命令执行流
@@ -211,11 +220,14 @@ Phaser、Godot、Unity 都落在这一层。
 - `submit`
 - `vote`
 - `score`
+- `submit_score`
 - `query`
 - `bind_skill`
 - `transition_stage`
 - `start_timer`
+- `open_submission`
 - `lock_submission`
+- `grant_award`
 
 ### 5.2 统一命令包
 
@@ -232,6 +244,29 @@ export interface CommandEnvelope<TPayload = Record<string, unknown>> {
 }
 ```
 
+### 5.3 Command Result / Error
+
+```ts
+export interface CommandReceipt {
+  status: "accepted" | "replayed";
+  commandId: string;
+  requestCommandId: string;
+  commandType: string;
+  activityRunId?: string;
+  issuedAt: number;
+  handledAt: number;
+  eventIds: string[];
+  emittedSequences: number[];
+  replayed: boolean;
+  replayedFromIdempotency?: string;
+}
+
+export interface CommandError {
+  code: string;
+  message: string;
+}
+```
+
 ## 6. 事件流设计
 
 ### 6.1 统一事件包
@@ -244,6 +279,10 @@ export interface EventEnvelope<TPayload = Record<string, unknown>> {
   activityRunId?: string;
   entityId?: string;
   roomId?: string;
+  commandId?: string;
+  idempotencyKey?: string;
+  actorId?: string;
+  actorRole?: "agent" | "host" | "judge" | "viewer" | "admin";
   timestamp: number;
   payload: TPayload;
 }
@@ -280,6 +319,7 @@ export interface EventEnvelope<TPayload = Record<string, unknown>> {
 - 可重放
 - 可按活动过滤
 - 可按房间或实体过滤
+- command-caused event 必须可追到 `commandId` / `idempotencyKey` / `actorId` / `actorRole`
 
 ## 7. 同步协议
 
@@ -304,6 +344,27 @@ export interface SnapshotEnvelope {
   timers: Array<{ id: string; stageId?: string; remainingMs: number; state: string }>;
   skills: Array<{ role: string; stageId?: string; docId: string; version: string }>;
   submissions: Array<{ id: string; schemaId: string; locked: boolean }>;
+  scores: Array<{
+    id: string;
+    stageId: string;
+    judgeId: string;
+    judgeRole: "judge" | "admin";
+    submissionId: string;
+    teamId?: string;
+    score: number;
+    reason: string;
+    favorite: string;
+    mostAbsurd: string;
+    submittedAt: number;
+  }>;
+  scoreSummary: Array<{
+    targetType: "team" | "submission";
+    targetId: string;
+    judgeCount: number;
+    totalScore: number;
+    averageScore: number;
+    lastSubmittedAt: number;
+  }>;
   lastSequence: number;
 }
 ```
@@ -319,6 +380,51 @@ export interface SnapshotEnvelope {
 - 按活动运行回放
 - 按时间范围回放
 - 从 sequence 回放
+
+当前 worktree 内的最小 query contract 也可以先直接落成：
+
+- `afterSequence`
+- `fromSequence`
+- `toSequence`
+- `limit`
+
+并统一返回：
+
+- `activityRunId`
+- `fromSequence`
+- `toSequence`
+- `lastSequence`
+- `hasMore`
+- `events`
+
+若当前活动已经启用结构化评分，还可以在同一套 sequence query 参数之上额外暴露：
+
+- 一个 `scores` query，用于同时读取当前 score projection / score summary
+- 最近 N 条 `judge.score_submitted` 事件
+- 从 `afterSequence` / `fromSequence` 开始的 score 增量窗口
+
+### 7.4 当前 molt-claw worktree 的最小实现轮廓
+
+当前 `molt-claw` worktree 内的首版 backend，可以先采用“单进程 orchestrator + realtime gateway + query API”合并实现，只要语义边界不塌陷。
+
+首版最小实现至少应做到：
+
+- 通过同一份权威投影对外提供 snapshot 与 command result
+- command result / error 统一返回稳定 contract
+- 对外广播 `stage.changed` / `timer.*` / `submission.*` / `judge.score_submitted`
+- 用事件日志重建当前 `ActivityRun` / timer / submission lock / score / award 投影
+- 允许 renderer/client 只消费协议，不直接改写活动状态
+
+在当前 worktree 内，首版查询/控制接口可以直接暴露为：
+
+- 一个 websocket 入口，用于 `connect`、snapshot 与 delta event
+- 一个 command endpoint，用于接收统一 `CommandEnvelope`
+- 一个 snapshot endpoint，用于读取当前权威投影
+- 一个 events/replay endpoint，用于读取最近事件与从 sequence 开始的增量
+- 一个 scores endpoint，用于读取 score projection 与 score event 增量窗口
+- 一个 audit endpoint，用于读取最小 command audit record
+
+这只是当前 worktree 的实现轮廓，不意味着未来正式平台必须绑定这些具体路径或部署形态。
 
 ## 8. Skill 绑定与发放
 
@@ -397,6 +503,18 @@ export interface Timer {
 }
 ```
 
+首版最小实现中，`Timer` 至少要支持以下状态跃迁：
+
+- `timer.started`
+- `timer.paused`
+- `timer.ended`
+
+并且：
+
+- `transition_stage` 可以在需要时触发正在运行 timer 的 `timer.paused`
+- `start_timer` 触发新的 `timer.started`
+- timer 自然到点时触发 `timer.ended`
+
 ## 10. 提交与评分设计
 
 ### 10.1 Submission Schema
@@ -423,6 +541,47 @@ Submission Schema 应与 Stage 绑定，但由平台统一解释。
 - 奖项推导规则
 
 共同完成。
+
+在当前 worktree 的最小 authoritative scoring cut 里，可以先采用：
+
+- 语义动作仍记作 `score`
+- authoritative command 落成 `submit_score`
+- 当前仅对 `act-7-ai-judging` 开放
+- `judge` 提交，`admin` 可 override
+- 评分目标先绑定到 locked team-project submission
+- 重复评分首版直接 reject，而不是 update
+
+最小 score payload 可以先稳定为：
+
+```ts
+export interface SubmitScorePayload {
+  submissionId: string;
+  score: number; // 1..10
+  reason: string;
+  favorite: string;
+  mostAbsurd: string;
+}
+```
+
+对应的领域事件可以先稳定为：
+
+```ts
+export interface JudgeScoreSubmittedPayload {
+  stageId: "act-7-ai-judging";
+  judgeScore: {
+    id: string;
+    submissionId: string;
+    teamId?: string;
+    judgeId: string;
+    judgeRole: "judge" | "admin";
+    score: number;
+    reason: string;
+    favorite: string;
+    mostAbsurd: string;
+    submittedAt: number;
+  };
+}
+```
 
 ## 11. 渲染器适配契约
 
@@ -486,6 +645,13 @@ export interface UiHint {
 - 阶段何时切换
 - 哪些提交何时锁定
 - 最终结果如何得出
+
+最小 audit record 至少应可回答：
+
+- 谁发了哪条 command
+- command 是否 accepted / replayed / rejected / conflict
+- 产生了哪些 event ids / sequences
+- rejection 对应什么 `code + message`
 
 ## 13. 推荐实现顺序
 

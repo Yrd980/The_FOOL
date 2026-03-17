@@ -71,8 +71,83 @@ Phaser Web、Godot、Unity 都只是 renderer adapter。
 - [The Fool v1 活动 requirements](./activities/the-fool-v1/requirements.md)
 - [The Fool v1 最小模板示例](./activities/the-fool-v1/template-example.md)
 
+## 当前最小闭环
+
+截至本轮，`molt-claw` worktree 内已经按这些 docs 落了一个最小 authoritative backend。
+
+这个最小闭环当前至少覆盖：
+
+- `ActivityRun`
+- current stage
+- timer state
+- submission lifecycle
+- score state / score summary
+- award state
+- command receipt / error / idempotency 语义
+- replay / audit 最小 query contract
+- `transition_stage`
+- `start_timer`
+- `open_submission`
+- `lock_submission`
+- `submit_score`
+- `grant_award`
+- `activityRun` snapshot
+- `GET /api/orchestrator/scores`
+- `GET /api/orchestrator/events`
+- `GET /api/orchestrator/replay`
+- `GET /api/orchestrator/audit`
+- `submission.opened`
+- `stage.changed`
+- `timer.started`
+- `timer.paused`
+- `timer.ended`
+- `submission.updated`
+- `submission.locked`
+- `judge.score_submitted`
+- `award.granted`
+
+当前 local backend support matrix 可以先理解成：
+
+- command
+  - `transition_stage`
+  - `start_timer`
+  - `open_submission`
+  - `lock_submission`
+  - `submit_score`
+  - `grant_award`
+- query
+  - current snapshot
+  - current score projection / score summary
+  - recent events
+  - recent score events
+  - `afterSequence` / `fromSequence` / `toSequence` + `limit`
+  - replay from sequence
+  - recent audit records
+- receipt / error
+  - `receipt.status`
+  - `replayed`
+  - `replayedFromIdempotency`
+  - `eventIds`
+  - stable `code + message`
+
+这里的含义是：
+
+- `docs/*` 继续定义正式 contract
+- `molt-claw` 内的 backend 只是当前 contract 的一个 worktree 内实现
+- 后续如果接入真正的 gateway/plugin/service，也应继续服从这些 docs，而不是反过来让实现覆盖 requirements
+
 ## 与现有项目的关系
 
 - `main/README.md` 更适合作为某个观察者客户端或示例前端的说明。
 - `molt-claw/public/task.md`、`molt-claw/asset/task.md` 更适合作为 The Fool 活动草案素材。
+- `molt-claw/README.md` 描述当前 renderer / director console 与 worktree 内 local authoritative backend 的实现现状，包括它如何消费和产生权威 stage、timer、submission、score 与 command envelope。
+- `molt-claw/scripts/openclaw-orchestrator.ts` 是当前 worktree 内最小 authoritative backend 的落点。
+  - 它必须服从 `docs/*`，而不是把自己变成新的 requirements 来源。
+- `molt-claw/README.md` 还会额外记录“本机 live gateway 已验证到什么”。
+  - 也就是说：`docs/*` 里写的是目标平台 contract。
+  - `molt-claw/README.md` 里写的是当前这个 worktree 在本机真实跑通了多少，以及 live gateway 还卡在哪些 backend / scope blocker 上。
+  - 刷新这些“本机真实事实”时，优先运行 `bun run openclaw:control -- probe`。
+  - 它会直接打印 live hello methods/events、snapshot keys、token-only websocket `status` blocker，以及 paired CLI 读到的 `status / tools.catalog / config / plugins` provenance 摘要。
+  - 如果 probe 结果里仍没有 `stage.*` / `timer.*` / `submission.*` / `judge.*` / `award.*` 或真实 dispatch method，而且 paired CLI/runtime provenance 也只剩 stock gateway + 已知 plugin，就把 blocker 归因到缺失的后端服务 / 插件 / 安装步骤，而不是在 renderer 里猜 contract。
+  - 本机虽然存在历史原型仓库 `/home/yrd/documents/git_clone_code/etc/XTION_TheFool0`，但它是 docs 派生实现，不作为当前 authoritative backend / live contract 的依据。
 - 正式的平台能力与活动规则，以这里的 requirements 为准。

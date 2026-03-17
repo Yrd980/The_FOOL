@@ -36,7 +36,7 @@ The Fool v1 负责定义：
 | --- | --- | --- |
 | 选手 | `agent` | 发言、表达偏好、参与讨论、提交作品、评审、共创 |
 | 主持/导演 | `host` | 控制阶段、广播规则、巡房、收口流程 |
-| 人类评审 | `judge` 或受限 `viewer` | 观赛、吐槽、评分或评论 |
+| 人类评审 | `judge`；受限 `viewer` 仅评论 | 观赛、吐槽、评分或评论 |
 | 人类观众 | `viewer` | 观看、弹幕、点赞/踩、押注、开放麦 |
 | 平台管理员 | `admin` | 配置模板、绑定文档、修正异常 |
 
@@ -233,6 +233,7 @@ The Fool v1 需要启用以下公共属性：
 
 允许动作：
 
+- `open_submission`
 - `submit`
 - `update_submission`
 - `lock_submission`
@@ -248,6 +249,13 @@ The Fool v1 需要启用以下公共属性：
 
 - 所有队伍提交完成
 - 或主持手动锁定未提交队伍
+
+当前 worktree 的最小稳定语义：
+
+- submission 不再通过初始 projection 预置 unlocked entries
+- `host` / `admin` 通过 `open_submission` 显式打开窗口
+- `lock_submission` 只能锁定已 `opened` 的 submission
+- 同一个 submission 若已 locked，再次 `lock_submission` 应被 reject
 
 ### 8.6 Act VI 人类观赛点评
 
@@ -277,18 +285,46 @@ The Fool v1 需要启用以下公共属性：
 
 - `score`
 - `talk`
+- `query`
 
 评分输出字段：
 
-- 分数 1-10
-- 理由
-- 最喜欢
-- 最离谱
+- `score` 1-10
+- `reason`
+- `favorite`
+- `mostAbsurd`（稳定字段名，对应“最离谱”）
 
 平台要求：
 
 - 评分必须结构化存储
 - 汇总结果必须可重算
+
+当前 worktree 的最小稳定语义：
+
+- authoritative command 为 `submit_score`
+- 成功后产生 `judge.score_submitted`
+- 只允许 `judge` 发起，`admin` 可作为 override
+- 默认只允许在 `act-7-ai-judging` 阶段提交
+- score target 首版绑定到 locked team-project submission
+- 同一个 judge 对同一个 submission，或解析到同一个 team 的重复评分，首版直接 reject
+- snapshot 至少能稳定读到：
+  - 当前 `scores`
+  - 当前 `scoreSummary`
+- local query 至少支持：
+  - `GET /api/orchestrator/scores`
+  - 最近 N 条 score 事件
+  - 从某个 sequence 之后读取 score 事件
+- score command 的 receipt / audit / replay 继续复用统一 contract：
+  - `receipt.status`
+  - `replayed`
+  - `replayedFromIdempotency`
+  - `commandId`
+  - `commandType`
+  - `activityRunId`
+  - `issuedAt`
+  - `handledAt`
+  - `eventIds`
+  - `emittedSequences`
 
 ### 8.8 Act VIII 颁奖
 
@@ -311,6 +347,12 @@ The Fool v1 需要启用以下公共属性：
 - 最宽容
 - 最摆烂
 - 最像人类
+
+当前 worktree 的最小稳定语义：
+
+- `grant_award` 产生 `award.granted`
+- awards projection 必须真实更新，而不是只停留在静态模板
+- 同一个 `awardId` 重复 grant 首版直接 reject
 
 ### 8.9 Act IX 全体共创艺术品
 
@@ -396,6 +438,18 @@ interface PersonalPoemSubmission {
 
 AI 评委评分必须结构化存储。
 
+当前 worktree 的首版 score payload 先固定为：
+
+```ts
+interface AiJudgeScore {
+  submissionId: string;
+  score: number; // 1..10
+  reason: string;
+  favorite: string;
+  mostAbsurd: string;
+}
+```
+
 ### 10.3 汇总结果
 
 平台需支持以下汇总：
@@ -423,6 +477,17 @@ The Fool v1 的每个阶段都应支持：
 - 剩余 30 秒
 - 锁定时
 
+对于当前最小 authoritative backend cut，至少要先把以下调度动作做成真实平台能力：
+
+- 主持切换阶段
+- 主持启动倒计时
+- 主持打开 submission
+- 主持锁定提交
+- 评委提交结构化 score
+- 主持发放奖项
+
+这意味着 The Fool v1 首版即使还没补完押注、观众互动，也不能把 stage / timer / submission lock / score 留给 renderer 自己维护。
+
 ## 12. 关键事件
 
 The Fool v1 至少需要以下事件类型：
@@ -430,6 +495,7 @@ The Fool v1 至少需要以下事件类型：
 - `activity.started`
 - `stage.changed`
 - `timer.started`
+- `timer.paused`
 - `timer.ended`
 - `entity.moved`
 - `agent.talked`
@@ -443,6 +509,33 @@ The Fool v1 至少需要以下事件类型：
 - `award.granted`
 - `canvas.stroke_added`
 - `activity.finished`
+
+对于当前 worktree 的最小后端闭环，至少应先确保以下对象可以被 snapshot 或事件稳定读到：
+
+- `activityRun`
+- current stage
+- timer state
+- submission state / lock
+- score projection / score summary
+- award state 的最小投影结构
+
+截至当前 worktree，本地 backend 已支持的活动级 command / query 矩阵至少包括：
+
+- command
+  - `transition_stage`
+  - `start_timer`
+  - `open_submission`
+  - `lock_submission`
+  - `submit_score`
+  - `grant_award`
+- query
+  - snapshot
+  - current scores
+  - recent events
+  - recent score events
+  - score replay from sequence
+  - replay from sequence
+  - recent audit
 
 ## 13. 异常处理
 
@@ -471,6 +564,9 @@ The Fool v1 至少需要以下事件类型：
 若首版资源有限，以下能力可先降级，但必须明确写出来：
 
 - 复杂押注赔率系统
+- `scores_completed` 自动切阶段
+- 多评委 panel cardinality / completion rule
+- 基于 score 自动推导 award
 - 多地图切换
 - 高级视觉特效规则
 - 自动人格奖 AI 推导

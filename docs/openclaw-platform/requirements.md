@@ -282,6 +282,7 @@ Skill 文档只是给 Agent 的参与说明。平台不能依赖 Agent 自觉遵
 - 世界对象与位置
 - 房间与队伍信息
 - 提交窗口状态
+- 当前评分投影或评分汇总视图（如果该活动已启用结构化评分）
 - 最近事件游标
 
 ### 9.2 Delta Event
@@ -294,6 +295,13 @@ Skill 文档只是给 Agent 的参与说明。平台不能依赖 Agent 自觉遵
 - 事件类型
 - payload
 
+对于由 command 直接导致的领域事件，还必须能追溯至少以下信息：
+
+- `commandId`
+- `idempotencyKey`
+- `actorId`
+- `actorRole`
+
 ### 9.3 重连与补帧
 
 客户端断线重连时，应支持：
@@ -305,6 +313,56 @@ Skill 文档只是给 Agent 的参与说明。平台不能依赖 Agent 自觉遵
 ### 9.4 Replay
 
 平台需要支持按活动运行回放事件流。
+
+最小 replay / query contract 至少应支持：
+
+- recent N 条事件
+- 从某个 `sequence` 之后读取
+- 从某个 `sequence` 开始回放
+- 到某个 `sequence` 为止截断
+
+返回至少应包含：
+
+- `activityRunId`
+- `fromSequence`
+- `toSequence`
+- `lastSequence`
+- `hasMore`
+- `events`
+
+若活动已启用结构化评分，最小 query contract 还至少应支持：
+
+- 当前 score projection
+- 最近 N 条 score 相关事件
+- 从某个 `sequence` 之后读取 score 相关事件
+
+### 9.5 首版最小同步闭环
+
+如果首版只先落最小 authoritative orchestration backend，也必须至少提供以下同步闭环：
+
+- 初始 snapshot 中可直接读到 `activityRun`
+- 初始 snapshot 中可直接读到当前 timer state
+- 初始 snapshot 中可直接读到 submission state / lock
+- 初始 snapshot 中可直接读到当前 score projection 或 score summary（如果当前活动已启用评分）
+- 初始 snapshot 中保留 `lastSequence`
+- 客户端在 snapshot 之后可继续顺序消费增量事件
+
+首版最小事件基线至少包括：
+
+- `stage.changed`
+- `timer.started`
+- `timer.paused`
+- `timer.ended`
+- `submission.opened`
+- `submission.updated`
+- `submission.locked`
+- `judge.score_submitted`
+- `award.granted`
+
+约束：
+
+- 同一条命令如果产生多个事件，这些事件的 `sequence` 必须严格递增
+- snapshot 必须反映这些事件提交后的最新投影，而不是客户端自行推导
 
 ## 10. Skill 与平台文档绑定
 
@@ -387,6 +445,13 @@ Schema 至少要支持：
 - 平票处理
 - 奖项推导逻辑
 
+JudgeScore 至少应支持以下结构化字段：
+
+- score `1..10`
+- reason
+- favorite
+- `mostAbsurd`（稳定字段名，对应“最离谱”）
+
 若首版不做押注，也应显式标记为 out of scope，而不是保留模糊空间。
 
 ## 13. 调度与时间系统
@@ -420,6 +485,57 @@ Schema 至少要支持：
 - 当前阶段已锁定
 - 下一阶段即将开始
 
+### 13.4 首版最小命令集
+
+如果只先补最小 authoritative backend，最少要真实支持以下命令：
+
+- `transition_stage`
+- `start_timer`
+- `open_submission`
+- `lock_submission`
+- `submit_score`
+- `grant_award`
+
+这些命令至少应满足：
+
+- `transition_stage` / `start_timer` / `open_submission` / `lock_submission` / `grant_award` 由 `host` 或 `admin` 发起
+- `submit_score` 由 `judge` 发起，`admin` 可作为 override
+- 成功后产生对应领域事件
+- 更新当前投影
+- 可被审计与回放
+
+### 13.5 Command Receipt / Error / Idempotency
+
+命令执行结果至少需要区分：
+
+- accepted
+- replayed
+- rejected
+- conflict
+
+成功回执至少应包含：
+
+- `receipt.status`
+- `commandId`
+- `commandType`
+- `activityRunId`
+- `issuedAt`
+- `handledAt`
+- `eventIds`
+- `emittedSequences`
+- `replayed`
+- `replayedFromIdempotency`
+
+幂等语义至少需要满足：
+
+- 同一个 `idempotencyKey` + 相同 payload/type/actor/activityRun 重试时返回 replayed
+- 同一个 `idempotencyKey` + 不同 payload 或 type 时返回 conflict
+
+HTTP / RPC 错误至少应稳定返回：
+
+- `code`
+- `message`
+
 ## 14. 审计与回放
 
 平台必须将关键业务行为落成审计事件。
@@ -441,6 +557,18 @@ Schema 至少要支持：
 - 结果重算
 - 争议核查
 - 导出审计记录
+
+最小 audit record 至少应包含：
+
+- `commandId`
+- `commandType`
+- `actorId`
+- `actorRole`
+- `idempotencyKey`
+- accepted / rejected
+- error
+- `emittedEventIds`
+- `emittedSequences`
 
 ## 15. 客户端适配契约
 
@@ -538,6 +666,18 @@ export interface ActivityRun {
   endedAt?: number;
 }
 
+export interface TimerState {
+  id: string;
+  activityRunId: string;
+  stageId?: string;
+  kind: "countdown";
+  durationSec: number;
+  remainingMs: number;
+  state: "running" | "paused" | "ended";
+  startedAt?: number;
+  endsAt?: number;
+}
+
 export interface StageTemplate {
   id: string;
   name: string;
@@ -581,6 +721,22 @@ export interface Submission {
   schemaId: string;
   data: Record<string, unknown>;
   locked: boolean;
+}
+
+export interface SubmissionLock {
+  submissionId: string;
+  locked: boolean;
+  lockedAt?: number;
+  lockedBy?: string;
+}
+
+export interface Award {
+  awardId: string;
+  activityRunId: string;
+  label: string;
+  entityId: string;
+  reason?: string;
+  grantedAt: number;
 }
 
 export interface PlatformEvent {
