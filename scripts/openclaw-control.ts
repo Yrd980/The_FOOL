@@ -19,8 +19,8 @@ const USAGE = `Usage:
   bun run openclaw:control -- say <agent-id> <room> <message>
 
 Rooms:
-  main | lobby-plaza | print-shop | clinic | convenience | quiet-zone
-  team-room-1 | team-room-2 | team-room-3 | main-stage | quiet-orbit`;
+  main | team1 | team2 | team3 | quiet
+  main-stage | team-room-1 | team-room-2 | team-room-3 | quiet-orbit`;
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const devRoot = path.resolve(scriptDir, "..");

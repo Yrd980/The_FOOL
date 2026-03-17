@@ -1,26 +1,17 @@
 import { useState } from "react";
 import type {
-  GatewayContestantSummary,
   GatewayOverview,
   StageDefinition,
   StageRuntimeGuide,
   SummaryStat,
 } from "../types";
+import { buildFocusRooms, rankContestants } from "../presentation";
 
 interface StageWorkspaceProps {
   stage: StageDefinition;
   runtimeGuide: StageRuntimeGuide;
   summaryStats: SummaryStat[];
   gateway: GatewayOverview;
-}
-
-interface RankedContestant extends GatewayContestantSummary {
-  isInFocusRoom: boolean;
-  stageFitLabel: string;
-  stageFitTone: "critical" | "active" | "warm" | "idle";
-  attentionLabel: string;
-  attentionNote: string;
-  attentionTone: "critical" | "active" | "warm" | "idle";
 }
 
 const toneClasses = {
@@ -30,120 +21,8 @@ const toneClasses = {
   idle: "bg-slate-100 text-slate-500",
 };
 
-const statePriority = {
-  speaking: 3,
-  "raised-hand": 4,
-  listening: 2,
-  muted: 1,
-};
-
 const truncateCopy = (content: string, length: number): string =>
   content.length <= length ? content : `${content.slice(0, length - 3)}...`;
-
-const buildStageFit = (
-  contestant: GatewayContestantSummary,
-  focusRoomIds: Set<string>,
-): Pick<RankedContestant, "isInFocusRoom" | "stageFitLabel" | "stageFitTone"> => {
-  if (focusRoomIds.has(contestant.roomId)) {
-    return {
-      isInFocusRoom: true,
-      stageFitLabel: "On Script",
-      stageFitTone: "warm",
-    };
-  }
-
-  if (contestant.roomId === "quiet-orbit") {
-    return {
-      isInFocusRoom: false,
-      stageFitLabel: "Holding",
-      stageFitTone: "idle",
-    };
-  }
-
-  return {
-    isInFocusRoom: false,
-    stageFitLabel: "Side Room",
-    stageFitTone: "active",
-  };
-};
-
-const buildAttention = (
-  contestant: GatewayContestantSummary,
-  isInFocusRoom: boolean,
-  primaryFocusRoomLabel: string | null,
-): Pick<RankedContestant, "attentionLabel" | "attentionNote" | "attentionTone"> => {
-  if (contestant.state === "raised-hand" && isInFocusRoom) {
-    return {
-      attentionLabel: "Give Next Turn",
-      attentionNote: "选手已经在当前 act 的焦点房间里举手，适合优先给麦或点名回应。",
-      attentionTone: "active",
-    };
-  }
-
-  if (contestant.state === "raised-hand") {
-    return {
-      attentionLabel: `Pull To ${primaryFocusRoomLabel ?? "Focus Room"}`,
-      attentionNote: "选手正在请求注意力，但人还不在当前 act 的焦点房间里，适合被拉回现场。",
-      attentionTone: "active",
-    };
-  }
-
-  if (contestant.state === "speaking" && isInFocusRoom) {
-    return {
-      attentionLabel: "Keep Live",
-      attentionNote: "选手已经在正确的房间里发声，适合继续保留镜头或顺手截取高光。",
-      attentionTone: "critical",
-    };
-  }
-
-  if (contestant.state === "speaking") {
-    return {
-      attentionLabel: "Monitor Side Signal",
-      attentionNote: "选手正在侧房间输出内容，可能值得巡房，也可能需要被拉回主舞台。",
-      attentionTone: "warm",
-    };
-  }
-
-  if (contestant.state === "muted" && isInFocusRoom) {
-    return {
-      attentionLabel: "Ping Heartbeat",
-      attentionNote: "选手已经在焦点房间落位，但长时间没反应，适合发 heartbeat 或轻推一把。",
-      attentionTone: "idle",
-    };
-  }
-
-  if (isInFocusRoom) {
-    return {
-      attentionLabel: "Watch Reactions",
-      attentionNote: "选手在正确房间里保持倾听状态，暂时不必介入，但值得继续观察。",
-      attentionTone: "warm",
-    };
-  }
-
-  return {
-    attentionLabel: "Let Team Cook",
-    attentionNote: "选手目前不在焦点房间，且没有强烈信号，适合暂时放在侧线继续推进。",
-    attentionTone: "idle",
-  };
-};
-
-const sortContestants = (left: RankedContestant, right: RankedContestant): number => {
-  if (left.isInFocusRoom !== right.isInFocusRoom) {
-    return Number(right.isInFocusRoom) - Number(left.isInFocusRoom);
-  }
-
-  if (left.state !== right.state) {
-    return statePriority[right.state] - statePriority[left.state];
-  }
-
-  if (left.activityCount !== right.activityCount) {
-    return right.activityCount - left.activityCount;
-  }
-
-  const rightSignal = Math.max(right.updatedAt, right.recentActivity?.timestamp ?? 0);
-  const leftSignal = Math.max(left.updatedAt, left.recentActivity?.timestamp ?? 0);
-  return rightSignal - leftSignal;
-};
 
 export function StageWorkspace({
   stage,
@@ -151,26 +30,8 @@ export function StageWorkspace({
   summaryStats,
   gateway,
 }: StageWorkspaceProps) {
-  const focusRooms = runtimeGuide.preferredRoomIds.map((roomId) => {
-    const roomCount = gateway.roomCounts.find((room) => room.roomId === roomId);
-    return {
-      roomId,
-      label: roomCount?.label ?? roomId,
-      count: roomCount?.count ?? 0,
-    };
-  });
-  const focusRoomIds = new Set(runtimeGuide.preferredRoomIds);
-  const primaryFocusRoomLabel = focusRooms[0]?.label ?? null;
-  const contestants = gateway.contestants
-    .map((contestant) => {
-      const stageFit = buildStageFit(contestant, focusRoomIds);
-      return {
-        ...contestant,
-        ...stageFit,
-        ...buildAttention(contestant, stageFit.isInFocusRoom, primaryFocusRoomLabel),
-      };
-    })
-    .sort(sortContestants);
+  const focusRooms = buildFocusRooms(runtimeGuide, gateway);
+  const contestants = rankContestants(gateway, runtimeGuide);
   const focusedContestantCount = contestants.filter((contestant) => contestant.isInFocusRoom).length;
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(
     contestants[0]?.agentId ?? null,
@@ -184,15 +45,14 @@ export function StageWorkspace({
       <div className="overflow-hidden rounded-[1.8rem] border border-slate-900 bg-slate-950 text-white shadow-[0_24px_60px_rgba(15,23,42,0.22)]">
         <div className="border-b border-white/8 px-5 py-4 sm:px-6">
           <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-slate-400">
-            Product Summary
+            Control Room
           </p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
             愚人节首届非人类黑客松
           </h2>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300">
-            这是一个真正要运行的产品：左边是幕结构，中央是当前舞台工作台，右边是
-            OpenClaw 选手接入与操作者入口。Moltbook 只影响 agent onboarding
-            方式，不接管整个产品视觉。
+            这块区域负责把节目真的跑起来。左边切幕，中央看当前场面，右边处理
+            OpenClaw 连线、入场文档和调度指令。
           </p>
         </div>
 
@@ -215,7 +75,7 @@ export function StageWorkspace({
             {stage.label}
           </span>
           <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 font-mono text-[0.72rem] uppercase tracking-[0.22em] text-slate-600">
-            Active Workspace
+            Live Operator View
           </span>
         </div>
 
@@ -271,7 +131,7 @@ export function StageWorkspace({
           <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-center justify-between gap-3">
               <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
-                Contestant State Pulse
+                Contestant Signal Pulse
               </p>
               <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
                 live
@@ -389,10 +249,10 @@ export function StageWorkspace({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
-                  Contestant Roster
+                  Director Roster
                 </p>
                 <p className="mt-2 text-sm leading-7 text-slate-600">
-                  这里不再只是原始 session 卡片，而是把选手按当前 act 的焦点房间、活跃度和最新发言重新排序。
+                  不再只是罗列 session，而是按当前 act 的镜头优先级、活跃度和最新台词重新排导演视野。
                 </p>
               </div>
               <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
@@ -478,7 +338,7 @@ export function StageWorkspace({
                       {selectedContestant.agentId}
                     </h4>
                     <p className="mt-2 text-sm leading-7 text-slate-600">
-                      围绕当前 act 的选手详情视图。先看这个人是不是在正确房间、有没有最近发言、现在适不适合被操作者处理。
+                      围绕当前 act 的导演细看位。先确认他是不是站在正确机位、最近有没有说话、值不值得立刻处理。
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -641,7 +501,7 @@ export function StageWorkspace({
                 Live Room Feed
               </p>
               <p className="mt-2 text-sm leading-7 text-slate-600">
-                这里开始显示选手在 OpenClaw 会话里刚刚说了什么，帮助操作者判断哪一队正在推进、哪一幕已经真正开始。
+                这里直接滚动选手刚刚说出的内容，帮助导演判断哪一队真的在推进、哪一幕已经被点亮。
               </p>
             </div>
             <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">

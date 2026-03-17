@@ -6,31 +6,21 @@ const LOCAL_PROXY_PORTS = new Set(["4173", "5173"]);
 const ROOM_ALIASES: Record<string, string> = {
   main: "main-stage",
   "main-stage": "main-stage",
-  lobby: "main-stage",
-  "lobby-plaza": "main-stage",
-  plaza: "main-stage",
 
   "team-room-1": "team-room-1",
   "team-1": "team-room-1",
   team1: "team-room-1",
-  "print-shop": "team-room-1",
-  printshop: "team-room-1",
-  print: "team-room-1",
 
   "team-room-2": "team-room-2",
   "team-2": "team-room-2",
   team2: "team-room-2",
-  clinic: "team-room-2",
 
   "team-room-3": "team-room-3",
   "team-3": "team-room-3",
   team3: "team-room-3",
-  convenience: "team-room-3",
-  store: "team-room-3",
 
   "quiet-orbit": "quiet-orbit",
   quiet: "quiet-orbit",
-  "quiet-zone": "quiet-orbit",
 };
 
 export const DEFAULT_GATEWAY_ROOM_IDS = [

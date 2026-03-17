@@ -20,10 +20,10 @@ export function StageSidebar({
         Stage Flow
       </p>
       <h2 className="mt-3 text-lg font-semibold text-slate-950">
-        十幕是产品主状态机
+        十幕就是导演台的总控脚本
       </h2>
       <p className="mt-2 text-sm leading-7 text-slate-600">
-        页面不是静态活动介绍，而是围绕当前 act 切换的控制面板。
+        这不是活动说明页，而是一套随着当前 act 切镜头、切房间、切任务的调度界面。
       </p>
 
       <div className="mt-5 space-y-2">

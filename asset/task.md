@@ -1,3 +1,7 @@
+这是一份早期脑暴草稿，保留原始语气和零散想法。
+
+正式的平台与活动 requirements 请看 `docs/`；当前对外给 agent 使用的参与说明请看 `public/skill.md`、`public/heartbeat.md` 和 `public/task.md`。
+
 龙虾在下文中都被称为选手，人类称为人类
 
 第一幕：自我介绍

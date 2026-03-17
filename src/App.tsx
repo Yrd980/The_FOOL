@@ -1,55 +1,98 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ControlHeader } from "./components/ControlHeader";
-import { IntegrationRail } from "./components/IntegrationRail";
-import { ReviewBoard } from "./components/ReviewBoard";
-import { StageSidebar } from "./components/StageSidebar";
-import { StageWorkspace } from "./components/StageWorkspace";
-import { SurfaceGrid } from "./components/SurfaceGrid";
+import { ControlMode } from "./components/ControlMode";
+import { ShowMode } from "./components/ShowMode";
 import {
   integrationDocs,
-  integrationSteps,
   operatorCommands,
-  productSurfaces,
-  reviewLanes,
   stageRuntimeGuides,
   stages,
   summaryStats,
 } from "./data";
 import { useGatewayOverview } from "./openclaw/useGatewayOverview";
 
+type AppMode = "control" | "show";
+
+const getModeFromPath = (): AppMode => {
+  if (typeof window === "undefined") {
+    return "show";
+  }
+
+  return window.location.pathname.startsWith("/control") ? "control" : "show";
+};
+
 function App() {
+  const [mode, setMode] = useState<AppMode>(getModeFromPath);
   const [activeStageId, setActiveStageId] = useState(stages[0]?.id ?? "act-1");
   const activeStage = stages.find((stage) => stage.id === activeStageId) ?? stages[0];
   const gateway = useGatewayOverview();
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (window.location.pathname === "/") {
+      window.history.replaceState({}, "", "/show");
+    }
+
+    const handlePopState = () => {
+      setMode(getModeFromPath());
+    };
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
+
+  const handleModeChange = (nextMode: AppMode) => {
+    if (typeof window !== "undefined") {
+      const nextPath = nextMode === "control" ? "/control" : "/show";
+      if (window.location.pathname !== nextPath) {
+        window.history.pushState({}, "", nextPath);
+      }
+    }
+
+    setMode(nextMode);
+  };
+
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f8fb_0%,#eef1f6_100%)] text-slate-950">
-      <ControlHeader />
+    <div
+      className={`min-h-screen ${
+        mode === "show"
+          ? "bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_20%),radial-gradient(circle_at_top_right,rgba(236,72,153,0.16),transparent_18%),linear-gradient(180deg,#050816_0%,#0b1020_54%,#0f172a_100%)]"
+          : "bg-[linear-gradient(180deg,#f7f8fb_0%,#eef1f6_100%)] text-slate-950"
+      }`}
+    >
+      <ControlHeader
+        mode={mode}
+        onSelectMode={handleModeChange}
+        activeStage={activeStage}
+        gateway={gateway}
+      />
 
-      <main className="mx-auto flex w-full max-w-[1480px] flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <section className="grid gap-6 xl:grid-cols-[18rem,minmax(0,1fr),24rem]">
-          <StageSidebar
-            stages={stages}
-            activeStageId={activeStageId}
-            onSelectStage={setActiveStageId}
-          />
-          <StageWorkspace
-            stage={activeStage}
-            runtimeGuide={stageRuntimeGuides[activeStage.id]}
-            summaryStats={summaryStats}
-            gateway={gateway}
-          />
-          <IntegrationRail
-            docs={integrationDocs}
-            steps={integrationSteps}
-            commands={operatorCommands}
-            gateway={gateway}
-          />
-        </section>
-
-        <SurfaceGrid surfaces={productSurfaces} />
-        <ReviewBoard reviewLanes={reviewLanes} />
-      </main>
+      {mode === "show" ? (
+        <ShowMode
+          stage={activeStage}
+          stages={stages}
+          runtimeGuide={stageRuntimeGuides[activeStage.id]}
+          gateway={gateway}
+        />
+      ) : (
+        <ControlMode
+          stage={activeStage}
+          stages={stages}
+          activeStageId={activeStageId}
+          onSelectStage={setActiveStageId}
+          runtimeGuide={stageRuntimeGuides[activeStage.id]}
+          gateway={gateway}
+          summaryStats={summaryStats}
+          docs={integrationDocs}
+          commands={operatorCommands}
+        />
+      )}
     </div>
   );
 }
