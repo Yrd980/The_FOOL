@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "openclaw:control": "bun run ./scripts/openclaw-control.ts",
+    "openclaw:orchestrator": "bun run ./scripts/openclaw-orchestrator.ts",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
