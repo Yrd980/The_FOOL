@@ -22,6 +22,14 @@ export interface GatewayConfig {
   token: string;
 }
 
+export interface GatewayHelloPayload {
+  type?: string;
+  features?: {
+    methods?: string[];
+    events?: string[];
+  };
+}
+
 export interface GatewaySessionEntry {
   agentId: string;
   key: string;
@@ -55,6 +63,70 @@ export interface GatewayStatusResponse {
     recent: GatewaySessionEntry[];
     byAgent?: GatewayStatusByAgent[];
   };
+}
+
+export interface GatewayActivityRunSnapshot {
+  id: string;
+  templateId: string;
+  status: string;
+  currentStageId: string | null;
+}
+
+export interface GatewayWorldSnapshot {
+  rooms: Array<{ id: string; label?: string }>;
+  teams: Array<{ id: string; memberIds: string[]; roomId?: string }>;
+  entities: Array<{ id: string; kind: string; roomId?: string }>;
+}
+
+export interface GatewayTimerSnapshot {
+  id: string;
+  stageId?: string;
+  remainingMs: number;
+  state: string;
+}
+
+export interface GatewaySkillSnapshot {
+  role: string;
+  stageId?: string;
+  docId: string;
+  version: string;
+}
+
+export interface GatewaySubmissionSnapshot {
+  id: string;
+  schemaId: string;
+  locked: boolean;
+  stageId?: string;
+  teamId?: string;
+  updatedAt?: number;
+}
+
+export interface GatewaySnapshotEnvelope {
+  snapshotId?: string;
+  activityRun?: GatewayActivityRunSnapshot;
+  world?: GatewayWorldSnapshot;
+  timers?: GatewayTimerSnapshot[];
+  skills?: GatewaySkillSnapshot[];
+  submissions?: GatewaySubmissionSnapshot[];
+  awards?: Array<{
+    awardId?: string;
+    label?: string;
+    entityId?: string;
+    reason?: string;
+    grantedAt?: number;
+  }>;
+  lastSequence?: number;
+}
+
+export interface GatewayEventEnvelope<TPayload = Record<string, unknown>> {
+  id: string;
+  sequence?: number;
+  type: string;
+  activityRunId?: string;
+  entityId?: string;
+  roomId?: string;
+  timestamp: number;
+  payload: TPayload;
 }
 
 export type Unsubscribe = () => void;
