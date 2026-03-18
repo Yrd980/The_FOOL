@@ -11,6 +11,13 @@ import type {
   SummaryStat,
 } from "../types";
 
+const signalToneClasses = {
+  critical: "border-rose-400/20 bg-rose-500/10 text-rose-100",
+  active: "border-amber-300/20 bg-amber-500/10 text-amber-100",
+  warm: "border-emerald-300/20 bg-emerald-500/10 text-emerald-100",
+  idle: "border-white/10 bg-white/6 text-slate-200",
+};
+
 interface ControlModeProps {
   stage: StageDefinition;
   stages: StageDefinition[];
@@ -38,6 +45,7 @@ export function ControlMode({
 }: ControlModeProps) {
   const contestants = rankContestants(gateway, runtimeGuide);
   const leadContestant = contestants[0] ?? null;
+  const latestReceipt = gateway.auditSummary.latestRecord;
 
   return (
     <main className="mx-auto flex w-full max-w-[1480px] flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -113,6 +121,62 @@ export function ControlMode({
               <p className="mt-3 text-sm leading-7 text-rose-100/80">
                 {runtimeGuide.successSignal}
               </p>
+            </article>
+
+            <article className="rounded-[1.4rem] border border-white/10 bg-white/6 p-4">
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-400">
+                Operator Feedback
+              </p>
+              <div className="mt-3 grid gap-3">
+                <div
+                  className={`rounded-[1rem] border px-3 py-3 ${signalToneClasses[gateway.orchestratorQuery.tone]}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.16em]">
+                      Backend Availability
+                    </p>
+                    <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-white/80">
+                      {gateway.orchestratorQuery.statusLabel}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm leading-7">
+                    {gateway.orchestratorQuery.reason ??
+                      gateway.orchestratorQuery.freshnessLabel}
+                  </p>
+                </div>
+
+                <div
+                  className={`rounded-[1rem] border px-3 py-3 ${signalToneClasses[gateway.auditSummary.tone]}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.16em]">
+                      Latest Receipt
+                    </p>
+                    <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-white/80">
+                      {latestReceipt?.statusLabel ?? gateway.auditSummary.label}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm leading-7">
+                    {latestReceipt?.detail ?? gateway.auditSummary.detail}
+                  </p>
+                </div>
+
+                <div
+                  className={`rounded-[1rem] border px-3 py-3 ${signalToneClasses[gateway.backendHealth.tone]}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.16em]">
+                      Backend Health
+                    </p>
+                    <span className="rounded-full border border-white/10 bg-black/20 px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-white/80">
+                      {gateway.backendHealth.label}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm leading-7">
+                    {gateway.backendHealth.detail}
+                  </p>
+                </div>
+              </div>
             </article>
 
             <article className="rounded-[1.4rem] border border-white/10 bg-white/6 p-4">

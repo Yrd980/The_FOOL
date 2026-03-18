@@ -329,12 +329,15 @@ The Fool v1 需要启用以下公共属性：
 - snapshot 至少能稳定读到：
   - 当前 `scores`
   - 当前 `scoreSummary`
+  - `snapshot.health.ts`
+  - `snapshot.health.agents`
 - local query 至少支持：
   - `GET /api/orchestrator/scores`
   - 最近 N 条 score 事件
   - 从某个 sequence 之后读取 score 事件
 - 当前 worktree 的 backend contract 已经覆盖上述 score query，browser consumer 也已经把 authoritative `scores` / `scoreSummary`、recent audit 与 score-related provenance 接进 shared typed state
-- `world/team/skill` typed consumer state，以及更完整的 operator receipt / backend health 仍属于后续 integration gap
+- browser consumer 当前还会把 `snapshot.health`、audit 与 query `status/source/freshness/availability` 归并成最小 operator receipt / backend health evidence
+- browser consumer 当前也已经把 `snapshot.world` / `snapshot.skills` 归并成 shared typed consumer state；`/control` 可直接显示 authoritative room/team mapping、`team -> room -> member` 最小结构，以及 current/global skill bindings / doc versions
 - score command 的 receipt / audit / replay 继续复用统一 contract：
   - `receipt.status`
   - `replayed`

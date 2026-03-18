@@ -3,8 +3,10 @@ import type {
   GatewayActivity,
   GatewayActivityRunSummary,
   GatewayAuditRecordSummary,
+  GatewayAuditSummary,
   GatewayAuthoritativeQueryStatus,
   GatewayAwardSummary,
+  GatewayBackendHealthSummary,
   GatewayContestantSummary,
   GatewayDomainEventSummary,
   GatewayOverview,
@@ -22,6 +24,10 @@ import {
   resolveSessionRoomId,
   summarizeGatewayOrchestrationContract,
 } from "./control";
+import {
+  buildGatewaySkillSummary,
+  buildGatewayWorldSummary,
+} from "./overviewSharedState";
 import { OpenClawGatewayClient } from "./gateway/OpenClawGatewayClient";
 import {
   OrchestratorQueryClient,
@@ -36,14 +42,17 @@ import type {
   GatewayActivityRunSnapshot,
   GatewayConfig,
   GatewayEventEnvelope,
+  GatewayHealthSnapshot,
   GatewayHelloPayload,
   GatewayMessage,
   GatewayScoreSnapshot,
   GatewayScoreSummarySnapshot,
   GatewaySessionEntry,
+  GatewaySkillSnapshot,
   GatewaySnapshotEnvelope,
   GatewaySubmissionSnapshot,
   GatewayTimerSnapshot,
+  GatewayWorldSnapshot,
 } from "./gateway/types";
 
 const AUTH_FAIL_MESSAGE =
@@ -64,10 +73,13 @@ const stateMeta = {
 interface OrchestrationState {
   snapshotId: string | null;
   activityRun: GatewayActivityRunSnapshot | null;
+  world: GatewayWorldSnapshot | null;
   timers: GatewayTimerSnapshot[];
+  skills: GatewaySkillSnapshot[];
   submissions: GatewaySubmissionSnapshot[];
   scores: GatewayScoreSnapshot[];
   scoreSummary: GatewayScoreSummarySnapshot[];
+  health: GatewayHealthSnapshot | null;
   awards: GatewayAwardSummary[];
   domainEvents: GatewayDomainEventSummary[];
   lastSequence: number | null;
@@ -76,10 +88,13 @@ interface OrchestrationState {
 const EMPTY_ORCHESTRATION_STATE: OrchestrationState = {
   snapshotId: null,
   activityRun: null,
+  world: null,
   timers: [],
+  skills: [],
   submissions: [],
   scores: [],
   scoreSummary: [],
+  health: null,
   awards: [],
   domainEvents: [],
   lastSequence: null,
@@ -95,6 +110,45 @@ const EMPTY_GATEWAY_FEATURES: GatewayFeatureState = {
   events: [],
 };
 
+const AUTHORITATIVE_QUERY_CHECK_ORDER = [
+  "snapshot",
+  "scores",
+  "events",
+  "replay",
+  "audit",
+] as const;
+
+type AuthoritativeQueryCheckKey =
+  (typeof AUTHORITATIVE_QUERY_CHECK_ORDER)[number];
+
+type AuthoritativeQueryCheckState = {
+  status: "idle" | "ok" | "error";
+  error: string | null;
+  lastSuccessfulAt: number | null;
+};
+
+const buildEmptyAuthoritativeQueryChecks = (): Record<
+  AuthoritativeQueryCheckKey,
+  AuthoritativeQueryCheckState
+> => ({
+  snapshot: { status: "idle", error: null, lastSuccessfulAt: null },
+  scores: { status: "idle", error: null, lastSuccessfulAt: null },
+  events: { status: "idle", error: null, lastSuccessfulAt: null },
+  replay: { status: "idle", error: null, lastSuccessfulAt: null },
+  audit: { status: "idle", error: null, lastSuccessfulAt: null },
+});
+
+const AUTHORITATIVE_QUERY_CHECK_LABELS: Record<
+  AuthoritativeQueryCheckKey,
+  string
+> = {
+  snapshot: "Snapshot",
+  scores: "Scores",
+  events: "Events",
+  replay: "Replay",
+  audit: "Audit",
+};
+
 interface AuthoritativeQueryState {
   configured: boolean;
   baseUrl: string | null;
@@ -108,6 +162,7 @@ interface AuthoritativeQueryState {
   loading: boolean;
   error: string | null;
   lastSuccessfulAt: number | null;
+  checks: Record<AuthoritativeQueryCheckKey, AuthoritativeQueryCheckState>;
 }
 
 const EMPTY_AUTHORITATIVE_QUERY_STATE: AuthoritativeQueryState = {
@@ -123,6 +178,7 @@ const EMPTY_AUTHORITATIVE_QUERY_STATE: AuthoritativeQueryState = {
   loading: false,
   error: null,
   lastSuccessfulAt: null,
+  checks: buildEmptyAuthoritativeQueryChecks(),
 };
 
 const deriveContestantState = (
@@ -166,13 +222,16 @@ const formatRemainingLabel = (remainingMs: number): string => {
 const formatAverageScoreLabel = (score: number): string =>
   Number.isFinite(score) ? score.toFixed(1) : "0.0";
 
-const formatQueryFreshness = (lastSuccessfulAt: number | null): string => {
-  if (!lastSuccessfulAt) {
-    return "No query sync yet";
+const formatFreshnessLabel = (
+  timestamp: number | null,
+  emptyLabel: string,
+): string => {
+  if (!timestamp) {
+    return emptyLabel;
   }
 
-  const deltaMs = Date.now() - lastSuccessfulAt;
-  const ageLabel = formatUpdatedLabel(lastSuccessfulAt);
+  const deltaMs = Date.now() - timestamp;
+  const ageLabel = formatUpdatedLabel(timestamp);
 
   if (deltaMs < 15_000) {
     return `Fresh · ${ageLabel}`;
@@ -184,6 +243,12 @@ const formatQueryFreshness = (lastSuccessfulAt: number | null): string => {
 
   return `Stale · ${ageLabel}`;
 };
+
+const formatQueryFreshness = (lastSuccessfulAt: number | null): string =>
+  formatFreshnessLabel(lastSuccessfulAt, "No query sync yet");
+
+const formatHealthFreshness = (timestamp: number | null): string =>
+  formatFreshnessLabel(timestamp, "No snapshot.health yet");
 
 const formatGatewayWarning = (warning: string): string => {
   const trimmed = warning.trim();
@@ -740,7 +805,9 @@ const applySnapshot = (
     snapshotId:
       typeof snapshot.snapshotId === "string" ? snapshot.snapshotId : previous.snapshotId,
     activityRun: buildActivityRunFromSnapshot(snapshot, previous.activityRun),
+    world: snapshot.world ?? previous.world,
     timers: Array.isArray(snapshot.timers) ? snapshot.timers : previous.timers,
+    skills: Array.isArray(snapshot.skills) ? snapshot.skills : previous.skills,
     submissions: Array.isArray(snapshot.submissions)
       ? snapshot.submissions
       : previous.submissions,
@@ -748,6 +815,7 @@ const applySnapshot = (
     scoreSummary: Array.isArray(snapshot.scoreSummary)
       ? snapshot.scoreSummary
       : previous.scoreSummary,
+    health: snapshot.health ?? previous.health,
     awards,
     domainEvents: previous.domainEvents,
     lastSequence:
@@ -954,6 +1022,34 @@ const buildAuditRecordSummary = (
 ): GatewayAuditRecordSummary => {
   const handledAt = normalizeTimestamp(record.handledAt);
   const issuedAt = normalizeTimestamp(record.issuedAt);
+  const statusLabel =
+    record.status === "accepted"
+      ? "Accepted"
+      : record.status === "replayed"
+        ? "Replayed"
+        : record.status === "conflict"
+          ? "Conflict"
+          : "Rejected";
+  const tone =
+    record.status === "accepted"
+      ? "warm"
+      : record.status === "replayed"
+        ? "active"
+        : "critical";
+  const emittedSequenceLabel =
+    record.emittedSequences.length > 0
+      ? `seq ${record.emittedSequences.join(", ")}`
+      : "no emitted seq";
+  const detail =
+    record.status === "accepted"
+      ? `${record.commandType} committed with ${emittedSequenceLabel}.`
+      : record.status === "replayed"
+        ? record.replayedFromIdempotency
+          ? `${record.commandType} replayed from ${record.replayedFromIdempotency}.`
+          : `${record.commandType} replayed a prior receipt.`
+        : record.error?.message
+          ? `${record.commandType} failed: ${record.error.message}`
+          : `${record.commandType} was rejected by the authoritative backend.`;
 
   return {
     id: record.auditId,
@@ -972,8 +1068,369 @@ const buildAuditRecordSummary = (
     issuedAt,
     issuedLabel: formatClockLabel(issuedAt),
     emittedSequences: record.emittedSequences,
+    emittedSequenceLabel,
     errorCode: record.error?.code ?? null,
     errorMessage: record.error?.message ?? null,
+    statusLabel,
+    title: `${statusLabel} · ${record.commandType}`,
+    detail,
+    tone,
+  };
+};
+
+const buildQueryCheckSummary = ({
+  key,
+  check,
+}: {
+  key: AuthoritativeQueryCheckKey;
+  check: AuthoritativeQueryCheckState;
+}): GatewayAuthoritativeQueryStatus["checks"][number] => {
+  if (check.status === "ok") {
+    return {
+      key,
+      label: AUTHORITATIVE_QUERY_CHECK_LABELS[key],
+      status: "ok",
+      detail: check.lastSuccessfulAt
+        ? `Readable · ${formatUpdatedLabel(check.lastSuccessfulAt)}`
+        : "Readable",
+      tone: "warm",
+      lastSuccessfulAt: check.lastSuccessfulAt,
+      lastSuccessfulLabel: check.lastSuccessfulAt
+        ? formatUpdatedLabel(check.lastSuccessfulAt)
+        : null,
+    };
+  }
+
+  if (check.status === "error") {
+    const cachedDetail = check.lastSuccessfulAt
+      ? `Last ok ${formatUpdatedLabel(check.lastSuccessfulAt)}`
+      : "No successful read yet";
+    return {
+      key,
+      label: AUTHORITATIVE_QUERY_CHECK_LABELS[key],
+      status: "error",
+      detail: check.error ? `${cachedDetail} · ${check.error}` : cachedDetail,
+      tone: check.lastSuccessfulAt ? "active" : "critical",
+      lastSuccessfulAt: check.lastSuccessfulAt,
+      lastSuccessfulLabel: check.lastSuccessfulAt
+        ? formatUpdatedLabel(check.lastSuccessfulAt)
+        : null,
+    };
+  }
+
+  return {
+    key,
+    label: AUTHORITATIVE_QUERY_CHECK_LABELS[key],
+    status: "idle",
+    detail: "Waiting for first sync",
+    tone: "idle",
+    lastSuccessfulAt: null,
+    lastSuccessfulLabel: null,
+  };
+};
+
+const buildAuditSummary = ({
+  records,
+  auditCheck,
+}: {
+  records: GatewayAuditRecordSummary[];
+  auditCheck: AuthoritativeQueryCheckState;
+}): GatewayAuditSummary => {
+  const acceptedCount = records.filter((record) => record.status === "accepted").length;
+  const replayedCount = records.filter((record) => record.status === "replayed").length;
+  const rejectedCount = records.filter((record) => record.status === "rejected").length;
+  const conflictCount = records.filter((record) => record.status === "conflict").length;
+  const latestRecord = records[0] ?? null;
+
+  if (auditCheck.status === "error" && records.length === 0) {
+    return {
+      status: "error",
+      label: "Audit query failed",
+      detail: auditCheck.error ?? "Authoritative audit is currently unreadable.",
+      tone: "critical",
+      error: auditCheck.error,
+      recordCount: 0,
+      acceptedCount: 0,
+      replayedCount: 0,
+      rejectedCount: 0,
+      conflictCount: 0,
+      latestHandledAt: null,
+      latestHandledLabel: null,
+      latestRecord: null,
+    };
+  }
+
+  if (records.length === 0) {
+    return {
+      status: "missing",
+      label: "No receipt evidence yet",
+      detail:
+        auditCheck.status === "ok"
+          ? "Audit endpoint is readable, but no recent operator receipts have been recorded yet."
+          : "Audit evidence will appear here after the first authoritative command is handled.",
+      tone: "idle",
+      error: auditCheck.error,
+      recordCount: 0,
+      acceptedCount: 0,
+      replayedCount: 0,
+      rejectedCount: 0,
+      conflictCount: 0,
+      latestHandledAt: null,
+      latestHandledLabel: null,
+      latestRecord: null,
+    };
+  }
+
+  if (rejectedCount > 0 || conflictCount > 0) {
+    return {
+      status: "warning",
+      label: `${rejectedCount + conflictCount} rejected/conflict receipts`,
+      detail: latestRecord
+        ? `${latestRecord.statusLabel} ${latestRecord.commandType} at ${latestRecord.handledLabel}.`
+        : "Recent audit contains rejected or conflict receipts.",
+      tone: "active",
+      error: auditCheck.error,
+      recordCount: records.length,
+      acceptedCount,
+      replayedCount,
+      rejectedCount,
+      conflictCount,
+      latestHandledAt: latestRecord?.handledAt ?? null,
+      latestHandledLabel: latestRecord?.handledLabel ?? null,
+      latestRecord,
+    };
+  }
+
+  if (auditCheck.status === "error") {
+    return {
+      status: "warning",
+      label: "Audit cache is stale",
+      detail: auditCheck.error ?? "Audit is temporarily unreadable; showing the last successful receipts.",
+      tone: "active",
+      error: auditCheck.error,
+      recordCount: records.length,
+      acceptedCount,
+      replayedCount,
+      rejectedCount,
+      conflictCount,
+      latestHandledAt: latestRecord?.handledAt ?? null,
+      latestHandledLabel: latestRecord?.handledLabel ?? null,
+      latestRecord,
+    };
+  }
+
+  return {
+    status: "healthy",
+    label: "Audit receipts readable",
+    detail: latestRecord
+      ? `${acceptedCount} accepted / ${replayedCount} replayed · latest ${latestRecord.commandType} at ${latestRecord.handledLabel}.`
+      : "Recent authoritative receipts are readable.",
+    tone: "warm",
+    error: null,
+    recordCount: records.length,
+    acceptedCount,
+    replayedCount,
+    rejectedCount,
+    conflictCount,
+    latestHandledAt: latestRecord?.handledAt ?? null,
+    latestHandledLabel: latestRecord?.handledLabel ?? null,
+    latestRecord,
+  };
+};
+
+const buildBackendHealthSummary = ({
+  health,
+  hasAuthoritativeHealth,
+  orchestratorQuery,
+  auditSummary,
+}: {
+  health: GatewayHealthSnapshot | null;
+  hasAuthoritativeHealth: boolean;
+  orchestratorQuery: GatewayAuthoritativeQueryStatus;
+  auditSummary: GatewayAuditSummary;
+}): GatewayBackendHealthSummary => {
+  const snapshotGeneratedAt =
+    typeof health?.ts === "number" ? normalizeTimestamp(health.ts) : null;
+  const healthAgents = Array.isArray(health?.agents)
+    ? health.agents.filter(
+        (agent): agent is NonNullable<GatewayHealthSnapshot["agents"]>[number] =>
+          isRecord(agent),
+      )
+    : [];
+  const agentCount = healthAgents.filter(
+    (agent) => typeof agent.agentId === "string" && agent.agentId.trim().length > 0,
+  ).length;
+  const recentAgentIds = healthAgents
+    .map((agent) => (typeof agent.agentId === "string" ? agent.agentId.trim() : ""))
+    .filter((agentId) => agentId.length > 0)
+    .slice(0, 4);
+  const recentSessionCount = healthAgents.reduce(
+    (total, agent) =>
+      total +
+      (Array.isArray(agent.sessions?.recent) ? agent.sessions.recent.length : 0),
+    0,
+  );
+
+  const queryEvidence = {
+    id: "authoritative-query",
+    title: "Authoritative query",
+    detail:
+      orchestratorQuery.reason ??
+      `${orchestratorQuery.statusLabel} · ${orchestratorQuery.freshnessLabel}.`,
+    status:
+      orchestratorQuery.status === "available"
+        ? "ok"
+        : orchestratorQuery.status === "degraded"
+          ? "warning"
+          : orchestratorQuery.status === "disabled"
+            ? "missing"
+            : "error",
+    tone: orchestratorQuery.tone,
+    timestamp: orchestratorQuery.lastSuccessfulAt,
+    timestampLabel: orchestratorQuery.lastSuccessfulLabel,
+  } as const;
+
+  const snapshotEvidence = snapshotGeneratedAt
+    ? {
+        id: "snapshot-health",
+        title: "snapshot.health",
+        detail: `${agentCount} agents / ${recentSessionCount} recent sessions via ${hasAuthoritativeHealth ? "authoritative query snapshot" : "gateway snapshot"}.`,
+        status:
+          Date.now() - snapshotGeneratedAt > 60_000 ? ("warning" as const) : ("ok" as const),
+        tone:
+          Date.now() - snapshotGeneratedAt > 60_000
+            ? ("active" as const)
+            : ("warm" as const),
+        timestamp: snapshotGeneratedAt,
+        timestampLabel: formatClockLabel(snapshotGeneratedAt),
+      }
+    : {
+        id: "snapshot-health",
+        title: "snapshot.health",
+        detail:
+          orchestratorQuery.available || orchestratorQuery.status === "degraded"
+            ? "Snapshot is readable, but no health payload is exposed yet."
+            : "No snapshot.health evidence is available yet.",
+        status:
+          orchestratorQuery.available || orchestratorQuery.status === "degraded"
+            ? ("warning" as const)
+            : ("missing" as const),
+        tone:
+          orchestratorQuery.available || orchestratorQuery.status === "degraded"
+            ? ("active" as const)
+            : ("idle" as const),
+        timestamp: null,
+        timestampLabel: null,
+      };
+
+  const auditEvidence = {
+    id: "audit-trail",
+    title: "Audit trail",
+    detail: auditSummary.detail,
+    status:
+      auditSummary.status === "healthy"
+        ? "ok"
+        : auditSummary.status === "missing"
+          ? "missing"
+          : auditSummary.status === "error"
+            ? "error"
+            : "warning",
+    tone: auditSummary.tone,
+    timestamp: auditSummary.latestHandledAt,
+    timestampLabel: auditSummary.latestHandledLabel,
+  } as const;
+
+  const evidence = [queryEvidence, snapshotEvidence, auditEvidence];
+  const hasError = evidence.some((item) => item.status === "error");
+  const hasWarning = evidence.some((item) => item.status === "warning");
+  const hasSignal = evidence.some((item) => item.status === "ok");
+
+  if (hasError) {
+    return {
+      status: "error",
+      label: "Backend evidence is degraded",
+      detail:
+        orchestratorQuery.reason ??
+        "At least one backend evidence surface is currently failing.",
+      tone: "critical",
+      source: hasAuthoritativeHealth
+        ? "authoritative-query-snapshot"
+        : health
+          ? "gateway-snapshot"
+          : "unavailable",
+      snapshotGeneratedAt,
+      snapshotGeneratedLabel: snapshotGeneratedAt
+        ? formatClockLabel(snapshotGeneratedAt)
+        : null,
+      freshnessLabel: formatHealthFreshness(snapshotGeneratedAt),
+      agentCount,
+      recentAgentIds,
+      evidence,
+    };
+  }
+
+  if (hasWarning) {
+    return {
+      status: "warning",
+      label: "Backend evidence has warnings",
+      detail:
+        snapshotEvidence.status === "warning"
+          ? snapshotEvidence.detail
+          : auditSummary.detail,
+      tone: "active",
+      source: hasAuthoritativeHealth
+        ? "authoritative-query-snapshot"
+        : health
+          ? "gateway-snapshot"
+          : "unavailable",
+      snapshotGeneratedAt,
+      snapshotGeneratedLabel: snapshotGeneratedAt
+        ? formatClockLabel(snapshotGeneratedAt)
+        : null,
+      freshnessLabel: formatHealthFreshness(snapshotGeneratedAt),
+      agentCount,
+      recentAgentIds,
+      evidence,
+    };
+  }
+
+  if (hasSignal) {
+    return {
+      status: "healthy",
+      label: "Backend evidence is readable",
+      detail:
+        snapshotGeneratedAt && recentAgentIds.length > 0
+          ? `${formatHealthFreshness(snapshotGeneratedAt)} · ${recentAgentIds.join(", ")} visible in snapshot.health.`
+          : "Authoritative backend evidence is flowing.",
+      tone: "warm",
+      source: hasAuthoritativeHealth
+        ? "authoritative-query-snapshot"
+        : health
+          ? "gateway-snapshot"
+          : "unavailable",
+      snapshotGeneratedAt,
+      snapshotGeneratedLabel: snapshotGeneratedAt
+        ? formatClockLabel(snapshotGeneratedAt)
+        : null,
+      freshnessLabel: formatHealthFreshness(snapshotGeneratedAt),
+      agentCount,
+      recentAgentIds,
+      evidence,
+    };
+  }
+
+  return {
+    status: "missing",
+    label: "Backend evidence is not available yet",
+    detail: "No authoritative query, audit, or snapshot.health evidence has been observed yet.",
+    tone: "idle",
+    source: "unavailable",
+    snapshotGeneratedAt: null,
+    snapshotGeneratedLabel: null,
+    freshnessLabel: formatHealthFreshness(null),
+    agentCount: 0,
+    recentAgentIds: [],
+    evidence,
   };
 };
 
@@ -1131,6 +1588,10 @@ export function useGatewayOverview(): GatewayOverview {
       const completedAt = Date.now();
 
       setAuthoritativeQuery((previous) => {
+        const readResultError = (
+          result: PromiseRejectedResult,
+        ): string =>
+          result.reason instanceof Error ? result.reason.message : "request failed";
         const nextState: AuthoritativeQueryState = {
           ...previous,
           configured: true,
@@ -1139,43 +1600,101 @@ export function useGatewayOverview(): GatewayOverview {
           note: orchestratorQueryConfig.note,
           loading: false,
           error: null,
+          checks: {
+            ...previous.checks,
+          },
         };
         const errors: string[] = [];
         let successCount = 0;
 
         if (results[0]?.status === "fulfilled") {
           nextState.snapshot = results[0].value;
+          nextState.checks.snapshot = {
+            status: "ok",
+            error: null,
+            lastSuccessfulAt: completedAt,
+          };
           successCount += 1;
         } else if (results[0]) {
-          errors.push(`snapshot: ${results[0].reason instanceof Error ? results[0].reason.message : "request failed"}`);
+          const error = readResultError(results[0]);
+          nextState.checks.snapshot = {
+            ...previous.checks.snapshot,
+            status: "error",
+            error,
+          };
+          errors.push(`snapshot: ${error}`);
         }
 
         if (results[1]?.status === "fulfilled") {
           nextState.scores = results[1].value;
+          nextState.checks.scores = {
+            status: "ok",
+            error: null,
+            lastSuccessfulAt: completedAt,
+          };
           successCount += 1;
         } else if (results[1]) {
-          errors.push(`scores: ${results[1].reason instanceof Error ? results[1].reason.message : "request failed"}`);
+          const error = readResultError(results[1]);
+          nextState.checks.scores = {
+            ...previous.checks.scores,
+            status: "error",
+            error,
+          };
+          errors.push(`scores: ${error}`);
         }
 
         if (results[2]?.status === "fulfilled") {
           nextState.events = results[2].value;
+          nextState.checks.events = {
+            status: "ok",
+            error: null,
+            lastSuccessfulAt: completedAt,
+          };
           successCount += 1;
         } else if (results[2]) {
-          errors.push(`events: ${results[2].reason instanceof Error ? results[2].reason.message : "request failed"}`);
+          const error = readResultError(results[2]);
+          nextState.checks.events = {
+            ...previous.checks.events,
+            status: "error",
+            error,
+          };
+          errors.push(`events: ${error}`);
         }
 
         if (results[3]?.status === "fulfilled") {
           nextState.replay = results[3].value;
+          nextState.checks.replay = {
+            status: "ok",
+            error: null,
+            lastSuccessfulAt: completedAt,
+          };
           successCount += 1;
         } else if (results[3]) {
-          errors.push(`replay: ${results[3].reason instanceof Error ? results[3].reason.message : "request failed"}`);
+          const error = readResultError(results[3]);
+          nextState.checks.replay = {
+            ...previous.checks.replay,
+            status: "error",
+            error,
+          };
+          errors.push(`replay: ${error}`);
         }
 
         if (results[4]?.status === "fulfilled") {
           nextState.audit = results[4].value;
+          nextState.checks.audit = {
+            status: "ok",
+            error: null,
+            lastSuccessfulAt: completedAt,
+          };
           successCount += 1;
         } else if (results[4]) {
-          errors.push(`audit: ${results[4].reason instanceof Error ? results[4].reason.message : "request failed"}`);
+          const error = readResultError(results[4]);
+          nextState.checks.audit = {
+            ...previous.checks.audit,
+            status: "error",
+            error,
+          };
+          errors.push(`audit: ${error}`);
         }
 
         if (successCount > 0) {
@@ -1322,8 +1841,10 @@ export function useGatewayOverview(): GatewayOverview {
     const authoritativeSnapshot = authoritativeQuery.snapshot?.snapshot ?? null;
     const authoritativeActivityRun =
       authoritativeSnapshot?.activityRun ?? orchestration.activityRun;
+    const authoritativeWorld = authoritativeSnapshot?.world ?? null;
     const authoritativeTimers =
       authoritativeSnapshot?.timers ?? orchestration.timers;
+    const authoritativeSkills = authoritativeSnapshot?.skills ?? null;
     const authoritativeSubmissions =
       authoritativeSnapshot?.submissions ?? orchestration.submissions;
     const authoritativeScoreEntries =
@@ -1427,6 +1948,101 @@ export function useGatewayOverview(): GatewayOverview {
         .map(buildAuditRecordSummary)
         .sort((left, right) => right.handledAt - left.handledAt)
         .slice(0, 8) ?? [];
+    const queryChecks = AUTHORITATIVE_QUERY_CHECK_ORDER.map((key) =>
+      buildQueryCheckSummary({
+        key,
+        check: authoritativeQuery.checks[key],
+      }),
+    );
+    const hasSuccessfulQuerySync = authoritativeQuery.lastSuccessfulAt !== null;
+    const failedQueryChecks = queryChecks.filter((check) => check.status === "error");
+    const orchestratorQueryStatus = !orchestratorQueryConfig
+      ? "disabled"
+      : !hasSuccessfulQuerySync &&
+          (authoritativeQuery.loading || failedQueryChecks.length === 0)
+        ? "syncing"
+      : !hasSuccessfulQuerySync && failedQueryChecks.length > 0
+          ? "unavailable"
+        : failedQueryChecks.length > 0
+            ? "degraded"
+            : "available";
+    const orchestratorQueryReason =
+      orchestratorQueryStatus === "disabled"
+        ? authoritativeQuery.note
+        : orchestratorQueryStatus === "syncing"
+          ? "Waiting for the first authoritative sync."
+          : orchestratorQueryStatus === "unavailable"
+            ? authoritativeQuery.error ??
+              "Authoritative HTTP query is configured but currently unreadable."
+            : orchestratorQueryStatus === "degraded"
+              ? authoritativeQuery.error ??
+                "Some authoritative query checks are failing; cached data may be stale."
+              : null;
+    const orchestratorQuery: GatewayAuthoritativeQueryStatus = {
+      configured: Boolean(orchestratorQueryConfig),
+      loading: authoritativeQuery.loading,
+      available:
+        hasSuccessfulQuerySync ||
+        authoritativeQuery.snapshot !== null ||
+        authoritativeQuery.audit !== null,
+      status: orchestratorQueryStatus,
+      statusLabel:
+        orchestratorQueryStatus === "available"
+          ? "Available"
+          : orchestratorQueryStatus === "degraded"
+            ? "Degraded"
+            : orchestratorQueryStatus === "syncing"
+              ? "Syncing"
+              : orchestratorQueryStatus === "unavailable"
+                ? "Unavailable"
+                : "Disabled",
+      baseUrl: orchestratorQueryConfig?.baseUrl ?? null,
+      source: orchestratorQueryConfig?.source ?? "unavailable",
+      note: authoritativeQuery.note,
+      reason: orchestratorQueryReason,
+      error: authoritativeQuery.error,
+      lastSuccessfulAt: authoritativeQuery.lastSuccessfulAt,
+      lastSuccessfulLabel: authoritativeQuery.lastSuccessfulAt
+        ? formatUpdatedLabel(authoritativeQuery.lastSuccessfulAt)
+        : null,
+      freshnessLabel: formatQueryFreshness(authoritativeQuery.lastSuccessfulAt),
+      tone:
+        orchestratorQueryStatus === "available"
+          ? "warm"
+          : orchestratorQueryStatus === "degraded" ||
+              orchestratorQueryStatus === "syncing"
+            ? "active"
+            : orchestratorQueryStatus === "unavailable"
+              ? "critical"
+              : "idle",
+      checks: queryChecks,
+    };
+    const auditSummary = buildAuditSummary({
+      records: recentAuditRecords,
+      auditCheck: authoritativeQuery.checks.audit,
+    });
+    const authoritativeHealth =
+      authoritativeSnapshot?.health ?? orchestration.health;
+    const backendHealth = buildBackendHealthSummary({
+      health: authoritativeHealth,
+      hasAuthoritativeHealth: Boolean(authoritativeSnapshot?.health),
+      orchestratorQuery,
+      auditSummary,
+    });
+    const world = buildGatewayWorldSummary({
+      authoritativeWorld,
+      gatewayWorld: orchestration.world,
+      hasAuthoritativeSnapshot: Boolean(authoritativeSnapshot),
+      queryStatus: orchestratorQuery,
+      sessions: allSessionSummaries,
+    });
+    const skills = buildGatewaySkillSummary({
+      authoritativeSkills,
+      gatewaySkills: orchestration.skills,
+      hasAuthoritativeSnapshot: Boolean(authoritativeSnapshot),
+      queryStatus: orchestratorQuery,
+      currentStageId: activityRun?.currentStageId ?? null,
+    });
 
     const currentSubmission = resolveCurrentSubmission(
       submissions,
@@ -1443,20 +2059,6 @@ export function useGatewayOverview(): GatewayOverview {
     ].filter((value): value is number => typeof value === "number");
     const lastSequence =
       lastSequenceCandidates.length > 0 ? Math.max(...lastSequenceCandidates) : null;
-    const orchestratorQuery: GatewayAuthoritativeQueryStatus = {
-      configured: Boolean(orchestratorQueryConfig),
-      loading: authoritativeQuery.loading,
-      available: authoritativeQuery.lastSuccessfulAt !== null,
-      baseUrl: orchestratorQueryConfig?.baseUrl ?? null,
-      source: orchestratorQueryConfig?.source ?? "unavailable",
-      note: authoritativeQuery.note,
-      error: authoritativeQuery.error,
-      lastSuccessfulAt: authoritativeQuery.lastSuccessfulAt,
-      lastSuccessfulLabel: authoritativeQuery.lastSuccessfulAt
-        ? formatUpdatedLabel(authoritativeQuery.lastSuccessfulAt)
-        : null,
-      freshnessLabel: formatQueryFreshness(authoritativeQuery.lastSuccessfulAt),
-    };
     const configuredDispatchMethod = normalizeControlDispatchMethod(
       import.meta.env.VITE_OPENCLAW_COMMAND_METHOD,
     );
@@ -1493,7 +2095,7 @@ export function useGatewayOverview(): GatewayOverview {
     }
 
     if (orchestratorQuery.configured) {
-      statusMessage += ` Authoritative query: ${orchestratorQuery.loading ? "syncing" : orchestratorQuery.available ? orchestratorQuery.freshnessLabel : orchestratorQuery.error ?? "not yet available"}.`;
+      statusMessage += ` Authoritative query: ${orchestratorQuery.statusLabel} · ${orchestratorQuery.reason ?? orchestratorQuery.freshnessLabel}.`;
     }
 
     if (gatewayWarning) {
@@ -1504,6 +2106,10 @@ export function useGatewayOverview(): GatewayOverview {
       configured,
       gatewayUrl: configured ? gatewayUrl : null,
       orchestratorQuery,
+      auditSummary,
+      backendHealth,
+      world,
+      skills,
       connectionState,
       authFailed,
       statusMessage,

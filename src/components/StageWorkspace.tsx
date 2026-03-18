@@ -21,6 +21,39 @@ const toneClasses = {
   idle: "bg-slate-100 text-slate-500",
 };
 
+const structuredStateClasses = {
+  "authoritative-query-snapshot": "bg-emerald-100 text-emerald-700",
+  "gateway-snapshot": "bg-amber-100 text-amber-700",
+  unavailable: "bg-slate-100 text-slate-600",
+};
+
+const worldPlacementClasses = {
+  aligned: "bg-emerald-100 text-emerald-700",
+  mixed: "bg-amber-100 text-amber-700",
+  unassigned: "bg-slate-100 text-slate-600",
+};
+
+const liveStateClasses = {
+  speaking: "bg-rose-100 text-rose-700",
+  "raised-hand": "bg-amber-100 text-amber-700",
+  listening: "bg-emerald-100 text-emerald-700",
+  muted: "bg-slate-100 text-slate-500",
+  idle: "bg-slate-100 text-slate-500",
+};
+
+const worldPlacementLabels = {
+  aligned: "Aligned",
+  mixed: "Mixed",
+  unassigned: "Unassigned",
+};
+
+const formatStructuredStateSource = (source: keyof typeof structuredStateClasses): string =>
+  source === "authoritative-query-snapshot"
+    ? "query snapshot"
+    : source === "gateway-snapshot"
+      ? "gateway snapshot"
+      : "unavailable";
+
 const truncateCopy = (content: string, length: number): string =>
   content.length <= length ? content : `${content.slice(0, length - 3)}...`;
 
@@ -81,6 +114,9 @@ export function StageWorkspace({
   const focusRooms = buildFocusRooms(runtimeGuide, gateway);
   const contestants = rankContestants(gateway, runtimeGuide);
   const focusedContestantCount = contestants.filter((contestant) => contestant.isInFocusRoom).length;
+  const worldTeamById = new Map(
+    gateway.world.teams.map((team) => [team.teamId, team]),
+  );
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(
     contestants[0]?.agentId ?? null,
   );
@@ -763,12 +799,11 @@ export function StageWorkspace({
                   Query Status
                 </p>
                 <p className="mt-2 text-sm font-semibold text-slate-950">
-                  {gateway.orchestratorQuery.freshnessLabel}
+                  {gateway.orchestratorQuery.statusLabel}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {gateway.orchestratorQuery.available
-                    ? "authoritative http is readable"
-                    : gateway.orchestratorQuery.error ?? "awaiting backend sync"}
+                  {gateway.orchestratorQuery.reason ??
+                    gateway.orchestratorQuery.freshnessLabel}
                 </p>
               </article>
             </div>
@@ -850,6 +885,417 @@ export function StageWorkspace({
           </article>
         </div>
 
+        <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
+          <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                  Authoritative World Map
+                </p>
+                <p className="mt-2 text-sm leading-7 text-slate-600">
+                  房间、队伍和成员映射统一来自 shared typed state，而不是组件直接解析
+                  `snapshot.world`。
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] ${structuredStateClasses[gateway.world.source]}`}
+              >
+                {formatStructuredStateSource(gateway.world.source)}
+              </span>
+            </div>
+
+            {gateway.world.available ? (
+              <>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Rooms
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-950">
+                      {gateway.world.rooms.length}
+                    </p>
+                    <p className="text-xs text-slate-500">authoritative room entries</p>
+                  </article>
+                  <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Teams
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-950">
+                      {gateway.world.teams.length}
+                    </p>
+                    <p className="text-xs text-slate-500">authoritative team mappings</p>
+                  </article>
+                  <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Entities
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-950">
+                      {gateway.world.entities.length}
+                    </p>
+                    <p className="text-xs text-slate-500">authoritative placements</p>
+                  </article>
+                </div>
+
+                <div className="mt-4 rounded-[1rem] border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                      Room Mapping
+                    </p>
+                    <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-600">
+                      {"room -> team / occupant"}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                    {gateway.world.rooms.map((room) => (
+                      <article
+                        key={room.roomId}
+                        className="rounded-[1rem] border border-slate-200 bg-slate-50 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+                            {room.label}
+                          </p>
+                          <span className="text-xs text-slate-500">
+                            {room.teamCount} teams · {room.occupantCount} occupants
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-600">
+                          {room.memberCount} rostered members mapped through this room.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {room.teamIds.length > 0 ? (
+                            room.teamIds.map((teamId) => (
+                              <span
+                                key={`${room.roomId}-${teamId}`}
+                                className="rounded-full bg-white px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-600"
+                              >
+                                {worldTeamById.get(teamId)?.label ?? teamId}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="rounded-full bg-white px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-400">
+                              no mapped team
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-3 text-xs text-slate-500">
+                          occupants: {room.occupantIds.length > 0 ? room.occupantIds.join(" · ") : "none"}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-[1rem] border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                      {"Team -> Room -> Member"}
+                    </p>
+                    <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-600">
+                      authoritative roster
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {gateway.world.teams.length > 0 ? (
+                      gateway.world.teams.map((team) => (
+                        <article
+                          key={team.teamId}
+                          className="rounded-[1rem] border border-slate-200 bg-slate-50 p-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="font-mono text-[0.64rem] uppercase tracking-[0.16em] text-slate-500">
+                                {team.label}
+                              </p>
+                              <p className="mt-2 text-sm font-semibold text-slate-950">
+                                {team.roomLabel ?? "No room mapping"}
+                              </p>
+                            </div>
+                            <span
+                              className={`rounded-full px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] ${worldPlacementClasses[team.placementStatus]}`}
+                            >
+                              {worldPlacementLabels[team.placementStatus]}
+                            </span>
+                          </div>
+                          <p className="mt-3 text-sm leading-7 text-slate-700">
+                            {team.placementDetail}
+                          </p>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {team.members.length > 0 ? (
+                              team.members.map((member) => (
+                                <div
+                                  key={`${team.teamId}-${member.entityId}`}
+                                  className="rounded-[0.9rem] border border-slate-200 bg-white px-3 py-3"
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <p className="font-mono text-[0.72rem] text-slate-700">
+                                      {member.label}
+                                    </p>
+                                    {member.liveStateLabel ? (
+                                      <span
+                                        className={`rounded-full px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] ${liveStateClasses[member.liveState ?? "idle"]}`}
+                                      >
+                                        {member.liveStateLabel}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-2 text-xs text-slate-500">
+                                    authoritative: {member.roomLabel ?? "room n/a"}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    live: {member.liveRoomLabel ?? "no live session"}
+                                  </p>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="rounded-[0.9rem] border border-dashed border-slate-300 bg-white px-3 py-3 text-sm leading-7 text-slate-500">
+                                当前没有团队成员记录。
+                              </div>
+                            )}
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="rounded-[1rem] border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-7 text-slate-500">
+                        authoritative world 已可读，但还没有 team roster。
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 rounded-[1rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
+                {gateway.world.reason ?? "当前还没有 authoritative world summary。"}
+              </div>
+            )}
+          </article>
+
+          <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                  Skill Bindings
+                </p>
+                <p className="mt-2 text-sm leading-7 text-slate-600">
+                  当前 stage / global skill bindings 和 doc versions 统一来自 shared typed state。
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] ${structuredStateClasses[gateway.skills.source]}`}
+              >
+                {formatStructuredStateSource(gateway.skills.source)}
+              </span>
+            </div>
+
+            {gateway.skills.available ? (
+              <>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Current Stage
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-950">
+                      {gateway.skills.currentStageId ?? "global-only"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {gateway.skills.currentStageReason ?? "stage binding context is readable"}
+                    </p>
+                  </article>
+                  <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Stage Bindings
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-950">
+                      {gateway.skills.currentStageBindings.length}
+                    </p>
+                    <p className="text-xs text-slate-500">bindings for the current act</p>
+                  </article>
+                  <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Global Bindings
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-950">
+                      {gateway.skills.globalBindings.length}
+                    </p>
+                    <p className="text-xs text-slate-500">fallback docs across stages</p>
+                  </article>
+                </div>
+
+                <div className="mt-4 rounded-[1rem] border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                      Current Stage Bindings
+                    </p>
+                    <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-600">
+                      {gateway.skills.currentStageId ?? "global"}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {gateway.skills.currentStageBindings.length > 0 ? (
+                      gateway.skills.currentStageBindings.map((binding) => (
+                        <article
+                          key={binding.id}
+                          className="rounded-[0.95rem] border border-slate-200 bg-slate-50 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-slate-500">
+                              {binding.docId}
+                            </p>
+                            <span className="rounded-full bg-white px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-slate-600">
+                              {binding.version}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm text-slate-700">
+                            {binding.role} · {binding.scopeLabel}
+                          </p>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="rounded-[0.95rem] border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-7 text-slate-500">
+                        {gateway.skills.currentStageReason ??
+                          "当前 stage 还没有 stage-specific skill bindings。"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-[1rem] border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                      Global Bindings
+                    </p>
+                    <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-600">
+                      fallback
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {gateway.skills.globalBindings.length > 0 ? (
+                      gateway.skills.globalBindings.map((binding) => (
+                        <article
+                          key={binding.id}
+                          className="rounded-[0.95rem] border border-slate-200 bg-slate-50 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-slate-500">
+                              {binding.docId}
+                            </p>
+                            <span className="rounded-full bg-white px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-slate-600">
+                              {binding.version}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm text-slate-700">{binding.role}</p>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="rounded-[0.95rem] border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-7 text-slate-500">
+                        当前没有 global skill bindings。
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-[1rem] border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                      Doc Versions
+                    </p>
+                    <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-600">
+                      {gateway.skills.documents.length} docs
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {gateway.skills.documents.length > 0 ? (
+                      gateway.skills.documents.map((document) => (
+                        <article
+                          key={document.id}
+                          className="rounded-[0.95rem] border border-slate-200 bg-slate-50 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-slate-500">
+                              {document.docId}
+                            </p>
+                            <span className="rounded-full bg-white px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] text-slate-600">
+                              {document.version}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm leading-7 text-slate-700">
+                            roles: {document.roles.join(" / ")}
+                          </p>
+                          <p className="mt-1 text-xs leading-6 text-slate-500">
+                            scopes: {document.stageIds.length > 0 ? document.stageIds.join(" / ") : "global"} · {document.bindingCount} bindings
+                          </p>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="rounded-[0.95rem] border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-7 text-slate-500">
+                        当前还没有 skill doc version summary。
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 rounded-[1rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
+                {gateway.skills.reason ?? "当前还没有 authoritative skill summary。"}
+              </div>
+            )}
+          </article>
+        </div>
+
+        <div className="mt-6 grid gap-4 xl:grid-cols-3">
+          <article className="rounded-[1.2rem] border border-slate-200 bg-slate-50 p-4">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+              Backend Availability
+            </p>
+            <p className="mt-3 text-xl font-semibold text-slate-950">
+              {gateway.orchestratorQuery.statusLabel}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {gateway.orchestratorQuery.reason ??
+                gateway.orchestratorQuery.freshnessLabel}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              {gateway.orchestratorQuery.source} · {gateway.orchestratorQuery.freshnessLabel}
+            </p>
+          </article>
+
+          <article className="rounded-[1.2rem] border border-slate-200 bg-slate-50 p-4">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+              Latest Receipt
+            </p>
+            <p className="mt-3 text-xl font-semibold text-slate-950">
+              {gateway.auditSummary.latestRecord?.statusLabel ?? gateway.auditSummary.label}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {gateway.auditSummary.latestRecord?.detail ?? gateway.auditSummary.detail}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              {gateway.auditSummary.recordCount} records · {gateway.auditSummary.acceptedCount} accepted · {gateway.auditSummary.replayedCount} replayed · {gateway.auditSummary.rejectedCount} rejected · {gateway.auditSummary.conflictCount} conflict
+            </p>
+          </article>
+
+          <article className="rounded-[1.2rem] border border-slate-200 bg-slate-50 p-4">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+              Backend Health
+            </p>
+            <p className="mt-3 text-xl font-semibold text-slate-950">
+              {gateway.backendHealth.label}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {gateway.backendHealth.detail}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              {gateway.backendHealth.freshnessLabel}
+              {gateway.backendHealth.agentCount > 0
+                ? ` · ${gateway.backendHealth.agentCount} agents`
+                : ""}
+            </p>
+          </article>
+        </div>
+
         <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -857,12 +1303,53 @@ export function StageWorkspace({
                 Recent Audit Trail
               </p>
               <p className="mt-2 text-sm leading-7 text-slate-600">
-                command receipt / replay / reject 证据统一从 authoritative audit 里读，方便导演确认 backend 真的处理过什么。
+                {gateway.auditSummary.detail}
               </p>
             </div>
             <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
               {gateway.recentAuditRecords.length} records
             </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+              <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                Audit Summary
+              </p>
+              <p className="mt-2 text-sm font-semibold text-slate-950">
+                {gateway.auditSummary.label}
+              </p>
+              <p className="text-xs text-slate-500">
+                {gateway.auditSummary.error ?? "latest receipt-ish evidence from authoritative audit"}
+              </p>
+            </article>
+            <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+              <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                Accepted
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950">
+                {gateway.auditSummary.acceptedCount}
+              </p>
+              <p className="text-xs text-slate-500">recent accepted receipts</p>
+            </article>
+            <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+              <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                Replayed
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950">
+                {gateway.auditSummary.replayedCount}
+              </p>
+              <p className="text-xs text-slate-500">recent replayed receipts</p>
+            </article>
+            <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+              <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                Rejected / Conflict
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-slate-950">
+                {gateway.auditSummary.rejectedCount + gateway.auditSummary.conflictCount}
+              </p>
+              <p className="text-xs text-slate-500">recent backend blocks</p>
+            </article>
           </div>
 
           <div className="mt-4 grid gap-3 xl:grid-cols-2">
@@ -874,17 +1361,20 @@ export function StageWorkspace({
                 >
                   <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                     <span className="font-mono uppercase tracking-[0.16em]">
-                      {record.commandType}
+                      {record.title}
                     </span>
                     <span>•</span>
                     <span>{record.handledLabel}</span>
                     <span>•</span>
-                    <span>{record.status}</span>
+                    <span>{record.emittedSequenceLabel}</span>
                   </div>
                   <p className="mt-3 text-sm font-semibold text-slate-950">
                     {record.actorRole} / {record.actorId}
                   </p>
                   <p className="mt-2 text-sm leading-7 text-slate-700">
+                    {record.detail}
+                  </p>
+                  <p className="mt-1 break-all text-xs leading-6 text-slate-500">
                     commandId: {record.commandId}
                   </p>
                   {record.idempotencyKey ? (
@@ -905,6 +1395,44 @@ export function StageWorkspace({
                 authoritative audit 还没有记录。执行 command 链后，这里会显示 receipt / replay / reject 的最小证据。
               </div>
             )}
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                Backend Health Evidence
+              </p>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                snapshot.health、authoritative query、audit 三条证据线在这里汇总，方便导演判断 backend 现在到底是不是稳的。
+              </p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+              {gateway.backendHealth.label}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-3">
+            {gateway.backendHealth.evidence.map((item) => (
+              <article
+                key={item.id}
+                className="rounded-[1.1rem] border border-slate-200 bg-white p-4"
+              >
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <span className="font-mono uppercase tracking-[0.16em]">
+                    {item.title}
+                  </span>
+                  {item.timestampLabel ? (
+                    <>
+                      <span>•</span>
+                      <span>{item.timestampLabel}</span>
+                    </>
+                  ) : null}
+                </div>
+                <p className="mt-3 text-sm leading-7 text-slate-700">{item.detail}</p>
+              </article>
+            ))}
           </div>
         </div>
 

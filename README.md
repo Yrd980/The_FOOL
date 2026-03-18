@@ -115,12 +115,22 @@ renderer 侧现状：
   - 当前幕 timer
   - 当前 submission payload / current version / version history
   - 当前 `scores` / `scoreSummary`
-  - recent audit / query freshness / backend errors
+  - authoritative room / team mapping
+  - `team -> room -> member` 的最小结构与 room assignment evidence
+  - 当前 stage / global skill bindings 与 doc versions
+  - authoritative query `source` / `freshness` / `availability`
+  - recent receipt-ish evidence（`accepted` / `replayed` / `rejected` / `conflict`）
+  - recent backend health evidence（来自 `snapshot.health` + audit + query checks）
+  - audit status / error 摘要与 backend errors
   - 最近平台事件流与最小 provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）
+- shared typed state 现在会把 `snapshot.health`、`audit`、query `status/source/freshness/error` 归并成稳定 operator evidence，而不是让 `/control` 组件直接手搓原始 payload
+- shared typed state 现在也会把 `snapshot.world` / `snapshot.skills` 归并成稳定的 world/team/skill summaries，而不是让组件直接解析 `rooms` / `teams` / `entities` / `skills` 原始 payload
 - `/show` 继续复用同一份 authoritative state；这轮没有单独扩版，但也不再只停留在 websocket event hint
 - 当前 browser consumer 还没完全闭环的部分：
-  - `world/team/skill` typed views 还没完整暴露到 `GatewayOverview`
-  - “命令结果回执 / 错误回显 / 本地 backend health” 仍只有最小 operator 证据
+  - `/show` 还没有把 world/team/skill shared state 重新编排成 show-specific 叙事
+  - 当前 local world fixture 仍会真实暴露 team-room mapping 与 entity placement 的 mismatch
+  - 当前 seed skill bindings 仍只有 global docs，没有 stage-specific bindings
+  - `/show` 若要单独强化 submission / score / audit 叙事，还需要 show-specific composition，而不是直接照搬导演台证据面板
 
 这意味着当前 worktree 的主线，已经从“静态十幕页面”推进到了“消费 orchestrator 快照和事件的双界面客户端”。
 
@@ -241,6 +251,8 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
   - `submissions[].versions`
   - `scores`
   - `scoreSummary`
+  - `health.ts`
+  - `health.agents`
 - 当前还没有单独的 submission versions endpoint；version trace 先通过 `snapshot` / `events` / `replay` / `audit` 读取
 - `events` / `replay` 当前统一返回：
   - `activityRunId`
@@ -468,9 +480,7 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
   - 自动由 score 推导 award 与更细粒度的权限模型
   - 多活动实例 / 多活动运行并发
 - 当前 renderer/client 还没有补齐：
-  - `world/team/skill` 的 typed consumer state
-  - “命令结果回执 / 错误回显 / 本地 backend health”更完整的操作闭环
-  - `/show` 侧若要单独强化 submission/score/audit 展示，还需要额外的 show-specific composition
+  - `/show` 对 shared state 的 show-specific composition；目前 world/team/skill 与 submission/score/audit 仍主要按 control-first 的数据组织复用
 
 ## Structure
 
@@ -481,6 +491,7 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
 - `src/components/*`: shared control header, stage workspace, stage sidebar, integration rail
 - `src/openclaw/control.ts`: room aliases and gateway call arg builders
 - `src/openclaw/orchestratorQueryClient.ts`: typed local authoritative HTTP query adapter for `snapshot` / `scores` / `events` / `replay` / `audit`
+- `src/openclaw/overviewSharedState.ts`: shared typed adapters for `snapshot.world` / `snapshot.skills`
 - `src/openclaw/useGatewayOverview.ts`: shared state adapter that merges websocket feed and authoritative query into stable UI state
 - `src/openclaw/gateway/*`: lightweight gateway client and connection reducer
 - `scripts/openclaw-control.ts`: operator-facing wrapper around the OpenClaw CLI

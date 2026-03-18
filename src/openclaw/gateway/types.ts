@@ -146,6 +146,21 @@ export interface GatewayScoreSummarySnapshot {
   lastSubmittedAt: number;
 }
 
+export interface GatewayHealthAgentSnapshot {
+  agentId?: string;
+  sessions?: {
+    recent?: Array<{
+      key?: string;
+      updatedAt?: number;
+    }>;
+  };
+}
+
+export interface GatewayHealthSnapshot {
+  agents?: GatewayHealthAgentSnapshot[];
+  ts?: number;
+}
+
 export interface GatewaySnapshotEnvelope {
   snapshotId?: string;
   activityRun?: GatewayActivityRunSnapshot;
@@ -163,15 +178,7 @@ export interface GatewaySnapshotEnvelope {
     grantedAt?: number;
   }>;
   lastSequence?: number;
-  health?: {
-    agents?: Array<{
-      agentId?: string;
-      sessions?: {
-        recent?: Array<{ key?: string; updatedAt?: number }>;
-      };
-    }>;
-    ts?: number;
-  };
+  health?: GatewayHealthSnapshot;
 }
 
 export interface GatewayEventEnvelope<TPayload = Record<string, unknown>> {

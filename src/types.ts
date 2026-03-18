@@ -198,27 +198,173 @@ export interface GatewayAuditRecordSummary {
   issuedAt: number;
   issuedLabel: string;
   emittedSequences: number[];
+  emittedSequenceLabel: string;
   errorCode: string | null;
   errorMessage: string | null;
+  statusLabel: string;
+  title: string;
+  detail: string;
+  tone: "critical" | "active" | "warm" | "idle";
+}
+
+export interface GatewayQueryCheckSummary {
+  key: "snapshot" | "scores" | "events" | "replay" | "audit";
+  label: string;
+  status: "ok" | "error" | "idle";
+  detail: string;
+  tone: "critical" | "active" | "warm" | "idle";
+  lastSuccessfulAt: number | null;
+  lastSuccessfulLabel: string | null;
 }
 
 export interface GatewayAuthoritativeQueryStatus {
   configured: boolean;
   loading: boolean;
   available: boolean;
+  status: "available" | "degraded" | "syncing" | "unavailable" | "disabled";
+  statusLabel: string;
   baseUrl: string | null;
   source: "explicit-orchestrator-url" | "derived-local-orchestrator-url" | "unavailable";
   note: string | null;
+  reason: string | null;
   error: string | null;
   lastSuccessfulAt: number | null;
   lastSuccessfulLabel: string | null;
   freshnessLabel: string;
+  tone: "critical" | "active" | "warm" | "idle";
+  checks: GatewayQueryCheckSummary[];
+}
+
+export interface GatewayAuditSummary {
+  status: "healthy" | "warning" | "error" | "missing";
+  label: string;
+  detail: string;
+  tone: "critical" | "active" | "warm" | "idle";
+  error: string | null;
+  recordCount: number;
+  acceptedCount: number;
+  replayedCount: number;
+  rejectedCount: number;
+  conflictCount: number;
+  latestHandledAt: number | null;
+  latestHandledLabel: string | null;
+  latestRecord: GatewayAuditRecordSummary | null;
+}
+
+export interface GatewayBackendHealthEvidence {
+  id: string;
+  title: string;
+  detail: string;
+  status: "ok" | "warning" | "error" | "missing";
+  tone: "critical" | "active" | "warm" | "idle";
+  timestamp: number | null;
+  timestampLabel: string | null;
+}
+
+export interface GatewayBackendHealthSummary {
+  status: "healthy" | "warning" | "error" | "missing";
+  label: string;
+  detail: string;
+  tone: "critical" | "active" | "warm" | "idle";
+  source: "authoritative-query-snapshot" | "gateway-snapshot" | "unavailable";
+  snapshotGeneratedAt: number | null;
+  snapshotGeneratedLabel: string | null;
+  freshnessLabel: string;
+  agentCount: number;
+  recentAgentIds: string[];
+  evidence: GatewayBackendHealthEvidence[];
+}
+
+export type GatewayStructuredStateSource =
+  | "authoritative-query-snapshot"
+  | "gateway-snapshot"
+  | "unavailable";
+
+export interface GatewayStructuredStateSummary {
+  available: boolean;
+  source: GatewayStructuredStateSource;
+  reason: string | null;
+}
+
+export interface GatewayWorldEntitySummary {
+  entityId: string;
+  label: string;
+  kind: string;
+  roomId: string | null;
+  roomLabel: string | null;
+  teamId: string | null;
+  teamLabel: string | null;
+  liveRoomId: string | null;
+  liveRoomLabel: string | null;
+  liveState: GatewaySessionSummary["state"] | null;
+  liveStateLabel: string | null;
+}
+
+export interface GatewayWorldTeamSummary {
+  teamId: string;
+  label: string;
+  roomId: string | null;
+  roomLabel: string | null;
+  memberCount: number;
+  members: GatewayWorldEntitySummary[];
+  placementStatus: "aligned" | "mixed" | "unassigned";
+  placementDetail: string;
+}
+
+export interface GatewayWorldRoomSummary {
+  roomId: string;
+  label: string;
+  teamCount: number;
+  memberCount: number;
+  occupantCount: number;
+  teamIds: string[];
+  occupantIds: string[];
+}
+
+export interface GatewayWorldSummary extends GatewayStructuredStateSummary {
+  rooms: GatewayWorldRoomSummary[];
+  teams: GatewayWorldTeamSummary[];
+  entities: GatewayWorldEntitySummary[];
+  unassignedEntities: GatewayWorldEntitySummary[];
+}
+
+export interface GatewaySkillBindingSummary {
+  id: string;
+  role: string;
+  stageId: string | null;
+  scopeLabel: string;
+  docId: string;
+  version: string;
+  isCurrentStage: boolean;
+}
+
+export interface GatewaySkillDocumentSummary {
+  id: string;
+  docId: string;
+  version: string;
+  bindingCount: number;
+  roles: string[];
+  stageIds: string[];
+  currentStage: boolean;
+}
+
+export interface GatewaySkillSummary extends GatewayStructuredStateSummary {
+  currentStageId: string | null;
+  currentStageReason: string | null;
+  bindings: GatewaySkillBindingSummary[];
+  currentStageBindings: GatewaySkillBindingSummary[];
+  globalBindings: GatewaySkillBindingSummary[];
+  documents: GatewaySkillDocumentSummary[];
 }
 
 export interface GatewayOverview {
   configured: boolean;
   gatewayUrl: string | null;
   orchestratorQuery: GatewayAuthoritativeQueryStatus;
+  auditSummary: GatewayAuditSummary;
+  backendHealth: GatewayBackendHealthSummary;
+  world: GatewayWorldSummary;
+  skills: GatewaySkillSummary;
   connectionState: string;
   authFailed: boolean;
   statusMessage: string;

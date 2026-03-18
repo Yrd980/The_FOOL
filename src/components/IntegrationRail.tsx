@@ -4,6 +4,36 @@ import type {
   OperatorCommand,
 } from "../types";
 
+const queryStatusClasses = {
+  available: "bg-emerald-100 text-emerald-700",
+  degraded: "bg-amber-100 text-amber-700",
+  syncing: "bg-amber-100 text-amber-700",
+  unavailable: "bg-rose-100 text-rose-700",
+  disabled: "bg-slate-100 text-slate-600",
+};
+
+const toneClasses = {
+  critical: "border-rose-200 bg-rose-50 text-rose-900",
+  active: "border-amber-200 bg-amber-50 text-amber-900",
+  warm: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  idle: "border-slate-200 bg-slate-50 text-slate-700",
+};
+
+const structuredStateClasses = {
+  "authoritative-query-snapshot": "bg-emerald-100 text-emerald-700",
+  "gateway-snapshot": "bg-amber-100 text-amber-700",
+  unavailable: "bg-slate-100 text-slate-600",
+};
+
+const formatStructuredStateSource = (
+  source: keyof typeof structuredStateClasses,
+): string =>
+  source === "authoritative-query-snapshot"
+    ? "query snapshot"
+    : source === "gateway-snapshot"
+      ? "gateway snapshot"
+      : "unavailable";
+
 interface IntegrationRailProps {
   docs: IntegrationDoc[];
   commands: OperatorCommand[];
@@ -55,30 +85,20 @@ export function IntegrationRail({
               Authoritative Query HTTP
             </p>
             <span
-              className={`rounded-full px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.2em] ${
-                gateway.orchestratorQuery.available
-                  ? "bg-emerald-100 text-emerald-700"
-                  : gateway.orchestratorQuery.loading
-                    ? "bg-amber-100 text-amber-700"
-                    : gateway.orchestratorQuery.configured
-                      ? "bg-rose-100 text-rose-700"
-                      : "bg-slate-100 text-slate-600"
-              }`}
+              className={`rounded-full px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.2em] ${queryStatusClasses[gateway.orchestratorQuery.status]}`}
             >
-              {gateway.orchestratorQuery.available
-                ? "available"
-                : gateway.orchestratorQuery.loading
-                  ? "loading"
-                  : gateway.orchestratorQuery.configured
-                    ? "error"
-                    : "disabled"}
+              {gateway.orchestratorQuery.statusLabel}
             </span>
           </div>
           <p className="mt-3 text-sm leading-7 text-slate-700">
-            {gateway.orchestratorQuery.freshnessLabel}
+            {gateway.orchestratorQuery.reason ??
+              gateway.orchestratorQuery.freshnessLabel}
           </p>
           <p className="mt-2 font-mono text-[0.72rem] uppercase tracking-[0.16em] text-slate-500">
             source: {gateway.orchestratorQuery.source}
+          </p>
+          <p className="mt-1 text-xs leading-6 text-slate-500">
+            freshness: {gateway.orchestratorQuery.freshnessLabel}
           </p>
           {gateway.orchestratorQuery.note ? (
             <p className="mt-2 text-xs leading-6 text-slate-500">
@@ -95,6 +115,137 @@ export function IntegrationRail({
               {gateway.orchestratorQuery.error}
             </div>
           ) : null}
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {gateway.orchestratorQuery.checks.map((check) => (
+              <article
+                key={check.key}
+                className={`rounded-[0.9rem] border px-3 py-3 text-sm ${toneClasses[check.tone]}`}
+              >
+                <p className="font-mono text-[0.64rem] uppercase tracking-[0.16em]">
+                  {check.label}
+                </p>
+                <p className="mt-2 leading-6">{check.detail}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-[1rem] border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+              Backend Evidence
+            </p>
+            <span
+              className={`rounded-full px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.2em] ${toneClasses[gateway.backendHealth.tone]}`}
+            >
+              {gateway.backendHealth.label}
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-7 text-slate-700">
+            {gateway.backendHealth.detail}
+          </p>
+          <div className="mt-4 space-y-2">
+            {gateway.backendHealth.evidence.map((item) => (
+              <article
+                key={item.id}
+                className={`rounded-[0.9rem] border px-3 py-3 text-sm ${toneClasses[item.tone]}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-mono text-[0.64rem] uppercase tracking-[0.16em]">
+                    {item.title}
+                  </p>
+                  {item.timestampLabel ? (
+                    <span className="text-xs">{item.timestampLabel}</span>
+                  ) : null}
+                </div>
+                <p className="mt-2 leading-6">{item.detail}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-[1rem] border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+              World / Skill Views
+            </p>
+            <span className="rounded-full bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-600">
+              shared typed state
+            </span>
+          </div>
+          <div className="mt-4 space-y-3">
+            <article className="rounded-[0.9rem] border border-slate-200 bg-white px-3 py-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-mono text-[0.64rem] uppercase tracking-[0.16em] text-slate-500">
+                  snapshot.world
+                </p>
+                <span
+                  className={`rounded-full px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] ${structuredStateClasses[gateway.world.source]}`}
+                >
+                  {formatStructuredStateSource(gateway.world.source)}
+                </span>
+              </div>
+              <p className="mt-2 leading-6 text-slate-700">
+                {gateway.world.available
+                  ? `${gateway.world.rooms.length} rooms · ${gateway.world.teams.length} teams · ${gateway.world.entities.length} entities`
+                  : gateway.world.reason ?? "World summary is unavailable."}
+              </p>
+              {gateway.world.available ? (
+                <p className="mt-2 text-xs leading-6 text-slate-500">
+                  {gateway.world.teams
+                    .slice(0, 2)
+                    .map((team) => `${team.label} -> ${team.roomLabel ?? "room n/a"}`)
+                    .join(" · ") || "No team-room mapping yet."}
+                </p>
+              ) : null}
+            </article>
+
+            <article className="rounded-[0.9rem] border border-slate-200 bg-white px-3 py-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-mono text-[0.64rem] uppercase tracking-[0.16em] text-slate-500">
+                  snapshot.skills
+                </p>
+                <span
+                  className={`rounded-full px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.15em] ${structuredStateClasses[gateway.skills.source]}`}
+                >
+                  {formatStructuredStateSource(gateway.skills.source)}
+                </span>
+              </div>
+              <p className="mt-2 leading-6 text-slate-700">
+                {gateway.skills.available
+                  ? `${gateway.skills.currentStageBindings.length} current-stage bindings · ${gateway.skills.globalBindings.length} global bindings`
+                  : gateway.skills.reason ?? "Skill summary is unavailable."}
+              </p>
+              {gateway.skills.available ? (
+                <p className="mt-2 text-xs leading-6 text-slate-500">
+                  {gateway.skills.currentStageReason ??
+                    (gateway.skills.documents
+                      .slice(0, 2)
+                      .map((document) => `${document.docId}@${document.version}`)
+                      .join(" · ") || "No skill document version is visible yet.")}
+                </p>
+              ) : null}
+            </article>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-[1rem] border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+              Receipt Summary
+            </p>
+            <span
+              className={`rounded-full px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.2em] ${toneClasses[gateway.auditSummary.tone]}`}
+            >
+              {gateway.auditSummary.label}
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-7 text-slate-700">
+            {gateway.auditSummary.detail}
+          </p>
+          <p className="mt-2 text-xs leading-6 text-slate-500">
+            {gateway.auditSummary.recordCount} records · {gateway.auditSummary.acceptedCount} accepted · {gateway.auditSummary.replayedCount} replayed · {gateway.auditSummary.rejectedCount} rejected · {gateway.auditSummary.conflictCount} conflict
+          </p>
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">

@@ -150,12 +150,19 @@ Phaser Web、Godot、Unity 都只是 renderer adapter。
 - 截至当前 worktree，consumer 已经稳定暴露：
   - `scores` / `scoreSummary`
   - current submission payload / current version / version history
+  - authoritative room / team mapping
+  - `team -> room -> member` 最小结构
+  - current/global skill bindings 与 doc versions
   - recent audit records
+  - authoritative query `status` / `source` / `freshness` / `availability`
+  - recent receipt-ish status summary（`accepted` / `replayed` / `rejected` / `conflict`）
+  - recent backend health evidence（来自 `snapshot.health`、audit 与 query checks）
   - event provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）
   - `snapshot` / `scores` / `events` / `replay` / `audit` 的单独 query client
 - 仍未完整暴露：
-  - `world/team/skill` typed views
-  - 更完整的 receipt-ish operator feedback / backend health surfaces
+  - `/show` 侧对 shared state 的 show-specific composition；目前 world/team/skill 与 submission/score/audit 仍主要按 control-first 的数据组织复用
+  - 当前 local fixture 暴露出来的 team-room / entity placement mismatch 仍未被 backend 修正
+  - stage-specific skill bindings 仍未在 seed data 内提供
 
 这里的含义是：
 

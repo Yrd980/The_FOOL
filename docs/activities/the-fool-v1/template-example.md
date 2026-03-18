@@ -283,6 +283,7 @@ export interface AiJudgeScorePayload {
 - 当前 worktree 还没有实现 `scores_completed` 自动切阶段；Act VII -> Act VIII 仍由主持手动收口
 - backend 已经提供 snapshot 内 `scores` / `scoreSummary` 与 `/api/orchestrator/scores`
 - 当前 browser consumer 已经把 score projection / provenance / typed query client 接进 shared state；`/control` 可直接显示当前 `scores` / `scoreSummary`、recent audit 与 command provenance
+- 同一层 shared state 现在也会整理 `snapshot.world` / `snapshot.skills`；`/control` 可直接看到 authoritative room/team mapping、`team -> room -> member` 最小结构，以及 current/global skill bindings / doc versions
 
 ### 2.2 Team Project Submission 写入闭环
 

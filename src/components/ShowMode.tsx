@@ -393,9 +393,9 @@ export function ShowMode({
                     <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-100">
                       {room.activityCount} fresh lines
                     </span>
-                    {room.headliners.map((agentId) => (
+                    {room.headliners.map((agentId, index) => (
                       <span
-                        key={agentId}
+                        key={`${room.roomId}-${agentId}-${index}`}
                         className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-100"
                       >
                         {agentId}
