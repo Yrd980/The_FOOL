@@ -15,6 +15,24 @@ OpenClaw 的目标不是做一个“带地图的聊天室”，而是做一个�
 
 > authoritative orchestration backend + agent-facing skill docs + engine-agnostic renderer protocol
 
+### 1.1 与活动文档的边界
+
+本文只定义 OpenClaw 平台的通用能力，不直接定义某一档活动的专属规则。
+
+因此，下列内容默认不应写进本文，而应落到 `docs/activities/<activity-id>/*`：
+
+- 某活动专属的 stage id、room 名、奖项名与主持话术
+- 某活动专属的 submission schema 字段与校验文案
+- 某一幕的背景图、scene、镜头包装、播出 reveal 方式
+
+平台层在这里要表达的是：
+
+- 平台必须能承载这些活动差异
+- 平台必须能把这些差异运行成权威状态
+- 平台必须把这些差异通过命令、事件、快照和回放暴露给 renderer
+
+但平台层本身不应被某个活动反向硬编码。
+
 ## 2. 平台边界
 
 ### 2.1 平台负责
@@ -427,11 +445,6 @@ Schema 至少要支持：
 - `submit` 创建首个结构化版本
 - `update_submission` 在未锁定前追加新版本
 - `submit` / `update_submission` 写入的是完整 payload snapshot，不是 partial patch
-- `team-project-v1` 当前最小 payload 至少包括：
-  - `posterOrDeck: string`
-  - `elevatorPitch: string <= 100 chars`
-  - `highlights: [string, string, string]`
-  - `risk: string`
 - `snapshot` 可直接读到 submission 当前 payload
 - 最小 `SubmissionVersion` 至少包含：
   - `version`
@@ -439,6 +452,8 @@ Schema 至少要支持：
   - `actorId`
   - `actorRole`
   - `data`
+
+活动专属 submission schema 的字段名、长度约束、校验文案，应写在 `docs/activities/<activity-id>/*`，不写回平台层。
 
 ## 12. 投票与评分模型
 
@@ -463,12 +478,12 @@ Schema 至少要支持：
 - 平票处理
 - 奖项推导逻辑
 
-JudgeScore 至少应支持以下结构化字段：
+JudgeScore 至少应支持以下通用结构化字段：
 
-- score `1..10`
-- reason
-- favorite
-- `mostAbsurd`（稳定字段名，对应“最离谱”）
+- `score`
+- `reason`
+- `dimensions` 或等价的结构化分项
+- `extras` 或等价的活动扩展字段容器
 
 若首版不做押注，也应显式标记为 out of scope，而不是保留模糊空间。
 

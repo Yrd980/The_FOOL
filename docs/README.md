@@ -64,124 +64,50 @@ Phaser Web、Godot、Unity 都只是 renderer adapter。
 
 它们不持有权威业务状态。
 
+## 平台与活动的分工
+
+为了避免把某一档节目的规则重新写回平台层，当前文档默认按下面的判断规则拆分：
+
+- 如果一条规则换成别的活动仍然成立，它属于平台层，写进 `docs/openclaw-platform/*`
+- 如果一条规则只对某个活动成立，它属于活动层，写进 `docs/activities/<activity-id>/*`
+- 如果一条规则只影响某个 renderer 的视觉包装、场景编排或镜头语言，它属于渲染/scene 说明，不应写成平台权威真相
+
+更具体地说：
+
+- 平台层负责：身份、权限、世界模型、活动抽象、命令、事件、投影、同步、审计、回放
+- 活动层负责：阶段列表、阶段目标、房间命名、允许动作、提交 Schema 选择、评分口径、奖项与活动专属术语
+- 渲染层负责：某一幕怎么播、背景图怎么切、哪些信息上大屏、哪些信息藏在 backstage context
+
+如果一条内容里出现：
+
+- 某活动特有的 stage id / room 名 / 奖项名 / 剧情语气
+- 某活动专属 submission 字段
+- 某一幕专属的 scene / 背景 / reveal / spotlight
+
+那么它默认不属于平台总规格。
+
 ## 当前文档
 
 - [平台 requirements](./openclaw-platform/requirements.md)
 - [平台 design](./openclaw-platform/design.md)
+- [活动文档边界说明](./activities/README.md)
+- [实施路线说明](./roadmaps/README.md)
+- [平台优先实施路线](./roadmaps/platform-first-rollout.md)
+- [参考实现说明](./reference-implementations/README.md)
+- [molt-claw 当前实现现状](./reference-implementations/molt-claw.md)
 - [The Fool v1 活动 requirements](./activities/the-fool-v1/requirements.md)
+- [The Fool v1 scene spec](./activities/the-fool-v1/scene-spec.md)
 - [The Fool v1 最小模板示例](./activities/the-fool-v1/template-example.md)
 
-## 当前最小闭环
+## 文档使用方式
 
-截至本轮，`molt-claw` worktree 内已经按这些 docs 落了一个最小 authoritative backend。
+- `docs/openclaw-platform/*` 只描述 OpenClaw 的通用平台 contract
+- `docs/activities/*` 只描述具体活动模板或活动实例
+- `docs/roadmaps/*` 记录推荐的推进顺序与阶段拆分
+- `docs/reference-implementations/*` 记录某个 worktree / renderer / backend 当前真实实现到了哪里
+- 某个 worktree、renderer、gateway、backend 当前真实跑通了多少，不写回平台 contract；可以写在 `docs/reference-implementations/*` 或对应项目自己的 `README.md`
 
-这个最小闭环当前至少覆盖：
+换句话说：
 
-- `ActivityRun`
-- current stage
-- timer state
-- submission lifecycle
-- score state / score summary
-- award state
-- command receipt / error / idempotency 语义
-- replay / audit 最小 query contract
-- `transition_stage`
-- `start_timer`
-- `open_submission`
-- `submit`
-- `update_submission`
-- `lock_submission`
-- `submit_score`
-- `grant_award`
-- `activityRun` snapshot
-- `GET /api/orchestrator/scores`
-- `GET /api/orchestrator/events`
-- `GET /api/orchestrator/replay`
-- `GET /api/orchestrator/audit`
-- `submission.opened`
-- `stage.changed`
-- `timer.started`
-- `timer.paused`
-- `timer.ended`
-- `submission.updated`
-- `submission.locked`
-- `judge.score_submitted`
-- `award.granted`
-
-当前 local backend support matrix 可以先理解成：
-
-- command
-  - `transition_stage`
-  - `start_timer`
-  - `open_submission`
-  - `submit`
-  - `update_submission`
-  - `lock_submission`
-  - `submit_score`
-  - `grant_award`
-- query
-  - current snapshot
-  - current submission payload / version history
-  - current score projection / score summary
-  - recent events
-  - recent score events
-  - `afterSequence` / `fromSequence` / `toSequence` + `limit`
-  - replay from sequence
-  - recent audit records
-- receipt / error
-  - `receipt.status`
-  - `replayed`
-  - `replayedFromIdempotency`
-  - `eventIds`
-  - stable `code + message`
-- submission contract
-  - authoritative write loop 当前按 `open_submission -> submit -> update_submission -> lock_submission` 收口
-  - `submit` / `update_submission` payload 当前稳定为 `payload.submissionId + payload.data`
-  - `submit` / `update_submission` 当前写入的是完整 payload snapshot，不是 partial patch
-  - `team-project-v1.elevatorPitch` 当前要求为非空字符串，且不超过 100 个字符
-  - `snapshot.submissions[*]` 当前稳定暴露 `data` / `version` / `versions`
-  - `versions[*]` 当前最少包含 `version` / `updatedAt` / `actorId` / `actorRole` / `data`
-  - 当前没有单独的 submission versions query；先通过 `snapshot` / `events` / `replay` / `audit` 追踪
-
-注意：
-
-- 这里描述的是当前 local backend 已经提供的 authoritative contract
-- 它不等于 browser consumer 已经把平台所有 projection 都做完
-- 截至当前 worktree，consumer 已经稳定暴露：
-  - `scores` / `scoreSummary`
-  - current submission payload / current version / version history
-  - authoritative room / team mapping
-  - `team -> room -> member` 最小结构
-  - current/global skill bindings 与 doc versions
-  - recent audit records
-  - authoritative query `status` / `source` / `freshness` / `availability`
-  - recent receipt-ish status summary（`accepted` / `replayed` / `rejected` / `conflict`）
-  - recent backend health evidence（来自 `snapshot.health`、audit 与 query checks）
-  - event provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）
-  - `snapshot` / `scores` / `events` / `replay` / `audit` 的单独 query client
-- 仍未完整暴露：
-  - `/show` 侧对 shared state 的 show-specific composition；目前 world/team/skill 与 submission/score/audit 仍主要按 control-first 的数据组织复用
-  - 当前 local fixture 暴露出来的 team-room / entity placement mismatch 仍未被 backend 修正
-  - stage-specific skill bindings 仍未在 seed data 内提供
-
-这里的含义是：
-
-- `docs/*` 继续定义正式 contract
-- `molt-claw` 内的 backend 只是当前 contract 的一个 worktree 内实现
-- 后续如果接入真正的 gateway/plugin/service，也应继续服从这些 docs，而不是反过来让实现覆盖 requirements
-
-## 与现有项目的关系
-
-- `main/README.md` 更适合作为某个观察者客户端或示例前端的说明。
-- `molt-claw/public/task.md`、`molt-claw/asset/task.md` 更适合作为 The Fool 活动草案素材。
-- `molt-claw/README.md` 描述当前 renderer / director console 与 worktree 内 local authoritative backend 的实现现状，包括它如何消费和产生权威 stage、timer、submission、score 与 command envelope。
-- `molt-claw/scripts/openclaw-orchestrator.ts` 是当前 worktree 内最小 authoritative backend 的落点。
-  - 它必须服从 `docs/*`，而不是把自己变成新的 requirements 来源。
-- `molt-claw/README.md` 还会额外记录“本机 live gateway 已验证到什么”。
-  - 也就是说：`docs/*` 里写的是目标平台 contract。
-  - `molt-claw/README.md` 里写的是当前这个 worktree 在本机真实跑通了多少，以及 live gateway 还卡在哪些 backend / scope blocker 上。
-  - 刷新这些“本机真实事实”时，优先运行 `bun run openclaw:control -- probe`。
-  - 它会直接打印 live hello methods/events、snapshot keys、token-only websocket `status` blocker，以及 paired CLI 读到的 `status / tools.catalog / config / plugins` provenance 摘要。
-  - 如果 probe 结果里仍没有 `stage.*` / `timer.*` / `submission.*` / `judge.*` / `award.*` 或真实 dispatch method，而且 paired CLI/runtime provenance 也只剩 stock gateway + 已知 plugin，就把 blocker 归因到缺失的后端服务 / 插件 / 安装步骤，而不是在 renderer 里猜 contract。
-  - 本机虽然存在历史原型仓库 `/home/yrd/documents/git_clone_code/etc/XTION_TheFool0`，但它是 docs 派生实现，不作为当前 authoritative backend / live contract 的依据。
-- 正式的平台能力与活动规则，以这里的 requirements 为准。
+- 这里写“应该成立什么”
+- 项目 README 写“当前实现到了什么”

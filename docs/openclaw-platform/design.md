@@ -17,6 +17,22 @@
 - 不在此定义某个前端页面布局
 - 不在此规定 Agent 内部推理实现
 
+### 1.1 文档边界
+
+本文描述的是平台设计，不是某一档节目的专用说明。
+
+因此：
+
+- 活动专属的 stage 列表、submission schema 选择、奖项口径，应写在 `docs/activities/<activity-id>/*`
+- 某一幕怎么播、用什么背景图、是否 split-screen、如何 reveal，属于 scene / renderer 设计，不属于平台权威层
+- 平台设计在这里只负责保证这些活动差异和播出差异有明确的承载点，而不是把它们写死进平台运行时
+
+可以把这三层理解成：
+
+- 平台层：保证“什么是真的”
+- 活动层：定义“这档节目怎么玩”
+- 渲染层：决定“这一幕怎么演出来”
+
 ## 2. 总体分层
 
 平台分为四层：
@@ -368,12 +384,12 @@ export interface SnapshotEnvelope {
     stageId: string;
     judgeId: string;
     judgeRole: "judge" | "admin";
-    submissionId: string;
-    teamId?: string;
+    targetType: "team" | "submission";
+    targetId: string;
     score: number;
-    reason: string;
-    favorite: string;
-    mostAbsurd: string;
+    reason?: string;
+    dimensions?: Record<string, number | string | boolean>;
+    extras?: Record<string, unknown>;
     submittedAt: number;
   }>;
   scoreSummary: Array<{
@@ -400,7 +416,7 @@ export interface SnapshotEnvelope {
 - 按时间范围回放
 - 从 sequence 回放
 
-当前 worktree 内的最小 query contract 也可以先直接落成：
+最小 query contract 也可以先直接落成：
 
 - `afterSequence`
 - `fromSequence`
@@ -421,38 +437,6 @@ export interface SnapshotEnvelope {
 - 一个 `scores` query，用于同时读取当前 score projection / score summary
 - 最近 N 条 `judge.score_submitted` 事件
 - 从 `afterSequence` / `fromSequence` 开始的 score 增量窗口
-
-### 7.4 当前 molt-claw worktree 的最小实现轮廓
-
-当前 `molt-claw` worktree 内的首版 backend，可以先采用“单进程 orchestrator + realtime gateway + query API”合并实现，只要语义边界不塌陷。
-
-首版最小实现至少应做到：
-
-- 通过同一份权威投影对外提供 snapshot 与 command result
-- command result / error 统一返回稳定 contract
-- 对外广播 `stage.changed` / `timer.*` / `submission.*` / `judge.score_submitted`
-- 用事件日志重建当前 `ActivityRun` / timer / submission lock / score / award 投影
-- 允许 renderer/client 只消费协议，不直接改写活动状态
-
-在当前 worktree 内，首版查询/控制接口可以直接暴露为：
-
-- 一个 websocket 入口，用于 `connect`、snapshot 与 delta event
-- 一个 command endpoint，用于接收统一 `CommandEnvelope`
-- 一个 snapshot endpoint，用于读取当前权威投影
-- 一个 events/replay endpoint，用于读取最近事件与从 sequence 开始的增量
-- 一个 scores endpoint，用于读取 score projection 与 score event 增量窗口
-- 一个 audit endpoint，用于读取最小 command audit record
-
-这只是当前 worktree 的实现轮廓，不意味着未来正式平台必须绑定这些具体路径或部署形态。
-
-当前 worktree 的集成状态还应额外区分清楚：
-
-- local orchestrator backend 已经提供 `snapshot` / `scores` / `events` / `replay` / `audit`
-- browser consumer 现在会把 websocket snapshot + delta event 与本地 authoritative HTTP query 叠加到同一个 state adapter
-- `/control` 当前已直接显示 `scores` / `scoreSummary`、submission payload / version history、authoritative room/team mapping、`team -> room -> member` 最小结构、current/global skill bindings / doc versions、query `source` / `freshness` / `availability`、recent receipt-ish evidence、recent backend health evidence，以及最小 event provenance
-- 这些 operator-facing receipt / health / world / skill summaries 当前继续只复用既有 `snapshot.health`、`snapshot.world`、`snapshot.skills`、`audit`、query `status/source/freshness/error` contract，在 shared state adapter 层归并，而不是在组件里直接解析原始 payload
-- `/show` 对 world/team/skill 的 show-specific composition 仍属于后续 integration work
-- 这些 integration gap 不改变上面的 authoritative contract
 
 ## 8. Skill 绑定与发放
 
@@ -567,7 +551,7 @@ Submission Schema 应与 Stage 绑定，但由平台统一解释。
 - `update_submission` 在未锁定前追加新的完整 payload snapshot
 - `submit` / `update_submission` 都按 full replacement 处理，不支持 partial patch
 - `lock_submission` 只改变 lock state，不再伪装成内容更新
-- 当前 worktree 没有独立 submission versions query；version trace 通过 `snapshot` / `submission.updated` replay / `audit` 读取
+- `SubmissionVersion` 应可通过 snapshot、query、replay 或 audit 中的至少一种正式渠道被稳定追踪
 
 当前最小 command payload 可以先采用：
 
@@ -586,13 +570,6 @@ export interface SubmissionVersion {
 }
 ```
 
-对 `team-project-v1`，当前最小实现额外约束为：
-
-- `posterOrDeck`: non-empty string
-- `elevatorPitch`: non-empty string, max 100 chars
-- `highlights`: exactly 3 non-empty strings
-- `risk`: non-empty string
-
 ### 10.3 评分与汇总
 
 评分与投票系统不直接写死在活动逻辑里，应由：
@@ -603,24 +580,24 @@ export interface SubmissionVersion {
 
 共同完成。
 
-在当前 worktree 的最小 authoritative scoring cut 里，可以先采用：
+最小 authoritative scoring cut 可以先采用：
 
 - 语义动作仍记作 `score`
 - authoritative command 落成 `submit_score`
-- 当前仅对 `act-7-ai-judging` 开放
 - `judge` 提交，`admin` 可 override
-- 评分目标先绑定到 locked team-project submission
-- 重复评分首版直接 reject，而不是 update
+- score target 必须指向可审计的权威对象，例如 `submission`、`team` 或其他活动定义的 target
+- 同一个 judge 对同一个 target 的重复评分，默认应 reject 或显式落成新版本规则，而不是模糊 update
 
 最小 score payload 可以先稳定为：
 
 ```ts
 export interface SubmitScorePayload {
-  submissionId: string;
-  score: number; // 1..10
-  reason: string;
-  favorite: string;
-  mostAbsurd: string;
+  targetType: "submission" | "team";
+  targetId: string;
+  score: number;
+  reason?: string;
+  dimensions?: Record<string, number | string | boolean>;
+  extras?: Record<string, unknown>;
 }
 ```
 
@@ -628,17 +605,17 @@ export interface SubmitScorePayload {
 
 ```ts
 export interface JudgeScoreSubmittedPayload {
-  stageId: "act-7-ai-judging";
+  stageId: string;
   judgeScore: {
     id: string;
-    submissionId: string;
-    teamId?: string;
+    targetType: "submission" | "team";
+    targetId: string;
     judgeId: string;
     judgeRole: "judge" | "admin";
     score: number;
-    reason: string;
-    favorite: string;
-    mostAbsurd: string;
+    reason?: string;
+    dimensions?: Record<string, number | string | boolean>;
+    extras?: Record<string, unknown>;
     submittedAt: number;
   };
 }
@@ -675,15 +652,6 @@ export interface UiHint {
   suggestedDurationMs?: number;
 }
 ```
-
-### 11.3 当前仓库中的映射
-
-就当前仓库而言，可以粗略理解为：
-
-- `main/` 更像观察者地图或前台 renderer 原型
-- `molt-claw/` 更像导演台 / 节目控制 renderer 原型
-
-但它们都不应成为平台真相源。
 
 ## 12. 审计与回放设计
 

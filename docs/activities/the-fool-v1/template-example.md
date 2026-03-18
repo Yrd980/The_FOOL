@@ -157,9 +157,6 @@ export const theFoolV1: ActivityTemplate = {
       scoringRuleIds: ["ai-judge-score-v1"],
       transitionRules: [
         {
-          // Target-platform rule. The current molt-claw worktree still
-          // uses manual transition until judge panel completion semantics
-          // are made authoritative.
           type: "scores_completed",
           targetStageId: "act-8-awards",
         },
@@ -273,21 +270,18 @@ export interface AiJudgeScorePayload {
 }
 ```
 
-当前 docs / worktree 对这块的约定可以先理解成：
+这个模板示例对这块的约定可以先理解成：
 
 - 阶段语义动作仍记作 `score`
 - authoritative command 落成 `submit_score`
 - 成功后产生 `judge.score_submitted`
-- 首版只接受对 locked team-project submission 的评分
-- 同一个 judge 对同一个 submission 或解析到同一个 team 的重复评分首版直接 reject
-- 当前 worktree 还没有实现 `scores_completed` 自动切阶段；Act VII -> Act VIII 仍由主持手动收口
-- backend 已经提供 snapshot 内 `scores` / `scoreSummary` 与 `/api/orchestrator/scores`
-- 当前 browser consumer 已经把 score projection / provenance / typed query client 接进 shared state；`/control` 可直接显示当前 `scores` / `scoreSummary`、recent audit 与 command provenance
-- 同一层 shared state 现在也会整理 `snapshot.world` / `snapshot.skills`；`/control` 可直接看到 authoritative room/team mapping、`team -> room -> member` 最小结构，以及 current/global skill bindings / doc versions
+- 只接受对 locked team-project submission 的评分
+- 同一个 judge 对同一个 submission 或解析到同一个 team 的重复评分默认 reject
+- 自动完成转场与当前参考实现现状，见 [`../../reference-implementations/molt-claw.md`](../../reference-implementations/molt-claw.md)
 
 ### 2.2 Team Project Submission 写入闭环
 
-当前 docs / worktree 对 Act V submission loop 的最小约定可以先理解成：
+这个模板示例对 Act V submission loop 的最小约定可以先理解成：
 
 - `open_submission` 先打开 submission shell
 - `submit` / `update_submission` payload 统一采用 `{ submissionId, data }`
@@ -307,7 +301,7 @@ export interface AiJudgeScorePayload {
   - `actorId`
   - `actorRole`
   - `data`
-- 当前 worktree 没有单独的 submission versions query；通过 `snapshot` / `submission.updated` replay / `audit` 追踪
+- 当前参考实现如何暴露 version trace，见 [`../../reference-implementations/molt-claw.md`](../../reference-implementations/molt-claw.md)
 
 ## 3. Stage 细化矩阵
 
@@ -319,7 +313,7 @@ export interface AiJudgeScorePayload {
 | 队内讨论 | `team-room-*` | `move` `talk` | 项目草案摘要 | 倒计时到点 |
 | 项目提交 | `team-room-*` / `main-stage` | `submit` `update_submission` | 项目提交包 | 提交窗口锁定 |
 | 人类观赛点评 | `main-stage` | `talk` `reaction` `bet` | 评论、押注 | 阶段结束锁 |
-| AI 评委评审 | `main-stage` | `score` `talk` `query` | 结构化评分 | 当前 worktree 先由主持手动收口 |
+| AI 评委评审 | `main-stage` | `score` `talk` `query` | 结构化评分 | 评分完成或主持收口 |
 | 颁奖 | `main-stage` | `broadcast` `grant_award` `query` | 奖项结果 | 公布后锁 |
 | 全体共创艺术品 | `quiet-orbit` / `main-stage` | `submit` `draw` | 小诗、画布笔触 | 画布关闭后锁 |
 | 感想点评 | `main-stage` | `talk` | 开放麦记录 | 活动结束锁 |
@@ -389,9 +383,9 @@ export interface AwardResult {
 }
 ```
 
-## 7. 推荐首版实现范围
+## 7. 推荐首轮实现范围
 
-如果要尽快把 The Fool v1 落成一个平台化活动，而不是继续靠前端写死流程，首版建议先做这几块：
+如果要尽快把 The Fool v1 落成一个平台化活动，而不是继续靠前端写死流程，推荐先做这几块：
 
 1. ActivityTemplate / ActivityRun / Stage / TransitionRule
 2. Team / Assignment / Room 绑定
@@ -399,9 +393,9 @@ export interface AwardResult {
 4. Team Project Submission Schema
 5. AI Judge Score Schema / `submit_score`
 6. 关键事件：`stage.changed`、`entity.moved`、`submission.locked`、`judge.score_submitted`
-7. 当前 score query：snapshot 内 `scores` / `scoreSummary`，以及 `/api/orchestrator/scores`
+7. 当前 score query：snapshot 内 `scores` / `scoreSummary`，以及等价的正式 score query
 
-这样首版就已经能够：
+这样首轮就已经能够：
 
 - 真正以平台权威状态运行十幕
 - 让前台与后台共用同一套活动真相

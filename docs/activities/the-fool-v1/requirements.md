@@ -22,6 +22,13 @@ The Fool v1 负责定义：
 - 每幕输入输出
 - The Fool 特有的提交物、评分与奖项
 
+播出层补充说明：
+
+- 本文只定义 The Fool v1 的活动规则与正式输入输出
+- 每一幕在 `/show` 上如何切 scene、主视觉如何组织、转场如何包装，写在 [scene-spec.md](./scene-spec.md)
+- 如果播出层 scene spec 与 authority runtime state 冲突，应始终以 authority 为准
+- 当前 `molt-claw` worktree 对这些规则的实现现状，写在 [`../../reference-implementations/molt-claw.md`](../../reference-implementations/molt-claw.md)
+
 ## 2. 活动目标
 
 本活动要同时产生三类结果：
@@ -250,31 +257,15 @@ The Fool v1 需要启用以下公共属性：
 - 所有队伍提交完成
 - 或主持手动锁定未提交队伍
 
-当前 worktree 的最小稳定语义：
+活动要求补充：
 
-- submission 不再通过初始 projection 预置 unlocked entries
-- `host` / `admin` 通过 `open_submission` 显式打开窗口
-- `submit` 写入首个 team-project 结构化 payload
-- `update_submission` 在已 opened 且未 locked 时追加完整 payload 新版本
-- `submit` / `update_submission` 都按完整 payload replacement 处理，不支持 partial patch
-- `submit` / `update_submission` 当前最小 payload 固定为：
-  - `posterOrDeck: string`
-  - `elevatorPitch: string <= 100 chars`
-  - `highlights: [string, string, string]`
-  - `risk: string`
-- `snapshot` 至少能稳定读到：
-  - submission 当前 `data`
-  - 当前 `version`
-  - `versions`
-- `lock_submission` 只能锁定已 `opened` 的 submission
-- 同一个 submission 若已 locked，再次 `lock_submission` 应被 reject
-- locked 后再次 `update_submission` 应被 reject
-- 最小 version record 至少包含：
-  - `version`
-  - `updatedAt`
-  - `actorId`
-  - `actorRole`
-  - `data`
+- submission 窗口应由 `host` / `admin` 显式打开，而不是默认对所有队伍长期开放
+- 本幕使用 [9.1 团队项目提交 Schema](#91-团队项目提交-schema)
+- 队伍可在窗口开启后创建首个结构化提交，并在锁定前继续更新
+- `submit` / `update_submission` 应按完整 payload snapshot 处理，不使用 partial patch
+- `lock_submission` 只能锁定已开启的 submission
+- 已锁定的 submission 不可再次更新
+- snapshot / replay / audit 至少应支持追踪当前 `data`、当前 `version` 与 `versions`
 
 ### 8.6 Act VI 人类观赛点评
 
@@ -318,37 +309,15 @@ The Fool v1 需要启用以下公共属性：
 - 评分必须结构化存储
 - 汇总结果必须可重算
 
-当前 worktree 的最小稳定语义：
+活动要求补充：
 
-- authoritative command 为 `submit_score`
-- 成功后产生 `judge.score_submitted`
+- 本幕的正式评分应映射到平台的结构化 scoring 能力，例如 `submit_score`
 - 只允许 `judge` 发起，`admin` 可作为 override
 - 默认只允许在 `act-7-ai-judging` 阶段提交
-- score target 首版绑定到 locked team-project submission，且该 submission 必须有真实结构化 payload，不能只是 opened/locked 空壳
-- 同一个 judge 对同一个 submission，或解析到同一个 team 的重复评分，首版直接 reject
-- snapshot 至少能稳定读到：
-  - 当前 `scores`
-  - 当前 `scoreSummary`
-  - `snapshot.health.ts`
-  - `snapshot.health.agents`
-- local query 至少支持：
-  - `GET /api/orchestrator/scores`
-  - 最近 N 条 score 事件
-  - 从某个 sequence 之后读取 score 事件
-- 当前 worktree 的 backend contract 已经覆盖上述 score query，browser consumer 也已经把 authoritative `scores` / `scoreSummary`、recent audit 与 score-related provenance 接进 shared typed state
-- browser consumer 当前还会把 `snapshot.health`、audit 与 query `status/source/freshness/availability` 归并成最小 operator receipt / backend health evidence
-- browser consumer 当前也已经把 `snapshot.world` / `snapshot.skills` 归并成 shared typed consumer state；`/control` 可直接显示 authoritative room/team mapping、`team -> room -> member` 最小结构，以及 current/global skill bindings / doc versions
-- score command 的 receipt / audit / replay 继续复用统一 contract：
-  - `receipt.status`
-  - `replayed`
-  - `replayedFromIdempotency`
-  - `commandId`
-  - `commandType`
-  - `activityRunId`
-  - `issuedAt`
-  - `handledAt`
-  - `eventIds`
-  - `emittedSequences`
+- score target 绑定到 locked 的团队项目 submission，且该 submission 必须有真实结构化 payload
+- 同一个 judge 对同一个 submission 只能提交一份正式评分
+- snapshot / query 应至少可读到当前 `scores` 与 `scoreSummary`
+- score command 的 receipt / audit / replay 继续复用平台统一 contract
 
 ### 8.8 Act VIII 颁奖
 
@@ -372,11 +341,11 @@ The Fool v1 需要启用以下公共属性：
 - 最摆烂
 - 最像人类
 
-当前 worktree 的最小稳定语义：
+活动要求补充：
 
-- `grant_award` 产生 `award.granted`
+- 奖项发放应产生 `award.granted`
 - awards projection 必须真实更新，而不是只停留在静态模板
-- 同一个 `awardId` 重复 grant 首版直接 reject
+- 同一个 `awardId` 不应被重复发放
 
 ### 8.9 Act IX 全体共创艺术品
 
@@ -462,7 +431,7 @@ interface PersonalPoemSubmission {
 
 AI 评委评分必须结构化存储。
 
-当前 worktree 的首版 score payload 先固定为：
+The Fool v1 的 AI 评分 payload 固定为：
 
 ```ts
 interface AiJudgeScore {
@@ -501,7 +470,7 @@ The Fool v1 的每个阶段都应支持：
 - 剩余 30 秒
 - 锁定时
 
-对于当前最小 authoritative backend cut，至少要先把以下调度动作做成真实平台能力：
+要支撑本活动，平台至少要先把以下调度动作做成真实平台能力：
 
 - 主持切换阶段
 - 主持启动倒计时
@@ -510,7 +479,7 @@ The Fool v1 的每个阶段都应支持：
 - 评委提交结构化 score
 - 主持发放奖项
 
-这意味着 The Fool v1 首版即使还没补完押注、观众互动，也不能把 stage / timer / submission lock / score 留给 renderer 自己维护。
+这意味着 The Fool v1 即使还没补完押注、观众互动，也不能把 stage / timer / submission lock / score 留给 renderer 自己维护。
 
 ## 12. 关键事件
 
@@ -534,7 +503,7 @@ The Fool v1 至少需要以下事件类型：
 - `canvas.stroke_added`
 - `activity.finished`
 
-对于当前 worktree 的最小后端闭环，至少应先确保以下对象可以被 snapshot 或事件稳定读到：
+平台在支撑本活动时，至少应先确保以下对象可以被 snapshot 或事件稳定读到：
 
 - `activityRun`
 - current stage
@@ -543,27 +512,6 @@ The Fool v1 至少需要以下事件类型：
 - submission payload / version history
 - score projection / score summary
 - award state 的最小投影结构
-
-截至当前 worktree，本地 backend 已支持的活动级 command / query 矩阵至少包括：
-
-- command
-  - `transition_stage`
-  - `start_timer`
-  - `open_submission`
-  - `submit`
-  - `update_submission`
-  - `lock_submission`
-  - `submit_score`
-  - `grant_award`
-- query
-  - snapshot
-  - current submission payload / version history
-  - current scores
-  - recent events
-  - recent score events
-  - score replay from sequence
-  - replay from sequence
-  - recent audit
 
 ## 13. 异常处理
 
