@@ -1,3 +1,5 @@
+import type { ControlActorRole } from "../control";
+
 export type ConnectionState =
   | "idle"
   | "connecting"
@@ -92,13 +94,56 @@ export interface GatewaySkillSnapshot {
   version: string;
 }
 
+export interface GatewaySubmissionVersionSnapshot {
+  version: number;
+  updatedAt: number;
+  actorId?: string;
+  actorRole?: ControlActorRole;
+  data: Record<string, unknown>;
+}
+
 export interface GatewaySubmissionSnapshot {
   id: string;
+  activityRunId?: string;
+  submitterId?: string;
   schemaId: string;
+  data?: Record<string, unknown>;
+  version?: number;
+  versions?: GatewaySubmissionVersionSnapshot[];
   locked: boolean;
   stageId?: string;
   teamId?: string;
+  openedAt?: number;
   updatedAt?: number;
+  lockedAt?: number;
+}
+
+export interface GatewayScoreSnapshot {
+  id: string;
+  activityRunId?: string;
+  stageId?: string;
+  judgeId?: string;
+  judgeRole?: ControlActorRole;
+  targetType: "team" | "submission";
+  targetId: string;
+  submissionId?: string;
+  teamId?: string;
+  score: number;
+  reason: string;
+  favorite: string;
+  mostAbsurd: string;
+  submittedAt: number;
+}
+
+export interface GatewayScoreSummarySnapshot {
+  targetType: "team" | "submission";
+  targetId: string;
+  teamId?: string;
+  submissionId?: string;
+  judgeCount: number;
+  totalScore: number;
+  averageScore: number;
+  lastSubmittedAt: number;
 }
 
 export interface GatewaySnapshotEnvelope {
@@ -108,6 +153,8 @@ export interface GatewaySnapshotEnvelope {
   timers?: GatewayTimerSnapshot[];
   skills?: GatewaySkillSnapshot[];
   submissions?: GatewaySubmissionSnapshot[];
+  scores?: GatewayScoreSnapshot[];
+  scoreSummary?: GatewayScoreSummarySnapshot[];
   awards?: Array<{
     awardId?: string;
     label?: string;
@@ -116,6 +163,15 @@ export interface GatewaySnapshotEnvelope {
     grantedAt?: number;
   }>;
   lastSequence?: number;
+  health?: {
+    agents?: Array<{
+      agentId?: string;
+      sessions?: {
+        recent?: Array<{ key?: string; updatedAt?: number }>;
+      };
+    }>;
+    ts?: number;
+  };
 }
 
 export interface GatewayEventEnvelope<TPayload = Record<string, unknown>> {
@@ -125,6 +181,10 @@ export interface GatewayEventEnvelope<TPayload = Record<string, unknown>> {
   activityRunId?: string;
   entityId?: string;
   roomId?: string;
+  commandId?: string;
+  idempotencyKey?: string;
+  actorId?: string;
+  actorRole?: ControlActorRole;
   timestamp: number;
   payload: TPayload;
 }

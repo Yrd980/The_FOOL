@@ -448,8 +448,9 @@ export interface SnapshotEnvelope {
 当前 worktree 的集成状态还应额外区分清楚：
 
 - local orchestrator backend 已经提供 `snapshot` / `scores` / `events` / `replay` / `audit`
-- browser consumer 目前仍主要依赖 websocket snapshot + delta event
-- `scores` / `scoreSummary`、event provenance、`world/team/skill` typed views，以及单独 query client 仍属于后续 integration work
+- browser consumer 现在会把 websocket snapshot + delta event 与本地 authoritative HTTP query 叠加到同一个 state adapter
+- `/control` 当前已直接显示 `scores` / `scoreSummary`、submission payload / version history、recent audit、query freshness，以及最小 event provenance
+- `world/team/skill` typed views 与更完整的 operator receipt / backend health 仍属于后续 integration work
 - 这些 integration gap 不改变上面的 authoritative contract
 
 ## 8. Skill 绑定与发放

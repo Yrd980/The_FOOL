@@ -146,12 +146,16 @@ Phaser Web、Godot、Unity 都只是 renderer adapter。
 注意：
 
 - 这里描述的是当前 local backend 已经提供的 authoritative contract
-- 它不等于 browser consumer 已经把所有 projection / query 都显示出来
-- 截至当前 worktree，consumer 仍未完整暴露：
+- 它不等于 browser consumer 已经把平台所有 projection 都做完
+- 截至当前 worktree，consumer 已经稳定暴露：
   - `scores` / `scoreSummary`
+  - current submission payload / current version / version history
+  - recent audit records
   - event provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）
-  - `world/team/skill` typed views
   - `snapshot` / `scores` / `events` / `replay` / `audit` 的单独 query client
+- 仍未完整暴露：
+  - `world/team/skill` typed views
+  - 更完整的 receipt-ish operator feedback / backend health surfaces
 
 这里的含义是：
 

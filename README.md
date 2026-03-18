@@ -48,7 +48,7 @@ bun run openclaw:control -- stage activity-run-01 act-5-submission
 bun run openclaw:control -- start-timer activity-run-01 act-5-submission 420
 bun run openclaw:control -- open-submission activity-run-01 submission-01
 bun run openclaw:control -- submit activity-run-01 submission-01 '{"posterOrDeck":"https://example.com/poster.pdf","elevatorPitch":"AI lobster co-pilot for absurd product teams","highlights":["Live room orchestration","Structured submission history","Replayable scoring"],"risk":"Audience onboarding still depends on live host guidance"}'
-bun run openclaw:control -- update-submission activity-run-01 submission-01 '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"Browser consumer still lags behind typed score views"}'
+bun run openclaw:control -- update-submission activity-run-01 submission-01 '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"World and team overlays still need richer renderer views"}'
 bun run openclaw:control -- lock-submission activity-run-01 submission-01
 bun run openclaw:control -- stage activity-run-01 act-7-ai-judging
 bun run openclaw:control -- submit-score activity-run-01 submission-01 9 --reason "Strong systems thinking and crisp delivery" --favorite "Cohesive audience framing" --most-absurd "Treating crustacean drama as a product moat"
@@ -108,17 +108,19 @@ renderer 侧现状：
 - 前端解析层已经接好并兼容：
   - session / room chat
   - activity snapshot / websocket delta
-  - stage / timer / submission / award 等领域事件
-  - `judge.score_submitted` 进入 domain event feed
-- 导演台会显示：
+  - local authoritative HTTP typed query：`snapshot` / `scores` / `events` / `replay` / `audit`
+  - stage / timer / submission / award / score 等领域事件
+- 导演台当前最少会显示：
   - 当前权威 stage
   - 当前幕 timer
-  - submission lock 进度
-  - 最近平台事件流
-- 当前 browser consumer 还没有完全接上的部分：
-  - `scores` / `scoreSummary` 还没成为稳定 UI state
-  - `/api/orchestrator/snapshot` / `scores` / `events` / `replay` / `audit` 还没有单独的 typed query client
-  - event provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）以及 `world/team/skill` 投影还没完整暴露到 `GatewayOverview`
+  - 当前 submission payload / current version / version history
+  - 当前 `scores` / `scoreSummary`
+  - recent audit / query freshness / backend errors
+  - 最近平台事件流与最小 provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）
+- `/show` 继续复用同一份 authoritative state；这轮没有单独扩版，但也不再只停留在 websocket event hint
+- 当前 browser consumer 还没完全闭环的部分：
+  - `world/team/skill` typed views 还没完整暴露到 `GatewayOverview`
+  - “命令结果回执 / 错误回显 / 本地 backend health” 仍只有最小 operator 证据
 
 这意味着当前 worktree 的主线，已经从“静态十幕页面”推进到了“消费 orchestrator 快照和事件的双界面客户端”。
 
@@ -133,6 +135,8 @@ bun run openclaw:orchestrator
 
 VITE_OPENCLAW_URL=ws://127.0.0.1:18791
 VITE_OPENCLAW_TOKEN=molt-claw-local-dev
+VITE_OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791
+VITE_OPENCLAW_ORCHESTRATOR_TOKEN=molt-claw-local-dev
 OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791
 OPENCLAW_ORCHESTRATOR_TOKEN=molt-claw-local-dev
 ```
@@ -156,6 +160,10 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
 说明：
 
 - `VITE_OPENCLAW_*` 用于前端 websocket 连接；可以指向 live gateway，也可以指向本地 orchestrator
+- `VITE_OPENCLAW_ORCHESTRATOR_URL` / `VITE_OPENCLAW_ORCHESTRATOR_TOKEN` 用于让 browser consumer 直接读取本地 authoritative HTTP query
+  - 推荐显式配置这两个 env
+  - 如果没有显式配置，但 `VITE_OPENCLAW_URL=ws://127.0.0.1:18791`，浏览器会只对这个已知本地 orchestrator websocket 自动推导 HTTP query path
+  - browser 不会从任意 live gateway websocket URL 反推 HTTP query path，以免把 local query path 和 live websocket probe/dispatch path 混在一起
 - `OPENCLAW_ORCHESTRATOR_URL` / `OPENCLAW_ORCHESTRATOR_TOKEN` 用于让 `openclaw:control` 直接调用 worktree 内的本地 authoritative backend
   - 一旦配置了 `OPENCLAW_ORCHESTRATOR_URL`，`stage` / `start-timer` / `open-submission` / `submit` / `update-submission` / `lock-submission` / `submit-score` / `grant-award` 以及 `snapshot/scores/events/replay/audit` 都会优先直连本地 backend，而不是走 live gateway 猜 dispatch method
 - `openclaw:control` 的本机诊断命令在没有显式 env 时，也会回退读取 `~/.openclaw/openclaw.json -> gateway.auth.token`
@@ -263,7 +271,7 @@ bun run openclaw:control -- submit activity-run-01 submission-01 \
 
 # 4. 在未锁定前用完整 payload 替换当前 submission
 bun run openclaw:control -- update-submission activity-run-01 submission-01 \
-  '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"Browser consumer still lags behind typed score views"}'
+  '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"World and team overlays still need richer renderer views"}'
 
 # 5. 锁定 submission
 bun run openclaw:control -- lock-submission activity-run-01 submission-01
@@ -399,7 +407,7 @@ bun run openclaw:control -- submit activity-run-01 submission-01 \
 
 # Update a still-open submission with a new full payload snapshot
 bun run openclaw:control -- update-submission activity-run-01 submission-01 \
-  '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"Browser consumer still lags behind typed score views"}'
+  '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"World and team overlays still need richer renderer views"}'
 
 # Generate or dispatch a submission lock command
 bun run openclaw:control -- lock-submission activity-run-01 submission-01
@@ -460,10 +468,9 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
   - 自动由 score 推导 award 与更细粒度的权限模型
   - 多活动实例 / 多活动运行并发
 - 当前 renderer/client 还没有补齐：
-  - `scores` / `scoreSummary` 的稳定 UI projection
-  - `snapshot` / `scores` / `events` / `replay` / `audit` 的 typed query client
-  - event provenance 与 `world/team/skill` 的 typed consumer state
-  - “命令结果回执 / 错误回显 / 本地 backend health”完整操作闭环
+  - `world/team/skill` 的 typed consumer state
+  - “命令结果回执 / 错误回显 / 本地 backend health”更完整的操作闭环
+  - `/show` 侧若要单独强化 submission/score/audit 展示，还需要额外的 show-specific composition
 
 ## Structure
 
@@ -473,6 +480,8 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
 - `src/components/ControlMode.tsx`: operator-facing director deck shell
 - `src/components/*`: shared control header, stage workspace, stage sidebar, integration rail
 - `src/openclaw/control.ts`: room aliases and gateway call arg builders
+- `src/openclaw/orchestratorQueryClient.ts`: typed local authoritative HTTP query adapter for `snapshot` / `scores` / `events` / `replay` / `audit`
+- `src/openclaw/useGatewayOverview.ts`: shared state adapter that merges websocket feed and authoritative query into stable UI state
 - `src/openclaw/gateway/*`: lightweight gateway client and connection reducer
 - `scripts/openclaw-control.ts`: operator-facing wrapper around the OpenClaw CLI
 - `scripts/openclaw-orchestrator.ts`: local authoritative orchestrator backend with snapshot/event/command endpoints

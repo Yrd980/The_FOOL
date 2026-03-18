@@ -333,8 +333,8 @@ The Fool v1 需要启用以下公共属性：
   - `GET /api/orchestrator/scores`
   - 最近 N 条 score 事件
   - 从某个 sequence 之后读取 score 事件
-- 当前 worktree 的 backend contract 已经覆盖上述 score query，但 browser consumer 仍只把 `judge.score_submitted` 先接成 domain event feed
-- `scores` / `scoreSummary`、event provenance，以及 `world/team/skill` typed consumer state 仍属于后续 integration gap
+- 当前 worktree 的 backend contract 已经覆盖上述 score query，browser consumer 也已经把 authoritative `scores` / `scoreSummary`、recent audit 与 score-related provenance 接进 shared typed state
+- `world/team/skill` typed consumer state，以及更完整的 operator receipt / backend health 仍属于后续 integration gap
 - score command 的 receipt / audit / replay 继续复用统一 contract：
   - `receipt.status`
   - `replayed`

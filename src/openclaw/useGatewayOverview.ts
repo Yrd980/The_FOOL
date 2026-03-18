@@ -2,10 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   GatewayActivity,
   GatewayActivityRunSummary,
+  GatewayAuditRecordSummary,
+  GatewayAuthoritativeQueryStatus,
   GatewayAwardSummary,
   GatewayContestantSummary,
   GatewayDomainEventSummary,
   GatewayOverview,
+  GatewayScoreEntrySummary,
+  GatewayScoreSummaryEntry,
   GatewayStateCount,
   GatewaySubmissionSummary,
   GatewayTimerSummary,
@@ -19,6 +23,14 @@ import {
   summarizeGatewayOrchestrationContract,
 } from "./control";
 import { OpenClawGatewayClient } from "./gateway/OpenClawGatewayClient";
+import {
+  OrchestratorQueryClient,
+  resolveBrowserOrchestratorQueryConfig,
+  type OrchestratorAuditResponse,
+  type OrchestratorEventPage,
+  type OrchestratorScoresResponse,
+  type OrchestratorSnapshotResponse,
+} from "./orchestratorQueryClient";
 import type {
   ConnectionState,
   GatewayActivityRunSnapshot,
@@ -26,6 +38,8 @@ import type {
   GatewayEventEnvelope,
   GatewayHelloPayload,
   GatewayMessage,
+  GatewayScoreSnapshot,
+  GatewayScoreSummarySnapshot,
   GatewaySessionEntry,
   GatewaySnapshotEnvelope,
   GatewaySubmissionSnapshot,
@@ -52,6 +66,8 @@ interface OrchestrationState {
   activityRun: GatewayActivityRunSnapshot | null;
   timers: GatewayTimerSnapshot[];
   submissions: GatewaySubmissionSnapshot[];
+  scores: GatewayScoreSnapshot[];
+  scoreSummary: GatewayScoreSummarySnapshot[];
   awards: GatewayAwardSummary[];
   domainEvents: GatewayDomainEventSummary[];
   lastSequence: number | null;
@@ -62,6 +78,8 @@ const EMPTY_ORCHESTRATION_STATE: OrchestrationState = {
   activityRun: null,
   timers: [],
   submissions: [],
+  scores: [],
+  scoreSummary: [],
   awards: [],
   domainEvents: [],
   lastSequence: null,
@@ -75,6 +93,36 @@ interface GatewayFeatureState {
 const EMPTY_GATEWAY_FEATURES: GatewayFeatureState = {
   methods: [],
   events: [],
+};
+
+interface AuthoritativeQueryState {
+  configured: boolean;
+  baseUrl: string | null;
+  source: GatewayAuthoritativeQueryStatus["source"];
+  note: string | null;
+  snapshot: OrchestratorSnapshotResponse | null;
+  scores: OrchestratorScoresResponse | null;
+  events: OrchestratorEventPage | null;
+  replay: OrchestratorEventPage | null;
+  audit: OrchestratorAuditResponse | null;
+  loading: boolean;
+  error: string | null;
+  lastSuccessfulAt: number | null;
+}
+
+const EMPTY_AUTHORITATIVE_QUERY_STATE: AuthoritativeQueryState = {
+  configured: false,
+  baseUrl: null,
+  source: "unavailable",
+  note: null,
+  snapshot: null,
+  scores: null,
+  events: null,
+  replay: null,
+  audit: null,
+  loading: false,
+  error: null,
+  lastSuccessfulAt: null,
 };
 
 const deriveContestantState = (
@@ -113,6 +161,28 @@ const formatRemainingLabel = (remainingMs: number): string => {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
+const formatAverageScoreLabel = (score: number): string =>
+  Number.isFinite(score) ? score.toFixed(1) : "0.0";
+
+const formatQueryFreshness = (lastSuccessfulAt: number | null): string => {
+  if (!lastSuccessfulAt) {
+    return "No query sync yet";
+  }
+
+  const deltaMs = Date.now() - lastSuccessfulAt;
+  const ageLabel = formatUpdatedLabel(lastSuccessfulAt);
+
+  if (deltaMs < 15_000) {
+    return `Fresh · ${ageLabel}`;
+  }
+
+  if (deltaMs < 60_000) {
+    return `Aging · ${ageLabel}`;
+  }
+
+  return `Stale · ${ageLabel}`;
 };
 
 const formatGatewayWarning = (warning: string): string => {
@@ -161,6 +231,157 @@ const readBoolean = (
     }
   }
   return null;
+};
+
+const readRole = (
+  record: Record<string, unknown>,
+  ...keys: string[]
+): GatewaySubmissionSummary["latestActorRole"] => {
+  const value = readString(record, ...keys);
+  if (
+    value === "agent" ||
+    value === "host" ||
+    value === "judge" ||
+    value === "viewer" ||
+    value === "admin"
+  ) {
+    return value;
+  }
+  return null;
+};
+
+const buildEventProvenance = (event: GatewayEventEnvelope) => ({
+  commandId: event.commandId ?? null,
+  idempotencyKey: event.idempotencyKey ?? null,
+  actorId: event.actorId ?? null,
+  actorRole: event.actorRole ?? null,
+});
+
+const extractSubmissionVersions = (
+  value: unknown,
+): GatewaySubmissionSnapshot["versions"] => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const versions: NonNullable<GatewaySubmissionSnapshot["versions"]> = [];
+
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const version = readNumber(entry, "version");
+    const updatedAt = readNumber(entry, "updatedAt");
+    const data = isRecord(entry.data) ? entry.data : null;
+
+    if (version === null || updatedAt === null || !data) {
+      continue;
+    }
+
+    versions.push({
+      version,
+      updatedAt,
+      actorId: readString(entry, "actorId") ?? undefined,
+      actorRole: readRole(entry, "actorRole") ?? undefined,
+      data,
+    });
+  }
+
+  return versions.length > 0 ? versions : undefined;
+};
+
+const extractScoreUpdate = (
+  event: GatewayEventEnvelope,
+): GatewayScoreSnapshot | null => {
+  const payload = isRecord(event.payload) ? event.payload : {};
+  const judgeScore = isRecord(payload.judgeScore) ? payload.judgeScore : payload;
+  const id = readString(judgeScore, "id");
+  const targetTypeValue = readString(judgeScore, "targetType");
+  const targetId =
+    readString(judgeScore, "targetId", "submissionId") ??
+    readString(payload, "targetId", "submissionId");
+  const score = readNumber(judgeScore, "score");
+  const submittedAt =
+    readNumber(judgeScore, "submittedAt", "timestamp") ?? event.timestamp;
+
+  if (
+    !id ||
+    !targetId ||
+    score === null ||
+    (targetTypeValue !== "team" && targetTypeValue !== "submission")
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    activityRunId:
+      readString(judgeScore, "activityRunId") ??
+      event.activityRunId ??
+      undefined,
+    stageId:
+      readString(judgeScore, "stageId") ??
+      stageIdFromPayload(payload) ??
+      undefined,
+    judgeId:
+      readString(judgeScore, "judgeId") ??
+      event.actorId ??
+      undefined,
+    judgeRole:
+      readRole(judgeScore, "judgeRole") ??
+      event.actorRole ??
+      undefined,
+    targetType: targetTypeValue,
+    targetId,
+    submissionId:
+      readString(judgeScore, "submissionId") ??
+      (targetTypeValue === "submission" ? targetId : undefined),
+    teamId: readString(judgeScore, "teamId") ?? undefined,
+    score,
+    reason: readString(judgeScore, "reason") ?? "",
+    favorite: readString(judgeScore, "favorite") ?? "",
+    mostAbsurd: readString(judgeScore, "mostAbsurd") ?? "",
+    submittedAt,
+  };
+};
+
+const buildScoreSummarySnapshots = (
+  scores: GatewayScoreSnapshot[],
+): GatewayScoreSummarySnapshot[] => {
+  const summaryByTarget = new Map<string, GatewayScoreSummarySnapshot>();
+
+  for (const score of scores) {
+    const key = `${score.targetType}:${score.targetId}`;
+    const existing = summaryByTarget.get(key);
+    if (!existing) {
+      summaryByTarget.set(key, {
+        targetType: score.targetType,
+        targetId: score.targetId,
+        teamId: score.teamId,
+        submissionId: score.submissionId,
+        judgeCount: 1,
+        totalScore: score.score,
+        averageScore: score.score,
+        lastSubmittedAt: score.submittedAt,
+      });
+      continue;
+    }
+
+    const judgeCount = existing.judgeCount + 1;
+    const totalScore = existing.totalScore + score.score;
+    summaryByTarget.set(key, {
+      ...existing,
+      judgeCount,
+      totalScore,
+      averageScore: totalScore / judgeCount,
+      lastSubmittedAt: Math.max(existing.lastSubmittedAt, score.submittedAt),
+    });
+  }
+
+  return [...summaryByTarget.values()].sort(
+    (left, right) => right.averageScore - left.averageScore,
+  );
 };
 
 const normalizeHelloFeatures = (
@@ -277,14 +498,27 @@ const extractSubmissionUpdate = (
 
   return {
     id,
+    activityRunId:
+      readString(submission, "activityRunId") ??
+      event.activityRunId ??
+      undefined,
+    submitterId:
+      readString(submission, "submitterId") ??
+      readString(payload, "submitterId") ??
+      undefined,
     schemaId,
+    data: isRecord(submission.data) ? submission.data : undefined,
+    version: readNumber(submission, "version") ?? undefined,
+    versions: extractSubmissionVersions(submission.versions),
     locked,
     teamId: readString(submission, "teamId") ?? readString(payload, "teamId") ?? undefined,
     stageId: readString(submission, "stageId") ?? stageIdFromPayload(payload) ?? undefined,
+    openedAt: readNumber(submission, "openedAt") ?? undefined,
     updatedAt:
       readNumber(submission, "updatedAt") ??
       readNumber(payload, "updatedAt") ??
       event.timestamp,
+    lockedAt: readNumber(submission, "lockedAt") ?? undefined,
   };
 };
 
@@ -340,11 +574,13 @@ const buildDomainEventSummary = (
   const payload = isRecord(event.payload) ? event.payload : {};
   const stageId = stageIdFromPayload(payload);
   const timestampLabel = formatClockLabel(event.timestamp);
+  const provenance = buildEventProvenance(event);
 
   if (event.type === "stage.changed") {
     const nextStageId = readString(payload, "toStageId", "currentStageId", "stageId");
     return {
       id: event.id,
+      sequence: event.sequence ?? null,
       type: event.type,
       title: "Stage Changed",
       detail: nextStageId
@@ -354,6 +590,7 @@ const buildDomainEventSummary = (
       timestampLabel,
       stageId: nextStageId ?? stageId,
       tone: "critical",
+      provenance,
     };
   }
 
@@ -361,6 +598,7 @@ const buildDomainEventSummary = (
     const timer = extractTimerUpdate(event);
     return {
       id: event.id,
+      sequence: event.sequence ?? null,
       type: event.type,
       title:
         event.type === "timer.started"
@@ -375,6 +613,7 @@ const buildDomainEventSummary = (
       timestampLabel,
       stageId: timer?.stageId ?? stageId,
       tone: event.type === "timer.ended" ? "active" : "warm",
+      provenance,
     };
   }
 
@@ -382,6 +621,7 @@ const buildDomainEventSummary = (
     const submission = extractSubmissionUpdate(event);
     return {
       id: event.id,
+      sequence: event.sequence ?? null,
       type: event.type,
       title:
         event.type === "submission.locked"
@@ -396,19 +636,31 @@ const buildDomainEventSummary = (
       timestampLabel,
       stageId: submission?.stageId ?? stageId,
       tone: event.type === "submission.locked" ? "active" : "warm",
+      provenance,
     };
   }
 
   if (event.type === "judge.score_submitted") {
+    const judgeScore = isRecord(payload.judgeScore) ? payload.judgeScore : payload;
+    const submissionId =
+      readString(judgeScore, "submissionId", "targetId") ??
+      readString(payload, "submissionId", "targetId");
+    const judgeId = readString(judgeScore, "judgeId") ?? event.actorId;
+    const score = readNumber(judgeScore, "score") ?? readNumber(payload, "score");
     return {
       id: event.id,
+      sequence: event.sequence ?? null,
       type: event.type,
       title: "Judge Score Submitted",
-      detail: summarizePayload(payload),
+      detail:
+        score !== null
+          ? `${judgeId ?? "judge"} 对 ${submissionId ?? "submission"} 提交了 ${score}/10。`
+          : summarizePayload(payload),
       timestamp: event.timestamp,
       timestampLabel,
       stageId,
       tone: "warm",
+      provenance,
     };
   }
 
@@ -416,6 +668,7 @@ const buildDomainEventSummary = (
     const award = extractAwardUpdate(event);
     return {
       id: event.id,
+      sequence: event.sequence ?? null,
       type: event.type,
       title: award ? `Award Granted · ${award.label}` : "Award Granted",
       detail: award
@@ -425,12 +678,14 @@ const buildDomainEventSummary = (
       timestampLabel,
       stageId,
       tone: "critical",
+      provenance,
     };
   }
 
   if (event.type === "activity.started" || event.type === "activity.finished") {
     return {
       id: event.id,
+      sequence: event.sequence ?? null,
       type: event.type,
       title:
         event.type === "activity.started" ? "Activity Started" : "Activity Finished",
@@ -439,11 +694,13 @@ const buildDomainEventSummary = (
       timestampLabel,
       stageId,
       tone: "critical",
+      provenance,
     };
   }
 
   return {
     id: event.id,
+    sequence: event.sequence ?? null,
     type: event.type,
     title: event.type,
     detail: summarizePayload(payload),
@@ -451,6 +708,7 @@ const buildDomainEventSummary = (
     timestampLabel,
     stageId,
     tone: "idle",
+    provenance,
   };
 };
 
@@ -486,6 +744,10 @@ const applySnapshot = (
     submissions: Array.isArray(snapshot.submissions)
       ? snapshot.submissions
       : previous.submissions,
+    scores: Array.isArray(snapshot.scores) ? snapshot.scores : previous.scores,
+    scoreSummary: Array.isArray(snapshot.scoreSummary)
+      ? snapshot.scoreSummary
+      : previous.scoreSummary,
     awards,
     domainEvents: previous.domainEvents,
     lastSequence:
@@ -561,6 +823,20 @@ const applyOrchestrationEvent = (
     }
   }
 
+  if (event.type === "judge.score_submitted") {
+    const score = extractScoreUpdate(event);
+    if (score) {
+      const nextScores = upsertById(nextState.scores, score).sort(
+        (left, right) => right.submittedAt - left.submittedAt,
+      );
+      nextState = {
+        ...nextState,
+        scores: nextScores.slice(0, 24),
+        scoreSummary: buildScoreSummarySnapshots(nextScores),
+      };
+    }
+  }
+
   if (event.type === "award.granted") {
     const award = extractAwardUpdate(event);
     if (award) {
@@ -574,10 +850,171 @@ const applyOrchestrationEvent = (
   return nextState;
 };
 
+const summarizeSubmissionVersionActor = (
+  submission: GatewaySubmissionSnapshot,
+): { actorId: string | null; actorRole: GatewaySubmissionSummary["latestActorRole"] } => {
+  const latestVersion = [...(submission.versions ?? [])].sort(
+    (left, right) =>
+      normalizeTimestamp(right.updatedAt) - normalizeTimestamp(left.updatedAt),
+  )[0];
+
+  return {
+    actorId: latestVersion?.actorId ?? null,
+    actorRole: latestVersion?.actorRole ?? null,
+  };
+};
+
+const buildSubmissionSummary = (
+  submission: GatewaySubmissionSnapshot,
+): GatewaySubmissionSummary => {
+  const latestActor = summarizeSubmissionVersionActor(submission);
+
+  return {
+    id: submission.id,
+    schemaId: submission.schemaId,
+    locked: submission.locked,
+    lockedLabel: submission.locked ? "Locked" : "Open",
+    teamId: submission.teamId ?? null,
+    stageId: submission.stageId ?? null,
+    data: isRecord(submission.data) ? submission.data : null,
+    version: typeof submission.version === "number" ? submission.version : null,
+    versions: [...(submission.versions ?? [])]
+      .map((version) => ({
+        version: version.version,
+        updatedAt: normalizeTimestamp(version.updatedAt),
+        updatedLabel: formatUpdatedLabel(version.updatedAt),
+        actorId: version.actorId ?? null,
+        actorRole: version.actorRole ?? null,
+        data: version.data,
+      }))
+      .sort((left, right) => right.version - left.version),
+    openedAt:
+      typeof submission.openedAt === "number"
+        ? normalizeTimestamp(submission.openedAt)
+        : null,
+    updatedAt:
+      typeof submission.updatedAt === "number"
+        ? normalizeTimestamp(submission.updatedAt)
+        : null,
+    updatedLabel:
+      typeof submission.updatedAt === "number"
+        ? formatUpdatedLabel(submission.updatedAt)
+        : null,
+    lockedAt:
+      typeof submission.lockedAt === "number"
+        ? normalizeTimestamp(submission.lockedAt)
+        : null,
+    latestActorId: latestActor.actorId,
+    latestActorRole: latestActor.actorRole,
+  };
+};
+
+const buildScoreEntrySummary = (
+  score: GatewayScoreSnapshot,
+): GatewayScoreEntrySummary => {
+  const submittedAt = normalizeTimestamp(score.submittedAt);
+  return {
+    id: score.id,
+    targetType: score.targetType,
+    targetId: score.targetId,
+    submissionId: score.submissionId ?? null,
+    teamId: score.teamId ?? null,
+    stageId: score.stageId ?? null,
+    judgeId: score.judgeId ?? null,
+    judgeRole: score.judgeRole ?? null,
+    score: score.score,
+    reason: score.reason,
+    favorite: score.favorite,
+    mostAbsurd: score.mostAbsurd,
+    submittedAt,
+    submittedLabel: formatClockLabel(submittedAt),
+  };
+};
+
+const buildScoreSummaryEntry = (
+  summary: GatewayScoreSummarySnapshot,
+): GatewayScoreSummaryEntry => {
+  const lastSubmittedAt = normalizeTimestamp(summary.lastSubmittedAt);
+  return {
+    targetType: summary.targetType,
+    targetId: summary.targetId,
+    teamId: summary.teamId ?? null,
+    submissionId: summary.submissionId ?? null,
+    judgeCount: summary.judgeCount,
+    totalScore: summary.totalScore,
+    averageScore: summary.averageScore,
+    averageLabel: formatAverageScoreLabel(summary.averageScore),
+    lastSubmittedAt,
+    lastSubmittedLabel: formatClockLabel(lastSubmittedAt),
+  };
+};
+
+const buildAuditRecordSummary = (
+  record: OrchestratorAuditResponse["records"][number],
+): GatewayAuditRecordSummary => {
+  const handledAt = normalizeTimestamp(record.handledAt);
+  const issuedAt = normalizeTimestamp(record.issuedAt);
+
+  return {
+    id: record.auditId,
+    commandId: record.commandId,
+    sourceCommandId: record.sourceCommandId,
+    commandType: record.commandType,
+    status: record.status,
+    accepted: record.accepted,
+    replayed: record.replayed,
+    replayedFromIdempotency: record.replayedFromIdempotency ?? null,
+    actorId: record.actorId,
+    actorRole: record.actorRole,
+    idempotencyKey: record.idempotencyKey ?? null,
+    handledAt,
+    handledLabel: formatClockLabel(handledAt),
+    issuedAt,
+    issuedLabel: formatClockLabel(issuedAt),
+    emittedSequences: record.emittedSequences,
+    errorCode: record.error?.code ?? null,
+    errorMessage: record.error?.message ?? null,
+  };
+};
+
+const resolveCurrentSubmission = (
+  submissions: GatewaySubmissionSummary[],
+  currentStageId: string | null,
+): GatewaySubmissionSummary | null =>
+  [...submissions]
+    .sort((left, right) => {
+      const rightStageMatch = Number(
+        Boolean(currentStageId && right.stageId === currentStageId),
+      );
+      const leftStageMatch = Number(
+        Boolean(currentStageId && left.stageId === currentStageId),
+      );
+
+      if (rightStageMatch !== leftStageMatch) {
+        return rightStageMatch - leftStageMatch;
+      }
+
+      return (right.updatedAt ?? 0) - (left.updatedAt ?? 0);
+    })[0] ?? null;
+
 export function useGatewayOverview(): GatewayOverview {
   const gatewayUrl = import.meta.env.VITE_OPENCLAW_URL?.trim() || "";
   const gatewayToken = import.meta.env.VITE_OPENCLAW_TOKEN?.trim() || "";
+  const orchestratorQueryBaseUrl =
+    import.meta.env.VITE_OPENCLAW_ORCHESTRATOR_URL?.trim() || "";
+  const orchestratorQueryToken =
+    import.meta.env.VITE_OPENCLAW_ORCHESTRATOR_TOKEN?.trim() || "";
   const configured = Boolean(gatewayUrl && gatewayToken);
+  const orchestratorQueryConfig = useMemo(
+    () =>
+      resolveBrowserOrchestratorQueryConfig({
+        orchestratorBaseUrl: orchestratorQueryBaseUrl,
+        gatewayUrl,
+        orchestratorToken: orchestratorQueryToken,
+        gatewayToken,
+      }),
+    [gatewayToken, gatewayUrl, orchestratorQueryBaseUrl, orchestratorQueryToken],
+  );
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [authFailed, setAuthFailed] = useState(false);
   const [gatewayWarning, setGatewayWarning] = useState<string | null>(null);
@@ -588,6 +1025,9 @@ export function useGatewayOverview(): GatewayOverview {
   const [messages, setMessages] = useState<GatewayMessage[]>([]);
   const [orchestration, setOrchestration] = useState<OrchestrationState>(
     EMPTY_ORCHESTRATION_STATE,
+  );
+  const [authoritativeQuery, setAuthoritativeQuery] = useState<AuthoritativeQueryState>(
+    EMPTY_AUTHORITATIVE_QUERY_STATE,
   );
 
   useEffect(() => {
@@ -646,52 +1086,131 @@ export function useGatewayOverview(): GatewayOverview {
     };
   }, [configured, gatewayToken, gatewayUrl]);
 
-  return useMemo(() => {
-    const emptyStateCounts: GatewayStateCount[] = [
-      { state: "speaking", label: "Speaking", count: 0, tone: "critical" },
-      { state: "raised-hand", label: "Raised Hand", count: 0, tone: "active" },
-      { state: "listening", label: "Listening", count: 0, tone: "warm" },
-      { state: "muted", label: "Muted", count: 0, tone: "idle" },
-    ];
-
-    if (!configured) {
-      return {
-        configured: false,
-        gatewayUrl: null,
-        connectionState: "idle",
-        authFailed: false,
-        statusMessage: "OpenClaw not configured in this environment.",
-        gatewayWarning: null,
-        orchestrationContractStatus: "unknown",
-        orchestrationContractNote: null,
-        activityRun: null,
-        authorityStageId: null,
-        lastSequence: null,
-        timers: [],
-        activeTimer: null,
-        submissions: [],
-        lockedSubmissionCount: 0,
-        totalSubmissionCount: 0,
-        awards: [],
-        domainEvents: [],
-        totalActiveSessions: 0,
-        stateCounts: emptyStateCounts,
-        roomCounts: DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
-          roomId,
-          label: getRoomLabel(roomId),
-          count: 0,
-        })),
-        roomRosters: DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
-          roomId,
-          label: getRoomLabel(roomId),
-          sessions: [],
-        })),
-        sessions: [],
-        contestants: [],
-        activities: [],
-      };
+  useEffect(() => {
+    if (!orchestratorQueryConfig) {
+      setAuthoritativeQuery({
+        ...EMPTY_AUTHORITATIVE_QUERY_STATE,
+        note: !gatewayUrl && !orchestratorQueryBaseUrl
+          ? "Authoritative HTTP query path is not configured yet."
+          : !gatewayToken && !orchestratorQueryToken
+            ? "Authoritative HTTP query path needs VITE_OPENCLAW_TOKEN or VITE_OPENCLAW_ORCHESTRATOR_TOKEN."
+            : gatewayUrl
+              ? "Set VITE_OPENCLAW_ORCHESTRATOR_URL, or point VITE_OPENCLAW_URL at local ws://127.0.0.1:18791 to enable browser authoritative queries."
+              : "Authoritative HTTP query path is unavailable.",
+      });
+      return;
     }
 
+    let cancelled = false;
+    const client = new OrchestratorQueryClient(orchestratorQueryConfig);
+    const activityRunId = orchestration.activityRun?.id;
+
+    const loadAuthoritativeQueries = async () => {
+      setAuthoritativeQuery((previous) => ({
+        ...previous,
+        configured: true,
+        baseUrl: orchestratorQueryConfig.baseUrl,
+        source: orchestratorQueryConfig.source,
+        note: orchestratorQueryConfig.note,
+        loading: true,
+        error: null,
+      }));
+
+      const results = await Promise.allSettled([
+        client.fetchSnapshot(activityRunId),
+        client.fetchScores({ activityRunId, limit: 12 }),
+        client.fetchEvents({ activityRunId, limit: 12 }),
+        client.fetchReplay({ activityRunId, limit: 12 }),
+        client.fetchAudit({ activityRunId, limit: 8 }),
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      const completedAt = Date.now();
+
+      setAuthoritativeQuery((previous) => {
+        const nextState: AuthoritativeQueryState = {
+          ...previous,
+          configured: true,
+          baseUrl: orchestratorQueryConfig.baseUrl,
+          source: orchestratorQueryConfig.source,
+          note: orchestratorQueryConfig.note,
+          loading: false,
+          error: null,
+        };
+        const errors: string[] = [];
+        let successCount = 0;
+
+        if (results[0]?.status === "fulfilled") {
+          nextState.snapshot = results[0].value;
+          successCount += 1;
+        } else if (results[0]) {
+          errors.push(`snapshot: ${results[0].reason instanceof Error ? results[0].reason.message : "request failed"}`);
+        }
+
+        if (results[1]?.status === "fulfilled") {
+          nextState.scores = results[1].value;
+          successCount += 1;
+        } else if (results[1]) {
+          errors.push(`scores: ${results[1].reason instanceof Error ? results[1].reason.message : "request failed"}`);
+        }
+
+        if (results[2]?.status === "fulfilled") {
+          nextState.events = results[2].value;
+          successCount += 1;
+        } else if (results[2]) {
+          errors.push(`events: ${results[2].reason instanceof Error ? results[2].reason.message : "request failed"}`);
+        }
+
+        if (results[3]?.status === "fulfilled") {
+          nextState.replay = results[3].value;
+          successCount += 1;
+        } else if (results[3]) {
+          errors.push(`replay: ${results[3].reason instanceof Error ? results[3].reason.message : "request failed"}`);
+        }
+
+        if (results[4]?.status === "fulfilled") {
+          nextState.audit = results[4].value;
+          successCount += 1;
+        } else if (results[4]) {
+          errors.push(`audit: ${results[4].reason instanceof Error ? results[4].reason.message : "request failed"}`);
+        }
+
+        if (successCount > 0) {
+          nextState.lastSuccessfulAt = completedAt;
+        }
+
+        if (errors.length > 0) {
+          nextState.error = errors.join(" | ");
+        }
+
+        return nextState;
+      });
+    };
+
+    void loadAuthoritativeQueries();
+
+    const refreshTimer = setInterval(() => {
+      void loadAuthoritativeQueries();
+    }, 15_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(refreshTimer);
+    };
+  }, [
+    orchestratorQueryConfig,
+    orchestration.activityRun?.id,
+    orchestration.lastSequence,
+    gatewayToken,
+    gatewayUrl,
+    orchestratorQueryBaseUrl,
+    orchestratorQueryToken,
+  ]);
+
+  return useMemo(() => {
     const roomCounts = DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
       roomId,
       label: getRoomLabel(roomId),
@@ -800,7 +1319,54 @@ export function useGatewayOverview(): GatewayOverview {
         return rightSignal - leftSignal;
       });
 
-    const timers: GatewayTimerSummary[] = orchestration.timers
+    const authoritativeSnapshot = authoritativeQuery.snapshot?.snapshot ?? null;
+    const authoritativeActivityRun =
+      authoritativeSnapshot?.activityRun ?? orchestration.activityRun;
+    const authoritativeTimers =
+      authoritativeSnapshot?.timers ?? orchestration.timers;
+    const authoritativeSubmissions =
+      authoritativeSnapshot?.submissions ?? orchestration.submissions;
+    const authoritativeScoreEntries =
+      authoritativeQuery.scores?.scores ??
+      authoritativeSnapshot?.scores ??
+      orchestration.scores;
+    const authoritativeScoreSummary =
+      authoritativeQuery.scores?.scoreSummary ??
+      authoritativeSnapshot?.scoreSummary ??
+      orchestration.scoreSummary;
+    const authoritativeEventPage =
+      authoritativeQuery.events?.events.length
+        ? authoritativeQuery.events
+        : authoritativeQuery.replay?.events.length
+          ? authoritativeQuery.replay
+          : null;
+    const authoritativeDomainEvents = authoritativeEventPage
+      ? authoritativeEventPage.events
+          .map(buildDomainEventSummary)
+          .sort((left, right) => right.timestamp - left.timestamp)
+          .slice(0, 12)
+      : orchestration.domainEvents;
+    const authoritativeAwards =
+      Array.isArray(authoritativeSnapshot?.awards)
+        ? authoritativeSnapshot.awards
+            .map((award) => {
+              if (!award.label || !award.entityId) {
+                return null;
+              }
+              const grantedAt = normalizeTimestamp(award.grantedAt ?? Date.now());
+              return {
+                id: award.awardId ?? `${award.label}-${award.entityId}-${grantedAt}`,
+                label: award.label,
+                entityId: award.entityId,
+                reason: award.reason ?? null,
+                grantedAt,
+                grantedLabel: formatClockLabel(grantedAt),
+              } satisfies GatewayAwardSummary;
+            })
+            .filter((award): award is GatewayAwardSummary => award !== null)
+        : orchestration.awards;
+
+    const timers: GatewayTimerSummary[] = authoritativeTimers
       .map((timer) => ({
         id: timer.id,
         stageId: timer.stageId ?? null,
@@ -822,45 +1388,75 @@ export function useGatewayOverview(): GatewayOverview {
     const activeTimer =
       timers.find((timer) =>
         timer.stageId &&
-        timer.stageId === orchestration.activityRun?.currentStageId &&
+        timer.stageId === authoritativeActivityRun?.currentStageId &&
         timer.state !== "ended",
       ) ??
       timers.find((timer) => timer.isRunning) ??
       timers[0] ??
       null;
 
-    const submissions: GatewaySubmissionSummary[] = orchestration.submissions
-      .map((submission) => ({
-        id: submission.id,
-        schemaId: submission.schemaId,
-        locked: submission.locked,
-        lockedLabel: submission.locked ? "Locked" : "Open",
-        teamId: submission.teamId ?? null,
-        stageId: submission.stageId ?? null,
-        updatedAt:
-          typeof submission.updatedAt === "number"
-            ? normalizeTimestamp(submission.updatedAt)
-            : null,
-        updatedLabel:
-          typeof submission.updatedAt === "number"
-            ? formatUpdatedLabel(submission.updatedAt)
-            : null,
-      }))
-      .sort((left, right) => Number(right.locked) - Number(left.locked));
+    const submissions: GatewaySubmissionSummary[] = authoritativeSubmissions
+      .map(buildSubmissionSummary)
+      .sort((left, right) => {
+        const rightUpdatedAt = right.updatedAt ?? right.lockedAt ?? right.openedAt ?? 0;
+        const leftUpdatedAt = left.updatedAt ?? left.lockedAt ?? left.openedAt ?? 0;
+        return rightUpdatedAt - leftUpdatedAt;
+      });
 
-    const activityRun: GatewayActivityRunSummary | null = orchestration.activityRun
+    const activityRun: GatewayActivityRunSummary | null = authoritativeActivityRun
       ? {
-          id: orchestration.activityRun.id,
-          templateId: orchestration.activityRun.templateId,
-          status: orchestration.activityRun.status,
-          currentStageId: orchestration.activityRun.currentStageId,
-          snapshotId: orchestration.snapshotId,
+          id: authoritativeActivityRun.id,
+          templateId: authoritativeActivityRun.templateId,
+          status: authoritativeActivityRun.status,
+          currentStageId: authoritativeActivityRun.currentStageId,
+          snapshotId:
+            authoritativeSnapshot?.snapshotId ?? orchestration.snapshotId,
         }
       : null;
 
+    const scores: GatewayScoreEntrySummary[] = authoritativeScoreEntries
+      .map(buildScoreEntrySummary)
+      .sort((left, right) => right.submittedAt - left.submittedAt);
+
+    const scoreSummary: GatewayScoreSummaryEntry[] = authoritativeScoreSummary
+      .map(buildScoreSummaryEntry)
+      .sort((left, right) => right.lastSubmittedAt - left.lastSubmittedAt);
+
+    const recentAuditRecords: GatewayAuditRecordSummary[] =
+      authoritativeQuery.audit?.records
+        .map(buildAuditRecordSummary)
+        .sort((left, right) => right.handledAt - left.handledAt)
+        .slice(0, 8) ?? [];
+
+    const currentSubmission = resolveCurrentSubmission(
+      submissions,
+      activityRun?.currentStageId ?? null,
+    );
     const activities = allActivities.slice(0, 12);
     const lockedSubmissionCount = submissions.filter((submission) => submission.locked).length;
     const totalSubmissionCount = submissions.length;
+    const lastSequenceCandidates = [
+      orchestration.lastSequence,
+      authoritativeSnapshot?.lastSequence ?? null,
+      authoritativeEventPage?.lastSequence ?? null,
+      authoritativeQuery.scores?.lastSequence ?? null,
+    ].filter((value): value is number => typeof value === "number");
+    const lastSequence =
+      lastSequenceCandidates.length > 0 ? Math.max(...lastSequenceCandidates) : null;
+    const orchestratorQuery: GatewayAuthoritativeQueryStatus = {
+      configured: Boolean(orchestratorQueryConfig),
+      loading: authoritativeQuery.loading,
+      available: authoritativeQuery.lastSuccessfulAt !== null,
+      baseUrl: orchestratorQueryConfig?.baseUrl ?? null,
+      source: orchestratorQueryConfig?.source ?? "unavailable",
+      note: authoritativeQuery.note,
+      error: authoritativeQuery.error,
+      lastSuccessfulAt: authoritativeQuery.lastSuccessfulAt,
+      lastSuccessfulLabel: authoritativeQuery.lastSuccessfulAt
+        ? formatUpdatedLabel(authoritativeQuery.lastSuccessfulAt)
+        : null,
+      freshnessLabel: formatQueryFreshness(authoritativeQuery.lastSuccessfulAt),
+    };
     const configuredDispatchMethod = normalizeControlDispatchMethod(
       import.meta.env.VITE_OPENCLAW_COMMAND_METHOD,
     );
@@ -870,7 +1466,15 @@ export function useGatewayOverview(): GatewayOverview {
     });
 
     let statusMessage = "Connected to the gateway and reading active contestant sessions.";
-    if (authFailed) {
+    if (!configured && orchestratorQuery.configured && orchestratorQuery.available) {
+      statusMessage =
+        "Gateway websocket is not configured; control is currently reading the authoritative HTTP query layer only.";
+    } else if (!configured && orchestratorQuery.configured) {
+      statusMessage =
+        "Gateway websocket is not configured yet. Authoritative HTTP query is configured and waiting for backend sync.";
+    } else if (!configured) {
+      statusMessage = "OpenClaw gateway is not configured in this environment.";
+    } else if (authFailed) {
       statusMessage = AUTH_FAIL_MESSAGE;
     } else if (connectionState === "connected" && sessions.length === 0) {
       statusMessage = "Connected, but no contestant sessions are active yet.";
@@ -888,13 +1492,18 @@ export function useGatewayOverview(): GatewayOverview {
       statusMessage += ` Authority stage: ${activityRun.currentStageId}.`;
     }
 
+    if (orchestratorQuery.configured) {
+      statusMessage += ` Authoritative query: ${orchestratorQuery.loading ? "syncing" : orchestratorQuery.available ? orchestratorQuery.freshnessLabel : orchestratorQuery.error ?? "not yet available"}.`;
+    }
+
     if (gatewayWarning) {
       statusMessage += ` Warning: ${gatewayWarning}.`;
     }
 
     return {
-      configured: true,
-      gatewayUrl,
+      configured,
+      gatewayUrl: configured ? gatewayUrl : null,
+      orchestratorQuery,
       connectionState,
       authFailed,
       statusMessage,
@@ -903,14 +1512,18 @@ export function useGatewayOverview(): GatewayOverview {
       orchestrationContractNote: orchestrationContract.note,
       activityRun,
       authorityStageId: activityRun?.currentStageId ?? null,
-      lastSequence: orchestration.lastSequence,
+      lastSequence,
       timers,
       activeTimer,
       submissions,
+      currentSubmission,
       lockedSubmissionCount,
       totalSubmissionCount,
-      awards: orchestration.awards,
-      domainEvents: orchestration.domainEvents,
+      scores,
+      scoreSummary,
+      awards: authoritativeAwards,
+      domainEvents: authoritativeDomainEvents,
+      recentAuditRecords,
       totalActiveSessions: sessions.length,
       stateCounts,
       roomCounts,
@@ -920,6 +1533,7 @@ export function useGatewayOverview(): GatewayOverview {
       activities,
     };
   }, [
+    authoritativeQuery,
     authFailed,
     configured,
     connectionState,
@@ -928,6 +1542,7 @@ export function useGatewayOverview(): GatewayOverview {
     gatewayWarning,
     messages,
     orchestration,
+    orchestratorQueryConfig,
     sessions,
   ]);
 }

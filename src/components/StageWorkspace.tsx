@@ -24,6 +24,54 @@ const toneClasses = {
 const truncateCopy = (content: string, length: number): string =>
   content.length <= length ? content : `${content.slice(0, length - 3)}...`;
 
+const formatPayloadValue = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === "string" ? entry : JSON.stringify(entry)))
+      .join(" · ");
+  }
+
+  if (value && typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return "n/a";
+};
+
+const buildSubmissionFieldEntries = (data: Record<string, unknown> | null) => {
+  if (!data) {
+    return [];
+  }
+
+  const preferredOrder = ["posterOrDeck", "elevatorPitch", "highlights", "risk"];
+  const seen = new Set<string>();
+  const orderedKeys = [
+    ...preferredOrder.filter((key) => key in data),
+    ...Object.keys(data).filter((key) => !preferredOrder.includes(key)),
+  ];
+
+  return orderedKeys
+    .filter((key) => {
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .map((key) => ({
+      key,
+      value: data[key],
+    }));
+};
+
 export function StageWorkspace({
   stage,
   runtimeGuide,
@@ -550,6 +598,316 @@ export function StageWorkspace({
           </article>
         </div>
 
+        <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
+          <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                  Authoritative Submission
+                </p>
+                <p className="mt-2 text-sm leading-7 text-slate-600">
+                  当前 submission payload 和 version history 直接来自 local authoritative contract，不再靠组件手拼。
+                </p>
+              </div>
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+                {gateway.currentSubmission
+                  ? `${gateway.currentSubmission.locked ? "locked" : "open"} · ${gateway.currentSubmission.versions.length} versions`
+                  : `${gateway.submissions.length} submissions`}
+              </span>
+            </div>
+
+            {gateway.currentSubmission ? (
+              <>
+                <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                  <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Submission
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-950">
+                      {gateway.currentSubmission.id}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {gateway.currentSubmission.schemaId}
+                    </p>
+                  </article>
+                  <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Version
+                    </p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">
+                      {gateway.currentSubmission.version
+                        ? `v${gateway.currentSubmission.version}`
+                        : "n/a"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {gateway.currentSubmission.updatedLabel ?? "No update timestamp"}
+                    </p>
+                  </article>
+                  <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Latest Actor
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-950">
+                      {gateway.currentSubmission.latestActorId ?? "n/a"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {gateway.currentSubmission.latestActorRole ?? "role unknown"}
+                    </p>
+                  </article>
+                  <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                    <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                      Team / Stage
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-950">
+                      {gateway.currentSubmission.teamId ?? "team n/a"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {gateway.currentSubmission.stageId ?? "stage n/a"}
+                    </p>
+                  </article>
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  {buildSubmissionFieldEntries(gateway.currentSubmission.data).map((field) => (
+                    <article
+                      key={field.key}
+                      className="rounded-[1rem] border border-slate-200 bg-white px-4 py-4"
+                    >
+                      <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                        {field.key}
+                      </p>
+                      <p className="mt-2 text-sm leading-7 text-slate-700">
+                        {formatPayloadValue(field.value)}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="mt-4 rounded-[1rem] border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                      Version History
+                    </p>
+                    <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-600">
+                      {gateway.currentSubmission.versions.length} records
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {gateway.currentSubmission.versions.length > 0 ? (
+                      gateway.currentSubmission.versions.slice(0, 5).map((version) => (
+                        <article
+                          key={`${gateway.currentSubmission?.id}-${version.version}`}
+                          className="rounded-[0.95rem] border border-slate-200 bg-slate-50 p-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <span className="font-mono uppercase tracking-[0.16em]">
+                              v{version.version}
+                            </span>
+                            <span>•</span>
+                            <span>{version.updatedLabel}</span>
+                            <span>•</span>
+                            <span>{version.actorRole ?? "role unknown"}</span>
+                            <span>•</span>
+                            <span>{version.actorId ?? "actor n/a"}</span>
+                          </div>
+                          <p className="mt-2 text-sm leading-7 text-slate-700">
+                            {buildSubmissionFieldEntries(version.data)
+                              .slice(0, 2)
+                              .map((field) => `${field.key}: ${formatPayloadValue(field.value)}`)
+                              .join(" | ")}
+                          </p>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="rounded-[0.95rem] border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-7 text-slate-500">
+                        当前 submission 还没有 version history。
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="mt-4 rounded-[1rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
+                还没有 authoritative submission payload。先走 open-submission / submit / update-submission / lock-submission 命令链，这里就会补齐。
+              </div>
+            )}
+          </article>
+
+          <article className="rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                  Score Projection
+                </p>
+                <p className="mt-2 text-sm leading-7 text-slate-600">
+                  当前 scores 和 scoreSummary 直接取自 authoritative query，不再等组件侧自己推断。
+                </p>
+              </div>
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+                {gateway.scores.length} scores
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                  Summary Targets
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-slate-950">
+                  {gateway.scoreSummary.length}
+                </p>
+                <p className="text-xs text-slate-500">aggregated targets</p>
+              </article>
+              <article className="rounded-[1rem] border border-slate-200 bg-white px-3 py-3">
+                <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                  Query Status
+                </p>
+                <p className="mt-2 text-sm font-semibold text-slate-950">
+                  {gateway.orchestratorQuery.freshnessLabel}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {gateway.orchestratorQuery.available
+                    ? "authoritative http is readable"
+                    : gateway.orchestratorQuery.error ?? "awaiting backend sync"}
+                </p>
+              </article>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {gateway.scoreSummary.length > 0 ? (
+                gateway.scoreSummary.map((summary) => (
+                  <article
+                    key={`${summary.targetType}-${summary.targetId}`}
+                    className="rounded-[1rem] border border-slate-200 bg-white p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-500">
+                          {summary.targetType}
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-slate-950">
+                          {summary.submissionId ?? summary.targetId}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-semibold text-slate-950">
+                          {summary.averageLabel}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {summary.judgeCount} judges · {summary.lastSubmittedLabel}
+                        </p>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="rounded-[1rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
+                  当前还没有 authoritative score summary。切到 `act-7-ai-judging` 并执行 `submit-score` 后，这里会先亮起来。
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 rounded-[1rem] border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+                  Recent Scores
+                </p>
+                <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-600">
+                  latest {Math.min(4, gateway.scores.length)}
+                </span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {gateway.scores.length > 0 ? (
+                  gateway.scores.slice(0, 4).map((score) => (
+                    <article
+                      key={score.id}
+                      className="rounded-[0.95rem] border border-slate-200 bg-slate-50 p-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span className="font-mono uppercase tracking-[0.16em]">
+                          {score.judgeRole ?? "judge"}
+                        </span>
+                        <span>•</span>
+                        <span>{score.judgeId ?? "unknown-judge"}</span>
+                        <span>•</span>
+                        <span>{score.submittedLabel}</span>
+                      </div>
+                      <p className="mt-2 text-sm font-semibold text-slate-950">
+                        {score.submissionId ?? score.targetId} · {score.score}/10
+                      </p>
+                      <p className="mt-2 text-sm leading-7 text-slate-700">
+                        {score.reason}
+                      </p>
+                    </article>
+                  ))
+                ) : (
+                  <div className="rounded-[0.95rem] border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-7 text-slate-500">
+                    最近还没有 score submission。
+                  </div>
+                )}
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-500">
+                Recent Audit Trail
+              </p>
+              <p className="mt-2 text-sm leading-7 text-slate-600">
+                command receipt / replay / reject 证据统一从 authoritative audit 里读，方便导演确认 backend 真的处理过什么。
+              </p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.18em] text-slate-500">
+              {gateway.recentAuditRecords.length} records
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-2">
+            {gateway.recentAuditRecords.length > 0 ? (
+              gateway.recentAuditRecords.map((record) => (
+                <article
+                  key={record.id}
+                  className="rounded-[1.1rem] border border-slate-200 bg-white p-4"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span className="font-mono uppercase tracking-[0.16em]">
+                      {record.commandType}
+                    </span>
+                    <span>•</span>
+                    <span>{record.handledLabel}</span>
+                    <span>•</span>
+                    <span>{record.status}</span>
+                  </div>
+                  <p className="mt-3 text-sm font-semibold text-slate-950">
+                    {record.actorRole} / {record.actorId}
+                  </p>
+                  <p className="mt-2 text-sm leading-7 text-slate-700">
+                    commandId: {record.commandId}
+                  </p>
+                  {record.idempotencyKey ? (
+                    <p className="mt-1 break-all text-xs leading-6 text-slate-500">
+                      idempotencyKey: {record.idempotencyKey}
+                    </p>
+                  ) : null}
+                  {record.errorMessage ? (
+                    <p className="mt-2 rounded-[0.9rem] border border-rose-200 bg-rose-50 px-3 py-2 text-sm leading-7 text-rose-900">
+                      {record.errorCode ? `[${record.errorCode}] ` : ""}
+                      {record.errorMessage}
+                    </p>
+                  ) : null}
+                </article>
+              ))
+            ) : (
+              <div className="rounded-[1.1rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
+                authoritative audit 还没有记录。执行 command 链后，这里会显示 receipt / replay / reject 的最小证据。
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="mt-6 rounded-[1.4rem] border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -578,11 +936,40 @@ export function StageWorkspace({
                     </span>
                     <span>•</span>
                     <span>{event.timestampLabel}</span>
+                    {event.sequence !== null ? (
+                      <>
+                        <span>•</span>
+                        <span>seq {event.sequence}</span>
+                      </>
+                    ) : null}
                   </div>
                   <h4 className="mt-3 text-base font-semibold text-slate-950">
                     {event.title}
                   </h4>
                   <p className="mt-2 text-sm leading-7 text-slate-700">{event.detail}</p>
+                  {(event.provenance.actorId ||
+                    event.provenance.actorRole ||
+                    event.provenance.commandId ||
+                    event.provenance.idempotencyKey) ? (
+                    <div className="mt-3 rounded-[0.95rem] border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-6 text-slate-600">
+                      {event.provenance.actorRole || event.provenance.actorId ? (
+                        <p>
+                          actor: {event.provenance.actorRole ?? "unknown"} /{" "}
+                          {event.provenance.actorId ?? "n/a"}
+                        </p>
+                      ) : null}
+                      {event.provenance.commandId ? (
+                        <p className="break-all">
+                          commandId: {event.provenance.commandId}
+                        </p>
+                      ) : null}
+                      {event.provenance.idempotencyKey ? (
+                        <p className="break-all">
+                          idempotencyKey: {event.provenance.idempotencyKey}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </article>
               ))
             ) : (

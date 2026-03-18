@@ -282,7 +282,7 @@ export interface AiJudgeScorePayload {
 - 同一个 judge 对同一个 submission 或解析到同一个 team 的重复评分首版直接 reject
 - 当前 worktree 还没有实现 `scores_completed` 自动切阶段；Act VII -> Act VIII 仍由主持手动收口
 - backend 已经提供 snapshot 内 `scores` / `scoreSummary` 与 `/api/orchestrator/scores`
-- 当前 browser consumer 仍主要把 `judge.score_submitted` 接成事件流提示；score projection / provenance / typed query client 还没补齐
+- 当前 browser consumer 已经把 score projection / provenance / typed query client 接进 shared state；`/control` 可直接显示当前 `scores` / `scoreSummary`、recent audit 与 command provenance
 
 ### 2.2 Team Project Submission 写入闭环
 

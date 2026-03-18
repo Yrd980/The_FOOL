@@ -55,6 +55,23 @@ export interface OrchestratorEventQuery {
   limit?: number;
 }
 
+export interface OrchestratorSnapshotQuery {
+  activityRunId?: string;
+}
+
+export interface OrchestratorAuditQuery {
+  activityRunId?: string;
+  limit?: number;
+}
+
+export const ORCHESTRATOR_HTTP_QUERY_PATHS = {
+  snapshot: "/api/orchestrator/snapshot",
+  scores: "/api/orchestrator/scores",
+  events: "/api/orchestrator/events",
+  replay: "/api/orchestrator/replay",
+  audit: "/api/orchestrator/audit",
+} as const;
+
 export const SCORE_MOST_ABSURD_FIELD = "mostAbsurd" as const;
 
 export interface SubmitScorePayload {
@@ -758,11 +775,10 @@ export const buildOrchestratorSnapshotUrl = ({
   activityRunId,
 }: {
   baseUrl?: string;
-  activityRunId?: string;
-} = {}): string =>
+} & OrchestratorSnapshotQuery = {}): string =>
   buildOrchestratorApiUrl({
     baseUrl,
-    pathname: "/api/orchestrator/snapshot",
+    pathname: ORCHESTRATOR_HTTP_QUERY_PATHS.snapshot,
     query: {
       activityRunId,
     },
@@ -787,7 +803,7 @@ export const buildOrchestratorEventsUrl = ({
 } = {}): string =>
   buildOrchestratorApiUrl({
     baseUrl,
-    pathname: "/api/orchestrator/events",
+    pathname: ORCHESTRATOR_HTTP_QUERY_PATHS.events,
     query: toEventQueryParams(query),
   });
 
@@ -800,7 +816,7 @@ export const buildOrchestratorReplayUrl = ({
 } = {}): string =>
   buildOrchestratorApiUrl({
     baseUrl,
-    pathname: "/api/orchestrator/replay",
+    pathname: ORCHESTRATOR_HTTP_QUERY_PATHS.replay,
     query: toEventQueryParams(query),
   });
 
@@ -810,12 +826,10 @@ export const buildOrchestratorAuditUrl = ({
   limit,
 }: {
   baseUrl?: string;
-  activityRunId?: string;
-  limit?: number;
-} = {}): string =>
+} & OrchestratorAuditQuery = {}): string =>
   buildOrchestratorApiUrl({
     baseUrl,
-    pathname: "/api/orchestrator/audit",
+    pathname: ORCHESTRATOR_HTTP_QUERY_PATHS.audit,
     query: {
       activityRunId,
       limit,
@@ -831,6 +845,6 @@ export const buildOrchestratorScoresUrl = ({
 } = {}): string =>
   buildOrchestratorApiUrl({
     baseUrl,
-    pathname: "/api/orchestrator/scores",
+    pathname: ORCHESTRATOR_HTTP_QUERY_PATHS.scores,
     query: toEventQueryParams(query),
   });

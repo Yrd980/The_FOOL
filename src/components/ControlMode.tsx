@@ -1,7 +1,7 @@
 import { IntegrationRail } from "./IntegrationRail";
 import { StageSidebar } from "./StageSidebar";
 import { StageWorkspace } from "./StageWorkspace";
-import { buildFocusRooms, rankContestants } from "../presentation";
+import { rankContestants } from "../presentation";
 import type {
   GatewayOverview,
   IntegrationDoc,
@@ -36,7 +36,6 @@ export function ControlMode({
   docs,
   commands,
 }: ControlModeProps) {
-  const focusRooms = buildFocusRooms(runtimeGuide, gateway);
   const contestants = rankContestants(gateway, runtimeGuide);
   const leadContestant = contestants[0] ?? null;
 
@@ -70,24 +69,34 @@ export function ControlMode({
               </article>
               <article className="rounded-[1.2rem] border border-white/10 bg-white/6 p-4">
                 <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-                  Focus Rooms
+                  Submission State
                 </p>
                 <p className="mt-3 text-3xl font-semibold text-white">
-                  {focusRooms.reduce((sum, room) => sum + room.count, 0)}
+                  {gateway.currentSubmission?.version
+                    ? `v${gateway.currentSubmission.version}`
+                    : gateway.currentSubmission
+                      ? gateway.currentSubmission.lockedLabel
+                      : "n/a"}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  本幕焦点房间总活跃数，决定导演镜头该往哪里压。
+                  {gateway.currentSubmission
+                    ? `${gateway.currentSubmission.id} · ${gateway.currentSubmission.locked ? "locked" : "open"} · ${gateway.currentSubmission.versions.length} versions`
+                    : "当前还没有 authoritative submission payload 进入导演台。"}
                 </p>
               </article>
               <article className="rounded-[1.2rem] border border-white/10 bg-white/6 p-4">
                 <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-                  Gateway Line
+                  Scoreboard
                 </p>
                 <p className="mt-3 text-3xl font-semibold text-white">
-                  {gateway.connectionState}
+                  {gateway.scoreSummary.length > 0
+                    ? gateway.scoreSummary[0]?.averageLabel
+                    : gateway.scores.length}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  {gateway.statusMessage}
+                  {gateway.scoreSummary.length > 0
+                    ? `${gateway.scoreSummary.length} targets / ${gateway.scores.length} submitted scores`
+                    : "当前还没有 authoritative score projection。"}
                 </p>
               </article>
             </div>

@@ -36,7 +36,7 @@ export function IntegrationRail({
         </div>
 
         <h2 className="mt-3 text-xl font-semibold tracking-tight text-slate-950">
-          导演台此刻拿到的房间信号
+          导演台此刻拿到的 websocket 和 authoritative query
         </h2>
         <p className="mt-3 text-sm leading-7 text-slate-600">{gateway.statusMessage}</p>
         {gateway.gatewayWarning ? (
@@ -49,6 +49,53 @@ export function IntegrationRail({
             {gateway.gatewayUrl}
           </p>
         ) : null}
+        <div className="mt-4 rounded-[1rem] border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-500">
+              Authoritative Query HTTP
+            </p>
+            <span
+              className={`rounded-full px-2.5 py-1 font-mono text-[0.68rem] uppercase tracking-[0.2em] ${
+                gateway.orchestratorQuery.available
+                  ? "bg-emerald-100 text-emerald-700"
+                  : gateway.orchestratorQuery.loading
+                    ? "bg-amber-100 text-amber-700"
+                    : gateway.orchestratorQuery.configured
+                      ? "bg-rose-100 text-rose-700"
+                      : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {gateway.orchestratorQuery.available
+                ? "available"
+                : gateway.orchestratorQuery.loading
+                  ? "loading"
+                  : gateway.orchestratorQuery.configured
+                    ? "error"
+                    : "disabled"}
+            </span>
+          </div>
+          <p className="mt-3 text-sm leading-7 text-slate-700">
+            {gateway.orchestratorQuery.freshnessLabel}
+          </p>
+          <p className="mt-2 font-mono text-[0.72rem] uppercase tracking-[0.16em] text-slate-500">
+            source: {gateway.orchestratorQuery.source}
+          </p>
+          {gateway.orchestratorQuery.note ? (
+            <p className="mt-2 text-xs leading-6 text-slate-500">
+              {gateway.orchestratorQuery.note}
+            </p>
+          ) : null}
+          {gateway.orchestratorQuery.baseUrl ? (
+            <p className="mt-2 break-all font-mono text-xs leading-6 text-slate-500">
+              {gateway.orchestratorQuery.baseUrl}
+            </p>
+          ) : null}
+          {gateway.orchestratorQuery.error ? (
+            <div className="mt-3 rounded-[0.9rem] border border-rose-200 bg-rose-50 px-3 py-3 text-sm leading-7 text-rose-900">
+              {gateway.orchestratorQuery.error}
+            </div>
+          ) : null}
+        </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {gateway.roomCounts.map((room) => (
