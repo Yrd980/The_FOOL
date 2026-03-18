@@ -284,7 +284,7 @@ export function IntegrationRail({
             ))
           ) : (
             <div className="rounded-[1.2rem] border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-7 text-slate-500">
-              No recent contestant sessions yet.
+              No recent participant sessions yet.
             </div>
           )}
         </div>

@@ -2199,7 +2199,7 @@ export function useGatewayOverview(): GatewayOverview {
       configuredDispatchMethod,
     });
 
-    let statusMessage = "Connected to the gateway and reading active contestant sessions.";
+    let statusMessage = "Connected to the gateway and reading active participant sessions.";
     if (!configured && orchestratorQuery.configured && orchestratorQuery.available) {
       statusMessage =
         "Gateway websocket is not configured; control is currently reading the authoritative HTTP query layer only.";
@@ -2211,7 +2211,7 @@ export function useGatewayOverview(): GatewayOverview {
     } else if (authFailed) {
       statusMessage = AUTH_FAIL_MESSAGE;
     } else if (connectionState === "connected" && sessions.length === 0) {
-      statusMessage = "Connected, but no contestant sessions are active yet.";
+      statusMessage = "Connected, but no participant sessions are active yet.";
     } else if (connectionState === "connecting") {
       statusMessage = "Connecting to OpenClaw gateway...";
     } else if (connectionState === "authenticating") {

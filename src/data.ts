@@ -145,7 +145,7 @@ const buildPendingStageDefinition = (
       ? normalizedStageId
       : "Awaiting Activity Template",
     summary: hasAuthorityStage
-      ? `平台已经声明当前 stage 为 ${normalizedStageId}，但前端还没拿到对应 activity package，所以这里不会默认套用任何 reference activity 文案。`
+      ? `平台已经声明当前 stage 为 ${normalizedStageId}，但前端还没拿到对应 activity package，所以这里不会默认套用任何其他活动的前台文案。`
       : "authority template 和 preview stage 目前都还没装配完成，renderer 先保持通用 pending shell。",
     contestantActions: [
       hasAuthorityStage
@@ -156,7 +156,7 @@ const buildPendingStageDefinition = (
       "观察 authority snapshot / query 是否已经给出 templateId、stageId 和技能绑定。",
     ],
     systemSignals: [
-      "不再默认套用 The Fool 前端文案，直到活动包被显式解析成功。",
+      "活动包显式解析成功前，不再默认套用任何 reference activity 前台文案。",
     ],
     allowedActions: [],
     submissionSchemaIds: [],
@@ -188,7 +188,7 @@ const buildPendingActivityViewModel = ({
     packageId: requestedActivityPackageId?.trim() || PENDING_ACTIVITY_PACKAGE_ID,
     badgeLabel: "OpenClaw / Activity Pending",
     title: "OpenClaw Activity Pending",
-    description: `${templateCopy} 前端先展示通用待装配壳，不再默认长成 The Fool。`,
+    description: `${templateCopy} 前端先展示通用待装配壳，不再默认长成某个 reference activity。`,
     defaultStageId: stage.id,
     stages: [stage],
     stageRuntimeGuides: {
@@ -205,7 +205,7 @@ const buildPendingActivityViewModel = ({
       {
         label: "状态",
         value: "Pending Activity",
-        note: "当前 renderer 只消费 authority signal，不再把未知活动默认渲染成 The Fool。",
+        note: "当前 renderer 只消费 authority signal，不再把未知活动默认渲染成某个已注册活动。",
       },
       {
         label: "来源",

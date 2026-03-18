@@ -123,7 +123,7 @@ const buildAttention = (
   if (contestant.state === "raised-hand" && isInFocusRoom) {
     return {
       attentionLabel: "Give Next Turn",
-      attentionNote: "选手已经在当前 act 的焦点房间里举手，适合优先给麦或点名回应。",
+      attentionNote: "参与者已经在当前幕的焦点房间里举手，适合优先给麦或点名回应。",
       attentionTone: "active",
     };
   }
@@ -131,7 +131,7 @@ const buildAttention = (
   if (contestant.state === "raised-hand") {
     return {
       attentionLabel: `Pull To ${primaryFocusRoomLabel ?? "Focus Room"}`,
-      attentionNote: "选手正在请求注意力，但人还不在当前 act 的焦点房间里，适合被拉回现场。",
+      attentionNote: "参与者正在请求注意力，但人还不在当前幕的焦点房间里，适合被拉回现场。",
       attentionTone: "active",
     };
   }
@@ -139,7 +139,7 @@ const buildAttention = (
   if (contestant.state === "speaking" && isInFocusRoom) {
     return {
       attentionLabel: "Keep Live",
-      attentionNote: "选手已经在正确的房间里发声，适合继续保留镜头或顺手截取高光。",
+      attentionNote: "参与者已经在正确的房间里发声，适合继续保留镜头或顺手截取高光。",
       attentionTone: "critical",
     };
   }
@@ -147,7 +147,7 @@ const buildAttention = (
   if (contestant.state === "speaking") {
     return {
       attentionLabel: "Monitor Side Signal",
-      attentionNote: "选手正在侧房间输出内容，可能值得巡房，也可能需要被拉回主舞台。",
+      attentionNote: "参与者正在侧房间输出内容，可能值得巡房，也可能需要被拉回焦点房间。",
       attentionTone: "warm",
     };
   }
@@ -155,7 +155,7 @@ const buildAttention = (
   if (contestant.state === "muted" && isInFocusRoom) {
     return {
       attentionLabel: "Ping Heartbeat",
-      attentionNote: "选手已经在焦点房间落位，但长时间没反应，适合发 heartbeat 或轻推一把。",
+      attentionNote: "参与者已经在焦点房间落位，但长时间没反应，适合发 heartbeat 或轻推一把。",
       attentionTone: "idle",
     };
   }
@@ -163,14 +163,14 @@ const buildAttention = (
   if (isInFocusRoom) {
     return {
       attentionLabel: "Watch Reactions",
-      attentionNote: "选手在正确房间里保持倾听状态，暂时不必介入，但值得继续观察。",
+      attentionNote: "参与者在正确房间里保持倾听状态，暂时不必介入，但值得继续观察。",
       attentionTone: "warm",
     };
   }
 
   return {
     attentionLabel: "Let Team Cook",
-    attentionNote: "选手目前不在焦点房间，且没有强烈信号，适合暂时放在侧线继续推进。",
+    attentionNote: "参与者目前不在焦点房间，且没有强烈信号，适合暂时放在侧线继续推进。",
     attentionTone: "idle",
   };
 };
@@ -234,7 +234,7 @@ export const buildShowStateCopy = (
   if (!contestant) {
     return {
       label: "待开机位",
-      action: "主舞台还在等第一只龙虾冲进画面",
+      action: "焦点房间还在等第一位参与者冲进画面",
       note: `聚光灯已经切到 ${stage.title}，但第一句能被观众记住的台词还没落地。`,
       tone: "idle",
     };
@@ -354,7 +354,7 @@ export const buildRoomHeatSummaries = (
       } else if (activityCount > 0) {
         story = `刚刚有 ${activityCount} 条新剧情从这里冒出来，像是在后台偷跑正片。`;
       } else if (room.sessions.length > 0) {
-        story = `${room.sessions.length} 位选手在这里压着气氛，离真正炸开只差一根火柴。`;
+        story = `${room.sessions.length} 位参与者在这里压着气氛，离真正炸开只差一根火柴。`;
       } else if (roomRole === "holding") {
         story = "情绪、停顿和下一轮反扑都先在这里喘一口气。";
       }
@@ -445,24 +445,24 @@ export const buildShowEmptyState = (
   if (!gateway.configured) {
     return {
       eyebrow: "待开播现场",
-      title: "主舞台灯亮了，但镜头还没接进来",
-      body: `节目已经切到 ${stage.title}，但导播台还在等 gateway 点亮。连上后，第一位 contestant 会直接从这里冲进画面。`,
+      title: "焦点房间已经亮起，但镜头还没接进来",
+      body: `节目已经切到 ${stage.title}，但导播台还在等 gateway 点亮。连上后，第一位参与者会直接从这里冲进画面。`,
     };
   }
 
   if (gateway.authFailed) {
     return {
       eyebrow: "连线受阻",
-      title: "节目组拿错了入场证",
-      body: "现在不是没人说话，而是主舞台没通过鉴权。修好 token 后，现场会立刻恢复心跳。",
+      title: "现场凭证还没对上",
+      body: "现在不是没人说话，而是 live feed 没通过鉴权。修好 token 后，现场会立刻恢复心跳。",
     };
   }
 
   if (gateway.connectionState === "connecting" || gateway.connectionState === "authenticating") {
     return {
       eyebrow: "正在连线",
-      title: "导播台正在把整座秀场接进前台",
-      body: "主舞台灯已经亮了，只差把实时房间和台词信号真正推到观众眼前。",
+      title: "导播台正在把整场 live feed 接进前台",
+      body: "焦点房间已经亮了，只差把实时房间和台词信号真正推到观众眼前。",
     };
   }
 
@@ -477,15 +477,15 @@ export const buildShowEmptyState = (
   if (gateway.connectionState === "disconnected") {
     return {
       eyebrow: "信号中断",
-      title: "主舞台暂时收不到后台回声",
+      title: "前台暂时收不到后台回声",
       body: "检查本地 gateway 是否在线，或让导播台重新拉起连接。",
     };
   }
 
   return {
-    eyebrow: "选手即将入场",
+    eyebrow: "参与者即将入场",
     title: "第一句能上预告片的话还没落地",
-    body: `当前幕是 ${stage.title}。房间已经开好，只差第一只 contestant 说出那句会被观众记住的话。`,
+    body: `当前幕是 ${stage.title}。房间已经开好，只差第一位参与者说出那句会被观众记住的话。`,
   };
 };
 

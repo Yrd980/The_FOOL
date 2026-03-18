@@ -6,7 +6,7 @@ import {
   tryGetActivityPackage,
   type ActivityPackage,
 } from "./platform/activityRegistry";
-import type { ScoreAnnotations } from "./platform/contracts";
+import type { ScoreAnnotations, WorldProjection } from "./platform/contracts";
 
 export interface ActivityRoomCatalog {
   packageId: string;
@@ -42,40 +42,65 @@ const readInlineScoreAnnotations = (
 const normalizeRoomAlias = (room: string): string =>
   room.trim().toLowerCase().replace(/[\s_]+/g, "-");
 
-const buildActivityRoomCatalogFromPackage = (
-  activityPackage: ActivityPackage,
-): ActivityRoomCatalog => {
-  const fallbackRoomId =
-    activityPackage.metadata?.rooms?.fallbackRoomId?.trim() ||
-    activityPackage.world.rooms.at(-1)?.id ||
-    "room";
-  const roomIds = activityPackage.world.rooms.map((room) => room.id);
-  const labels = activityPackage.world.rooms.reduce<Record<string, string>>(
-    (result, room) => {
-      result[room.id] = room.label?.trim() || room.id;
-      return result;
-    },
-    {},
-  );
-  const aliasMap = roomIds.reduce<Record<string, string>>((result, roomId) => {
-    result[normalizeRoomAlias(roomId)] = roomId;
-    return result;
-  }, {});
-
-  for (const aliasEntry of activityPackage.metadata?.rooms?.aliases ?? []) {
+const applyActivityRoomAliases = (
+  aliasMap: Record<string, string>,
+  aliases: Array<{ roomId: string; aliases: string[] }>,
+): void => {
+  for (const aliasEntry of aliases) {
     aliasMap[normalizeRoomAlias(aliasEntry.roomId)] = aliasEntry.roomId;
     for (const alias of aliasEntry.aliases) {
       aliasMap[normalizeRoomAlias(alias)] = aliasEntry.roomId;
     }
   }
+};
+
+export const buildWorldRoomCatalog = ({
+  world,
+  activityPackageId,
+  fallbackRoomId,
+}: {
+  world: WorldProjection;
+  activityPackageId?: string | null;
+  fallbackRoomId?: string | null;
+}): ActivityRoomCatalog => {
+  const activityPackage = tryGetActivityPackage(activityPackageId);
+  const fallbackRoomCatalogWorld =
+    world.rooms.length > 0 ? world : activityPackage?.world ?? world;
+  const resolvedFallbackRoomId =
+    fallbackRoomId?.trim() ||
+    activityPackage?.metadata?.rooms?.fallbackRoomId?.trim() ||
+    fallbackRoomCatalogWorld.rooms.at(-1)?.id ||
+    "room";
+  const roomIds = fallbackRoomCatalogWorld.rooms.map((room) => room.id);
+  const labels = fallbackRoomCatalogWorld.rooms.reduce<Record<string, string>>((result, room) => {
+    result[room.id] = room.label?.trim() || room.id;
+    return result;
+  }, {});
+  const aliasMap = roomIds.reduce<Record<string, string>>((result, roomId) => {
+    result[normalizeRoomAlias(roomId)] = roomId;
+    return result;
+  }, {});
+
+  applyActivityRoomAliases(aliasMap, activityPackage?.metadata?.rooms?.aliases ?? []);
 
   return {
-    packageId: activityPackage.id,
-    fallbackRoomId,
+    packageId:
+      activityPackage?.id ?? activityPackageId?.trim() ?? "authority-world",
+    fallbackRoomId: resolvedFallbackRoomId,
     roomIds,
     aliasMap,
     labels,
   };
+};
+
+const buildActivityRoomCatalogFromPackage = (
+  activityPackage: ActivityPackage,
+): ActivityRoomCatalog => {
+  return buildWorldRoomCatalog({
+    world: activityPackage.world,
+    activityPackageId: activityPackage.id,
+    fallbackRoomId: activityPackage.metadata?.rooms?.fallbackRoomId,
+  });
 };
 
 export const resolveActivityPackage = (

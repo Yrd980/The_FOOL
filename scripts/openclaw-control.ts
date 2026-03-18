@@ -40,8 +40,15 @@ import {
   type SubmitScorePayload,
 } from "../src/openclaw/control";
 import {
+  buildWorldRoomCatalog,
+  tryBuildActivityRoomCatalog,
+  tryResolveActivityPackageId,
+  type ActivityRoomCatalog,
+} from "../src/openclaw/activityRuntime";
+import {
   THE_FOOL_SCORE_ANNOTATION_KEYS,
 } from "../src/openclaw/activities/theFoolV1";
+import type { WorldProjection } from "../src/openclaw/platform/contracts";
 
 type CommandName =
   | "probe"
@@ -64,8 +71,8 @@ type CommandName =
 
 const USAGE = `Usage:
   bun run openclaw:control -- probe
-  bun run openclaw:control -- move <agent-id> <room>
-  bun run openclaw:control -- say <agent-id> <room> <message>
+  bun run openclaw:control -- move <agent-id> <room> [--activity-run-id <id>] [--activity-package-id <id>]
+  bun run openclaw:control -- say <agent-id> <room> <message> [--activity-run-id <id>] [--activity-package-id <id>]
   bun run openclaw:control -- stage <activity-run-id> <target-stage-id>
   bun run openclaw:control -- start-timer <activity-run-id> <stage-id> <duration-sec>
   bun run openclaw:control -- open-submission <activity-run-id> <submission-id>
@@ -82,9 +89,11 @@ const USAGE = `Usage:
   bun run openclaw:control -- audit <activity-run-id> [--limit <n>]
   bun run openclaw:control -- command <activity-run-id> <command-type> <payload-json>
 
-Rooms:
-  main | team1 | team2 | team3 | quiet
-  main-stage | team-room-1 | team-room-2 | team-room-3 | quiet-orbit
+Room alias resolution for move/say:
+  - with OPENCLAW_ORCHESTRATOR_URL or --activity-package-id, aliases resolve against the current activity room catalog
+  - shorthand aliases are not resolved against an implicit default reference activity anymore
+  - reference-activity examples: main | team1 | team2 | team3 | quiet
+  - reference-activity room ids: main-stage | team-room-1 | team-room-2 | team-room-3 | quiet-orbit
 
 Optional env for command dispatch:
   OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791
@@ -162,6 +171,12 @@ interface PairedCliProbeSummary {
   configPlugins: ConfigPluginSummary;
   loadedPlugins: LoadedPluginSummary[];
   runtimeInference: string;
+}
+
+interface AgentCommandActivityContext {
+  activityPackageId: string | null;
+  roomCatalog: ActivityRoomCatalog | null;
+  note: string | null;
 }
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -247,6 +262,12 @@ const fail = (message: string): never => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
+
+const isWorldProjection = (value: unknown): value is WorldProjection =>
+  isRecord(value) &&
+  Array.isArray(value.rooms) &&
+  Array.isArray(value.teams) &&
+  Array.isArray(value.entities);
 
 const readString = (
   record: Record<string, unknown> | undefined,
@@ -573,7 +594,7 @@ const probePairedCliRuntime = (): PairedCliProbeSummary => {
   const runtimeInference =
     hasUnexpectedPluginGroup || hasUnexpectedLoadedPlugin || hasCustomGatewaySurface
       ? "Paired CLI sees at least one non-stock plugin/runtime surface beyond the baseline memory-core / telegram / camofox-browser setup. Inspect the listed plugin groups and loaded plugins before assuming the backend is missing."
-      : `Paired CLI/runtime provenance only shows stock gateway surfaces plus ${loadedPluginIds.join(", ") || "no loaded plugins"}. No activity/The Fool/orchestrator plugin source, gateway method, or service is currently visible.`;
+      : `Paired CLI/runtime provenance only shows stock gateway surfaces plus ${loadedPluginIds.join(", ") || "no loaded plugins"}. No activity-specific or orchestrator plugin source, gateway method, or service is currently visible.`;
 
   return {
     status,
@@ -987,6 +1008,110 @@ const resolveLocalOrchestratorAuth = (): {
   };
 };
 
+const resolveAgentCommandActivityContext = async ({
+  activityRunId,
+  explicitActivityPackageId,
+}: {
+  activityRunId?: string;
+  explicitActivityPackageId?: string;
+}): Promise<AgentCommandActivityContext> => {
+  const normalizedExplicitActivityPackageId = explicitActivityPackageId?.trim();
+  if (normalizedExplicitActivityPackageId) {
+    const roomCatalog = tryBuildActivityRoomCatalog(normalizedExplicitActivityPackageId);
+    if (!roomCatalog) {
+      fail(
+        `[openclaw-control] Unknown activity package ${normalizedExplicitActivityPackageId}.`,
+      );
+    }
+
+    return {
+      activityPackageId: normalizedExplicitActivityPackageId,
+      roomCatalog,
+      note: `Room aliases resolved against activity package ${normalizedExplicitActivityPackageId}.`,
+    };
+  }
+
+  const configuredOrchestratorUrl =
+    resolveConfigValue("OPENCLAW_ORCHESTRATOR_URL") ??
+    resolveConfigValue("VITE_OPENCLAW_ORCHESTRATOR_URL");
+  if (!normalizeControlConfigValue(configuredOrchestratorUrl)) {
+    return {
+      activityPackageId: null,
+      roomCatalog: null,
+      note: null,
+    };
+  }
+
+  const orchestratorToken = resolveOrchestratorToken();
+  if (!orchestratorToken) {
+    return {
+      activityPackageId: null,
+      roomCatalog: null,
+      note:
+        "Authoritative orchestrator is configured, but no token is available for activity-scoped room resolution.",
+    };
+  }
+
+  try {
+    const responseBody = await requestLocalOrchestrator({
+      url: buildOrchestratorSnapshotUrl({
+        baseUrl: resolveOrchestratorBaseUrl(),
+        activityRunId,
+      }),
+      token: orchestratorToken,
+    });
+    const snapshot =
+      isRecord(responseBody) && isRecord(responseBody.snapshot)
+        ? responseBody.snapshot
+        : null;
+    const activityRun =
+      snapshot && isRecord(snapshot.activityRun) ? snapshot.activityRun : null;
+    const templateId = readString(activityRun, "templateId");
+    const activityPackageId = tryResolveActivityPackageId({
+      templateId,
+    });
+    const world =
+      snapshot && isWorldProjection(snapshot.world) ? snapshot.world : null;
+
+    if (world) {
+      return {
+        activityPackageId,
+        roomCatalog: buildWorldRoomCatalog({
+          world,
+          activityPackageId,
+        }),
+        note: activityPackageId
+          ? `Room aliases resolved against authoritative activity ${activityPackageId}.`
+          : "Room aliases resolved against the authoritative world snapshot.",
+      };
+    }
+
+    if (activityPackageId) {
+      const roomCatalog = tryBuildActivityRoomCatalog(activityPackageId);
+      if (roomCatalog) {
+        return {
+          activityPackageId,
+          roomCatalog,
+          note: `Room aliases resolved against activity package ${activityPackageId}.`,
+        };
+      }
+    }
+
+    return {
+      activityPackageId,
+      roomCatalog: null,
+      note:
+        "Authoritative snapshot is reachable, but it does not expose enough room metadata yet.",
+    };
+  } catch (error) {
+    return {
+      activityPackageId: null,
+      roomCatalog: null,
+      note: `Unable to read authoritative snapshot for room resolution: ${(error as Error).message}`,
+    };
+  }
+};
+
 const runLocalOrchestratorQuery = async ({
   label,
   url,
@@ -1130,7 +1255,7 @@ const parseSubmitScoreArgs = (
 
   if (Object.keys(annotations).length === 0) {
     fail(
-      "submit-score requires score annotations. Use --annotations-json '{\"key\":\"value\"}' or the The Fool compatibility flags.",
+      "submit-score requires score annotations. Use --annotations-json '{\"key\":\"value\"}' or the legacy reference-activity compatibility flags.",
     );
   }
 
@@ -1225,14 +1350,39 @@ if (normalizedCommand === "probe") {
 }
 
 if (normalizedCommand === "move" || normalizedCommand === "say") {
-  const [agentId, room, ...messageParts] = args;
+  const { positional, options } = parseLongOptions(args);
+  const [agentId, room, ...messageParts] = positional;
   if (!agentId || !room) {
     fail(USAGE);
   }
 
+  const activityContext = await resolveAgentCommandActivityContext({
+    activityRunId: options["activity-run-id"]?.trim(),
+    explicitActivityPackageId: options["activity-package-id"]?.trim(),
+  });
+
+  if (activityContext.note) {
+    console.log(`[openclaw-control] ${activityContext.note}`);
+  }
+
+  if (!activityContext.roomCatalog) {
+    fail(
+      "[openclaw-control] move/say room aliases are now activity-scoped. Configure OPENCLAW_ORCHESTRATOR_URL so the CLI can read snapshot.world, or pass --activity-package-id <id>.",
+    );
+  }
+
+  const roomResolutionOptions = {
+    fallbackToDefault: false,
+    roomCatalog: activityContext.roomCatalog,
+  } as const;
+
   const message =
     normalizedCommand === "move"
-      ? buildMoveMessage(room)
+      ? buildMoveMessage(
+          room,
+          activityContext.activityPackageId ?? undefined,
+          roomResolutionOptions,
+        )
       : messageParts.join(" ").trim();
 
   if (!message) {
@@ -1249,7 +1399,11 @@ if (normalizedCommand === "move" || normalizedCommand === "say") {
   const gatewayUrl =
     resolveConfigValue("OPENCLAW_GATEWAY_URL") ??
     resolveConfigValue("VITE_OPENCLAW_URL");
-  const roomId = resolveControlRoomId(room);
+  const roomId = resolveControlRoomId(
+    room,
+    activityContext.activityPackageId ?? undefined,
+    roomResolutionOptions,
+  );
   const idempotencyKey = `roomctl-${agentId}-${roomId}-${Date.now()}`;
 
   const openClawArgs = buildGatewayAgentCallArgs({
@@ -1260,6 +1414,8 @@ if (normalizedCommand === "move" || normalizedCommand === "say") {
     gatewayUrl,
     token,
     idempotencyKey,
+    activityPackageId: activityContext.activityPackageId,
+    roomCatalog: activityContext.roomCatalog,
   });
 
   console.log(

@@ -204,7 +204,7 @@ export function ShowMode({
             </div>
 
             <p className="mt-6 font-mono text-[0.7rem] uppercase tracking-[0.24em] text-fuchsia-200/80">
-              Main Stage Camera
+              Focus Camera
             </p>
             <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
               {spotlightTitle}
@@ -238,14 +238,14 @@ export function ShowMode({
                   {primaryTeamSpotlight?.roomLabel ??
                     primaryRoomNarrative?.roomLabel ??
                     focusContestant?.roomLabel ??
-                    "Main Stage"}
+                    "Focus Room"}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
                   {primaryRoomNarrative?.detail ??
                     (focusContestant
                       ? "镜头此刻跟着真实房间落点走，不靠前端脑补假机位。"
                       : primaryFallback?.body ??
-                        "主舞台还在等第一位 contestant 正式冲进画面。")}
+                        "焦点房间还在等第一位参与者正式冲进画面。")}
                 </p>
               </article>
               <article className="rounded-[1.2rem] border border-white/10 bg-white/6 p-4">
@@ -639,7 +639,7 @@ export function ShowMode({
                 <p className="mt-3 text-xl font-semibold text-white">
                   {primaryRoomNarrative?.roomLabel ??
                     hottestRoom?.label ??
-                    "Main Stage"}
+                    "Focus Room"}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
                   {primaryRoomNarrative?.headline ??

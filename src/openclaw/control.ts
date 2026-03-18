@@ -1,6 +1,7 @@
 import {
   buildActivityRoomCatalog,
   tryBuildActivityRoomCatalog,
+  type ActivityRoomCatalog,
 } from "./activityRuntime";
 import type {
   ActorRole as PlatformActorRole,
@@ -75,16 +76,22 @@ export interface SubmitScorePayload {
   annotations?: ScoreAnnotations;
 }
 
+interface ControlRoomResolutionOptions {
+  fallbackToDefault?: boolean;
+  roomCatalog?: ActivityRoomCatalog | null;
+}
+
 const normalizeAlias = (room: string): string =>
   room.trim().toLowerCase().replace(/[\s_]+/g, "-");
 
 const resolveRoomCatalog = (
   activityPackageId?: string | null,
-  options?: { fallbackToDefault?: boolean },
+  options?: ControlRoomResolutionOptions,
 ) =>
-  options?.fallbackToDefault === false
+  options?.roomCatalog ??
+  (options?.fallbackToDefault === false
     ? tryBuildActivityRoomCatalog(activityPackageId)
-    : buildActivityRoomCatalog(activityPackageId);
+    : buildActivityRoomCatalog(activityPackageId));
 
 const normalizeAgentId = (agentId: string): string => {
   const normalized = agentId.trim();
@@ -176,8 +183,9 @@ export const summarizeGatewayOrchestrationContract = ({
 export const resolveControlRoomId = (
   room: string,
   activityPackageId?: string | null,
+  options?: ControlRoomResolutionOptions,
 ): string => {
-  const roomCatalog = resolveRoomCatalog(activityPackageId);
+  const roomCatalog = resolveRoomCatalog(activityPackageId, options);
   if (!roomCatalog) {
     throw new Error("No activity room catalog is registered.");
   }
@@ -192,7 +200,7 @@ export const resolveControlRoomId = (
 
 export const getGatewayRoomIds = (
   activityPackageId?: string | null,
-  options?: { fallbackToDefault?: boolean },
+  options?: ControlRoomResolutionOptions,
 ): string[] =>
   resolveRoomCatalog(activityPackageId, options)?.roomIds ?? [];
 
@@ -200,13 +208,14 @@ export const buildGatewaySessionKey = (
   agentId: string,
   room: string,
   activityPackageId?: string | null,
+  options?: ControlRoomResolutionOptions,
 ): string =>
-  `agent:${normalizeAgentId(agentId)}:${resolveControlRoomId(room, activityPackageId)}`;
+  `agent:${normalizeAgentId(agentId)}:${resolveControlRoomId(room, activityPackageId, options)}`;
 
 const normalizeSessionRoomId = (
   roomId: string,
   activityPackageId?: string | null,
-  options?: { fallbackToDefault?: boolean },
+  options?: ControlRoomResolutionOptions,
 ): string =>
   resolveRoomCatalog(activityPackageId, options)?.aliasMap[normalizeAlias(roomId)] ??
   roomId;
@@ -214,7 +223,7 @@ const normalizeSessionRoomId = (
 export const resolveSessionRoomId = (
   sessionKey: string | undefined,
   activityPackageId?: string | null,
-  options?: { fallbackToDefault?: boolean },
+  options?: ControlRoomResolutionOptions,
 ): string => {
   const roomCatalog = resolveRoomCatalog(activityPackageId, options);
   if (!sessionKey) {
@@ -242,7 +251,7 @@ export const resolveSessionRoomId = (
 export const getRoomLabel = (
   roomId: string,
   activityPackageId?: string | null,
-  options?: { fallbackToDefault?: boolean },
+  options?: ControlRoomResolutionOptions,
 ): string =>
   resolveRoomCatalog(activityPackageId, options)?.labels[roomId] ?? roomId;
 
@@ -305,9 +314,10 @@ export const normalizeOrchestratorBaseUrl = (
 export const buildMoveMessage = (
   room: string,
   activityPackageId?: string,
+  options?: ControlRoomResolutionOptions,
 ): string => {
-  const roomId = resolveControlRoomId(room, activityPackageId);
-  const label = getRoomLabel(roomId, activityPackageId);
+  const roomId = resolveControlRoomId(room, activityPackageId, options);
+  const label = getRoomLabel(roomId, activityPackageId, options);
   return `Move to ${label}. Reply with one short line only.`;
 };
 
@@ -678,6 +688,8 @@ export const buildGatewayAgentCallArgs = ({
   gatewayUrl,
   token,
   idempotencyKey,
+  activityPackageId,
+  roomCatalog,
 }: {
   agentId: string;
   room: string;
@@ -686,9 +698,21 @@ export const buildGatewayAgentCallArgs = ({
   gatewayUrl?: string;
   token?: string;
   idempotencyKey: string;
+  activityPackageId?: string | null;
+  roomCatalog?: ActivityRoomCatalog | null;
 }): string[] => {
   const normalizedAgentId = normalizeAgentId(agentId);
-  const sessionKey = buildGatewaySessionKey(normalizedAgentId, room);
+  const sessionKey = buildGatewaySessionKey(
+    normalizedAgentId,
+    room,
+    activityPackageId,
+    roomCatalog
+      ? {
+          fallbackToDefault: false,
+          roomCatalog,
+        }
+      : undefined,
+  );
   return buildGatewayCallArgs({
     method: "agent",
     expectFinal: true,

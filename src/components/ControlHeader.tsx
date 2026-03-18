@@ -10,15 +10,15 @@ interface ControlHeaderProps {
 
 const modeCopy = {
   control: {
-    eyebrow: "Director Console",
-    title: "Molt Claw / 调度与监看同屏",
+    eyebrow: "Authority Workspace",
+    title: "OpenClaw / 调度与监看同屏",
     shell: "border-[#e01b24] bg-[#111318]/94",
     buttonActive: "bg-[#e01b24] text-white shadow-[0_12px_30px_rgba(224,27,36,0.35)]",
     buttonIdle: "bg-white/6 text-slate-300 hover:bg-white/10 hover:text-white",
   },
   show: {
-    eyebrow: "Live Show Feed",
-    title: "Molt Claw / OpenClaw 正在把节目推到台前",
+    eyebrow: "Audience Feed",
+    title: "OpenClaw / 正在把 live activity 推到台前",
     shell: "border-fuchsia-400/30 bg-[#09090f]/94",
     buttonActive: "bg-white text-slate-950 shadow-[0_12px_30px_rgba(255,255,255,0.2)]",
     buttonIdle: "bg-white/6 text-slate-300 hover:bg-white/10 hover:text-white",
@@ -33,6 +33,7 @@ export function ControlHeader({
   gateway,
 }: ControlHeaderProps) {
   const copy = modeCopy[mode];
+  const quickDocs = activity.integrationDocs.slice(0, 2);
   const liveLabel =
     gateway.connectionState === "connected" && gateway.totalActiveSessions > 0
       ? "Live"
@@ -79,18 +80,15 @@ export function ControlHeader({
             >
               Control Mode
             </button>
-            <a
-              href="/skill.md"
-              className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-300 transition hover:bg-white/6 hover:text-white"
-            >
-              skill.md
-            </a>
-            <a
-              href="/task.md"
-              className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-300 transition hover:bg-white/6 hover:text-white"
-            >
-              task.md
-            </a>
+            {quickDocs.map((doc) => (
+              <a
+                key={doc.href}
+                href={doc.href}
+                className="rounded-full border border-white/10 px-4 py-2 text-sm text-slate-300 transition hover:bg-white/6 hover:text-white"
+              >
+                {doc.title}
+              </a>
+            ))}
           </div>
         </div>
 

@@ -291,7 +291,7 @@ export function StageWorkspace({
                     {state.label}
                   </span>
                   <p className="mt-3 text-2xl font-semibold text-slate-950">{state.count}</p>
-                  <p className="text-xs text-slate-500">contestants</p>
+                  <p className="text-xs text-slate-500">participants</p>
                 </article>
               ))}
             </div>
@@ -461,7 +461,7 @@ export function StageWorkspace({
               ) : (
                 <div className="rounded-[1.2rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
                   {gateway.configured
-                    ? "Gateway 已连接，但当前还没有可聚合的 contestant roster。等 agent 真正进房发言后，这里会立刻长出来。"
+                    ? "Gateway 已连接，但当前还没有可聚合的 participant roster。等 agent 真正进房发言后，这里会立刻长出来。"
                     : "当前环境还没配置 OpenClaw gateway。配置 `VITE_OPENCLAW_URL` 和 `VITE_OPENCLAW_TOKEN` 后，这里会出现实时选手总表。"}
                 </div>
               )}
@@ -585,7 +585,7 @@ export function StageWorkspace({
                       <p className="mt-2 text-sm leading-7 text-slate-700">
                         {selectedContestant.recentActivity
                           ? selectedContestant.recentActivity.content
-                          : "This contestant has no captured quote yet. Keep the room open and wait for the next message."}
+                          : "This participant has no captured quote yet. Keep the room open and wait for the next message."}
                       </p>
                     </div>
                   </article>
@@ -630,7 +630,7 @@ export function StageWorkspace({
               </>
             ) : (
               <div className="rounded-[1.2rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
-                还没有选手详情可展示。等 contestant session 出现后，这里会显示当前 act 最值得关注的选手。
+                还没有参与者详情可展示。等 participant session 出现后，这里会显示当前 act 最值得关注的对象。
               </div>
             )}
           </article>
@@ -1550,7 +1550,7 @@ export function StageWorkspace({
               ))
             ) : (
               <div className="rounded-[1.2rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
-                还没有收到 live room chat event。等 contestant agent 通过 OpenClaw 说话之后，这里会开始滚动。
+                还没有收到 live room chat event。等 participant agent 通过 OpenClaw 说话之后，这里会开始滚动。
               </div>
             )}
           </div>
