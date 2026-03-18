@@ -2,44 +2,71 @@ import { useEffect, useState } from "react";
 import { ControlHeader } from "./components/ControlHeader";
 import { ControlMode } from "./components/ControlMode";
 import { ShowMode } from "./components/ShowMode";
-import {
-  buildOperatorCommands,
-  integrationDocs,
-  stageRuntimeGuides,
-  stages,
-  summaryStats,
-} from "./data";
+import { buildActivityViewModel, buildOperatorCommands } from "./data";
+import { resolveActivityPackageId } from "./openclaw/activityRuntime";
 import { useGatewayOverview } from "./openclaw/useGatewayOverview";
 
 type AppMode = "control" | "show";
 
-const getModeFromPath = (): AppMode => {
+interface AppRoute {
+  mode: AppMode;
+  previewStageId: string | null;
+}
+
+const getRouteFromPath = (): AppRoute => {
   if (typeof window === "undefined") {
-    return "show";
+    return { mode: "show", previewStageId: null };
   }
 
-  return window.location.pathname.startsWith("/control") ? "control" : "show";
+  const [root, section, stageId] = window.location.pathname
+    .split("/")
+    .filter(Boolean);
+
+  if (root === "control") {
+    return {
+      mode: "control",
+      previewStageId:
+        section === "stages" && stageId ? decodeURIComponent(stageId) : null,
+    };
+  }
+
+  return {
+    mode: "show",
+    previewStageId: root === "show" && section ? decodeURIComponent(section) : null,
+  };
 };
 
 function App() {
-  const [mode, setMode] = useState<AppMode>(getModeFromPath);
+  const [route, setRoute] = useState<AppRoute>(getRouteFromPath);
   const gateway = useGatewayOverview();
-  const [fallbackStageId, setFallbackStageId] = useState(
-    stages[0]?.id ?? "act-1-intro",
+  const activity = buildActivityViewModel(
+    resolveActivityPackageId({
+      templateId: gateway.activityRun?.templateId,
+      previewStageId: route.previewStageId,
+    }),
   );
-  const activeStageId =
+  const stages = activity.stages;
+  const validatedPreviewStageId =
+    route.previewStageId &&
+    stages.some((stage) => stage.id === route.previewStageId)
+      ? route.previewStageId
+      : null;
+  const validatedAuthorityStageId =
     gateway.authorityStageId &&
     stages.some((stage) => stage.id === gateway.authorityStageId)
       ? gateway.authorityStageId
-      : fallbackStageId;
-  const activeStage = stages.find((stage) => stage.id === activeStageId) ?? stages[0];
-  const activeRuntimeGuide = stageRuntimeGuides[activeStage.id];
-  const commands = buildOperatorCommands({
-    stage: activeStage,
-    stages,
-    runtimeGuide: activeRuntimeGuide,
-    gateway,
-  });
+      : null;
+  const activeStageId =
+    validatedPreviewStageId ??
+    validatedAuthorityStageId ??
+    activity.defaultStageId ??
+    stages[0]?.id ??
+    null;
+  const activeStage =
+    stages.find((stage) => stage.id === activeStageId) ?? stages[0];
+  const activeRuntimeGuide = activeStage
+    ? activity.stageRuntimeGuides[activeStage.id]
+    : undefined;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -51,7 +78,7 @@ function App() {
     }
 
     const handlePopState = () => {
-      setMode(getModeFromPath());
+      setRoute(getRouteFromPath());
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -61,33 +88,74 @@ function App() {
     };
   }, []);
 
-  const handleModeChange = (nextMode: AppMode) => {
+  if (!activeStage || !activeRuntimeGuide) {
+    return null;
+  }
+
+  const resolvedActiveStageId = activeStage.id;
+  const commands = buildOperatorCommands({
+    activity,
+    stage: activeStage,
+    stages,
+    runtimeGuide: activeRuntimeGuide,
+    gateway,
+  });
+
+  const buildPath = ({
+    mode,
+    previewStageId,
+  }: AppRoute): string => {
+    if (previewStageId) {
+      return mode === "control"
+        ? `/control/stages/${encodeURIComponent(previewStageId)}`
+        : `/show/${encodeURIComponent(previewStageId)}`;
+    }
+
+    return mode === "control" ? "/control" : "/show";
+  };
+
+  const navigate = (nextRoute: AppRoute) => {
     if (typeof window !== "undefined") {
-      const nextPath = nextMode === "control" ? "/control" : "/show";
+      const nextPath = buildPath(nextRoute);
       if (window.location.pathname !== nextPath) {
         window.history.pushState({}, "", nextPath);
       }
     }
 
-    setMode(nextMode);
+    setRoute(nextRoute);
+  };
+
+  const handleModeChange = (nextMode: AppMode) => {
+    navigate({
+      mode: nextMode,
+      previewStageId: route.previewStageId,
+    });
+  };
+
+  const handleStageSelect = (stageId: string) => {
+    navigate({
+      mode: route.mode,
+      previewStageId: stageId,
+    });
   };
 
   return (
     <div
       className={`min-h-screen ${
-        mode === "show"
+        route.mode === "show"
           ? "bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_20%),radial-gradient(circle_at_top_right,rgba(236,72,153,0.16),transparent_18%),linear-gradient(180deg,#050816_0%,#0b1020_54%,#0f172a_100%)]"
           : "bg-[linear-gradient(180deg,#f7f8fb_0%,#eef1f6_100%)] text-slate-950"
       }`}
     >
       <ControlHeader
-        mode={mode}
+        mode={route.mode}
         onSelectMode={handleModeChange}
+        activity={activity}
         activeStage={activeStage}
         gateway={gateway}
       />
 
-      {mode === "show" ? (
+      {route.mode === "show" ? (
         <ShowMode
           stage={activeStage}
           stages={stages}
@@ -98,13 +166,14 @@ function App() {
         <ControlMode
           stage={activeStage}
           stages={stages}
-          activeStageId={activeStageId}
+          activeStageId={resolvedActiveStageId}
           authorityStageId={gateway.authorityStageId}
-          onSelectStage={setFallbackStageId}
+          onSelectStage={handleStageSelect}
+          activity={activity}
           runtimeGuide={activeRuntimeGuide}
           gateway={gateway}
-          summaryStats={summaryStats}
-          docs={integrationDocs}
+          summaryStats={activity.summaryStats}
+          docs={activity.integrationDocs}
           commands={commands}
         />
       )}

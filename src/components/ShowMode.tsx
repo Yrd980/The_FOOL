@@ -30,14 +30,15 @@ export function ShowMode({
   gateway,
 }: ShowModeProps) {
   const contestants = rankContestants(gateway, runtimeGuide);
-  const worldEntityIds = new Set(
-    gateway.world.entities.map((entity) => entity.entityId),
+  const worldAgentIds = new Set(
+    gateway.world.entities
+      .filter((entity) => entity.kind === "agent")
+      .map((entity) => entity.entityId),
   );
-  const stageContestants = contestants.filter(
-    (contestant) =>
-      worldEntityIds.has(contestant.agentId) ||
-      contestant.agentId.startsWith("contestant-"),
-  );
+  const stageContestants =
+    worldAgentIds.size > 0
+      ? contestants.filter((contestant) => worldAgentIds.has(contestant.agentId))
+      : contestants;
   const focusContestant = stageContestants[0] ?? null;
   const focusRooms = buildFocusRooms(runtimeGuide, gateway);
   const roomHeat = buildRoomHeatSummaries(gateway, runtimeGuide);
@@ -60,8 +61,7 @@ export function ShowMode({
       gateway.activities.length * 3 +
       gateway.totalActiveSessions * 2,
   );
-  const isScoreStage =
-    stage.id.includes("judging") || stage.id.includes("award");
+  const isScoreStage = stage.presentation.deskMode === "score";
   const stageDeskLabel = isScoreStage ? "Judge Board" : "Submission Desk";
   const stageDeskValue = isScoreStage
     ? audience.score.leaderLabel ?? "待亮分"
@@ -413,7 +413,7 @@ export function ShowMode({
               Season Track
             </p>
             <h3 className="mt-2 text-2xl font-semibold text-white">
-              十幕不是菜单，它们是一幕幕被点亮的现场
+              {stages.length} 幕不是菜单，它们是一幕幕被点亮的现场
             </h3>
           </div>
           <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 font-mono text-[0.72rem] uppercase tracking-[0.2em] text-slate-200">
@@ -598,7 +598,7 @@ export function ShowMode({
                         {heat?.activityCount ?? 0} fresh lines
                       </span>
                       {(heat?.headliners ?? []).filter((agentId) =>
-                        worldEntityIds.has(agentId),
+                        worldAgentIds.size === 0 || worldAgentIds.has(agentId),
                       ).map((agentId, index) => (
                         <span
                           key={`${room.roomId}-${agentId}-${index}`}

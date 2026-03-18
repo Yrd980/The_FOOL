@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type {
+  ActivityViewModel,
   GatewayOverview,
   StageDefinition,
   StageRuntimeGuide,
@@ -8,6 +9,7 @@ import type {
 import { buildFocusRooms, rankContestants } from "../presentation";
 
 interface StageWorkspaceProps {
+  activity: ActivityViewModel;
   stage: StageDefinition;
   runtimeGuide: StageRuntimeGuide;
   summaryStats: SummaryStat[];
@@ -106,6 +108,7 @@ const buildSubmissionFieldEntries = (data: Record<string, unknown> | null) => {
 };
 
 export function StageWorkspace({
+  activity,
   stage,
   runtimeGuide,
   summaryStats,
@@ -132,11 +135,10 @@ export function StageWorkspace({
             Control Room
           </p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-            愚人节首届非人类黑客松
+            {activity.title}
           </h2>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-300">
-            这块区域负责把节目真的跑起来。左边切幕，中央看当前场面，右边处理
-            OpenClaw 连线、入场文档和调度指令。
+            {activity.description}
           </p>
         </div>
 
@@ -837,7 +839,8 @@ export function StageWorkspace({
                 ))
               ) : (
                 <div className="rounded-[1rem] border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-500">
-                  当前还没有 authoritative score summary。切到 `act-7-ai-judging` 并执行 `submit-score` 后，这里会先亮起来。
+                  当前还没有 authoritative score summary。切到允许评分的幕并执行
+                  `submit-score` 后，这里会先亮起来。
                 </div>
               )}
             </div>

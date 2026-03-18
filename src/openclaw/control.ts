@@ -3,6 +3,10 @@ import {
   normalizeTheFoolTeamProjectSubmissionData,
   type TeamProjectSubmissionData,
 } from "./activities/theFoolV1";
+import {
+  buildActivityRoomCatalog,
+  getDefaultActivityPackage,
+} from "./activityRuntime";
 import type {
   ActorRole as PlatformActorRole,
   CommandEnvelope,
@@ -78,44 +82,13 @@ export interface SubmitScorePayload {
   annotations?: ScoreAnnotations;
 }
 
-const ROOM_ALIASES: Record<string, string> = {
-  main: "main-stage",
-  "main-stage": "main-stage",
-
-  "team-room-1": "team-room-1",
-  "team-1": "team-room-1",
-  team1: "team-room-1",
-
-  "team-room-2": "team-room-2",
-  "team-2": "team-room-2",
-  team2: "team-room-2",
-
-  "team-room-3": "team-room-3",
-  "team-3": "team-room-3",
-  team3: "team-room-3",
-
-  "quiet-orbit": "quiet-orbit",
-  quiet: "quiet-orbit",
-};
-
-export const DEFAULT_GATEWAY_ROOM_IDS = [
-  "main-stage",
-  "team-room-1",
-  "team-room-2",
-  "team-room-3",
-  "quiet-orbit",
-] as const;
-
-export const ROOM_LABELS: Record<string, string> = {
-  "main-stage": "Main Stage",
-  "team-room-1": "Team Room 1",
-  "team-room-2": "Team Room 2",
-  "team-room-3": "Team Room 3",
-  "quiet-orbit": "Quiet Orbit",
-};
-
 const normalizeAlias = (room: string): string =>
   room.trim().toLowerCase().replace(/[\s_]+/g, "-");
+
+const DEFAULT_ACTIVITY_PACKAGE_ID = getDefaultActivityPackage().id;
+
+const resolveRoomCatalog = (activityPackageId?: string) =>
+  buildActivityRoomCatalog(activityPackageId ?? DEFAULT_ACTIVITY_PACKAGE_ID);
 
 const normalizeAgentId = (agentId: string): string => {
   const normalized = agentId.trim();
@@ -204,38 +177,59 @@ export const summarizeGatewayOrchestrationContract = ({
   };
 };
 
-export const resolveControlRoomId = (room: string): string => {
-  const resolved = ROOM_ALIASES[normalizeAlias(room)];
+export const resolveControlRoomId = (
+  room: string,
+  activityPackageId?: string,
+): string => {
+  const roomCatalog = resolveRoomCatalog(activityPackageId);
+  const resolved = roomCatalog.aliasMap[normalizeAlias(room)];
   if (!resolved) {
     throw new Error(
-      `Unknown room alias "${room}". Use main-stage, team-room-1, team-room-2, team-room-3, or quiet-orbit.`,
+      `Unknown room alias "${room}". Use ${roomCatalog.roomIds.join(", ")}.`,
     );
   }
   return resolved;
 };
 
-export const buildGatewaySessionKey = (agentId: string, room: string): string =>
-  `agent:${normalizeAgentId(agentId)}:${resolveControlRoomId(room)}`;
+export const getGatewayRoomIds = (activityPackageId?: string): string[] =>
+  resolveRoomCatalog(activityPackageId).roomIds;
 
-const normalizeSessionRoomId = (roomId: string): string =>
-  roomId === "main" ? "main-stage" : roomId;
+export const buildGatewaySessionKey = (
+  agentId: string,
+  room: string,
+  activityPackageId?: string,
+): string =>
+  `agent:${normalizeAgentId(agentId)}:${resolveControlRoomId(room, activityPackageId)}`;
 
-export const resolveSessionRoomId = (sessionKey: string | undefined): string => {
+const normalizeSessionRoomId = (
+  roomId: string,
+  activityPackageId?: string,
+): string =>
+  resolveRoomCatalog(activityPackageId).aliasMap[normalizeAlias(roomId)] ?? roomId;
+
+export const resolveSessionRoomId = (
+  sessionKey: string | undefined,
+  activityPackageId?: string,
+): string => {
+  const roomCatalog = resolveRoomCatalog(activityPackageId);
   if (!sessionKey) {
-    return "quiet-orbit";
+    return roomCatalog.fallbackRoomId;
   }
 
   const match = sessionKey.match(/^agent:[^:]+:(.+)$/);
-  const roomId = normalizeSessionRoomId(match?.[1] ?? "");
+  const roomId = normalizeSessionRoomId(match?.[1] ?? "", activityPackageId);
 
-  if (DEFAULT_GATEWAY_ROOM_IDS.includes(roomId as (typeof DEFAULT_GATEWAY_ROOM_IDS)[number])) {
+  if (roomCatalog.roomIds.includes(roomId)) {
     return roomId;
   }
 
-  return "quiet-orbit";
+  return roomCatalog.fallbackRoomId;
 };
 
-export const getRoomLabel = (roomId: string): string => ROOM_LABELS[roomId] ?? roomId;
+export const getRoomLabel = (
+  roomId: string,
+  activityPackageId?: string,
+): string => resolveRoomCatalog(activityPackageId).labels[roomId] ?? roomId;
 
 export const normalizeControlGatewayUrl = (
   configuredUrl: string | undefined,
@@ -293,9 +287,12 @@ export const normalizeOrchestratorBaseUrl = (
   }
 };
 
-export const buildMoveMessage = (room: string): string => {
-  const roomId = resolveControlRoomId(room);
-  const label = ROOM_LABELS[roomId] ?? roomId;
+export const buildMoveMessage = (
+  room: string,
+  activityPackageId?: string,
+): string => {
+  const roomId = resolveControlRoomId(room, activityPackageId);
+  const label = getRoomLabel(roomId, activityPackageId);
   return `Move to ${label}. Reply with one short line only.`;
 };
 

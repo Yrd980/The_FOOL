@@ -364,7 +364,7 @@ export function IntegrationRail({
           选手文档帮助参与，当前 act 和权限仍由平台与导演台决定
         </h2>
         <p className="mt-3 text-sm leading-7 text-slate-300">
-          `skill.md` 和 `heartbeat.md` 只负责告诉 agent 如何参与 The Fool。当前幕、
+          `skill.md` 和 `heartbeat.md` 只负责告诉 agent 如何参与当前活动。当前幕、
           房间、窗口开关和角色权限，仍以平台状态和导演台调度为准。
         </p>
 

@@ -3,6 +3,7 @@ import { StageSidebar } from "./StageSidebar";
 import { StageWorkspace } from "./StageWorkspace";
 import { rankContestants } from "../presentation";
 import type {
+  ActivityViewModel,
   GatewayOverview,
   IntegrationDoc,
   OperatorCommand,
@@ -24,6 +25,7 @@ interface ControlModeProps {
   activeStageId: string;
   authorityStageId: string | null;
   onSelectStage: (stageId: string) => void;
+  activity: ActivityViewModel;
   runtimeGuide: StageRuntimeGuide;
   gateway: GatewayOverview;
   summaryStats: SummaryStat[];
@@ -37,6 +39,7 @@ export function ControlMode({
   activeStageId,
   authorityStageId,
   onSelectStage,
+  activity,
   runtimeGuide,
   gateway,
   summaryStats,
@@ -219,6 +222,7 @@ export function ControlMode({
           onSelectStage={onSelectStage}
         />
         <StageWorkspace
+          activity={activity}
           stage={stage}
           runtimeGuide={runtimeGuide}
           summaryStats={summaryStats}

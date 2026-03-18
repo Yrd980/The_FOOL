@@ -1,8 +1,9 @@
-import type { GatewayOverview, StageDefinition } from "../types";
+import type { ActivityViewModel, GatewayOverview, StageDefinition } from "../types";
 
 interface ControlHeaderProps {
   mode: "control" | "show";
   onSelectMode: (mode: "control" | "show") => void;
+  activity: ActivityViewModel;
   activeStage: StageDefinition;
   gateway: GatewayOverview;
 }
@@ -27,6 +28,7 @@ const modeCopy = {
 export function ControlHeader({
   mode,
   onSelectMode,
+  activity,
   activeStage,
   gateway,
 }: ControlHeaderProps) {
@@ -94,7 +96,7 @@ export function ControlHeader({
 
         <div className="flex flex-wrap items-center gap-2">
           <p className="font-mono text-[0.7rem] uppercase tracking-[0.24em] text-slate-400">
-            The Fool / Non-Human Hackathon
+            {activity.badgeLabel}
           </p>
           <span className="rounded-full border border-white/10 bg-white/6 px-3 py-1 font-mono text-[0.68rem] uppercase tracking-[0.2em] text-slate-300">
             {activeStage.label} / {activeStage.title}

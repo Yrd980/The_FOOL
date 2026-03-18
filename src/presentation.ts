@@ -534,11 +534,6 @@ export interface ShowAudienceComposition {
   softFallbacks: ShowSoftFallbackNarrative[];
 }
 
-const stageLooksLike = (
-  stageId: string,
-  keyword: "submission" | "judging" | "award",
-): boolean => stageId.includes(keyword);
-
 const pickSpotlightTone = (
   placementStatus: "aligned" | "mixed" | "unassigned",
 ): UiTone =>
@@ -655,7 +650,7 @@ const buildSubmissionNarrative = (
   gateway: GatewayOverview,
   stage: StageDefinition,
 ): ShowSubmissionNarrative => {
-  const isSubmissionStage = stageLooksLike(stage.id, "submission");
+  const isSubmissionStage = stage.presentation.deskMode === "submission";
   const progressLabel = `${gateway.lockedSubmissionCount}/${gateway.totalSubmissionCount}`;
   const current = gateway.currentSubmission;
 
@@ -695,7 +690,7 @@ const buildScoreNarrative = (
   gateway: GatewayOverview,
   stage: StageDefinition,
 ): ShowScoreNarrative => {
-  const isJudgingStage = stageLooksLike(stage.id, "judging");
+  const isJudgingStage = stage.presentation.deskMode === "score";
   const leader = gateway.scoreSummary[0] ?? null;
 
   if (!leader) {

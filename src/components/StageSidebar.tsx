@@ -22,7 +22,7 @@ export function StageSidebar({
         Stage Flow
       </p>
       <h2 className="mt-3 text-lg font-semibold text-slate-950">
-        十幕就是导演台的总控脚本
+        {stages.length} 幕就是导演台的总控脚本
       </h2>
       <p className="mt-2 text-sm leading-7 text-slate-600">
         这不是活动说明页，而是一套随着当前 act 切镜头、切房间、切任务的调度界面。

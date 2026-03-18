@@ -45,12 +45,13 @@ const sortRoomSummaries = (
 const resolveRoomLabel = (
   roomId: string | null,
   roomLabelById: Map<string, string>,
+  activityPackageId?: string | null,
 ): string | null => {
   if (!roomId) {
     return null;
   }
 
-  return roomLabelById.get(roomId) ?? getRoomLabel(roomId);
+  return roomLabelById.get(roomId) ?? getRoomLabel(roomId, activityPackageId ?? undefined);
 };
 
 const buildStructuredStateSummary = ({
@@ -129,6 +130,7 @@ const buildWorldEntitySummary = ({
   teamLabel,
   roomLabelById,
   sessionByAgentId,
+  activityPackageId,
 }: {
   entityId: string;
   kind: string;
@@ -137,6 +139,7 @@ const buildWorldEntitySummary = ({
   teamLabel: string | null;
   roomLabelById: Map<string, string>;
   sessionByAgentId: Map<string, GatewaySessionSummary>;
+  activityPackageId?: string | null;
 }): GatewayWorldEntitySummary => {
   const liveSession = sessionByAgentId.get(entityId) ?? null;
 
@@ -145,7 +148,7 @@ const buildWorldEntitySummary = ({
     label: entityId,
     kind,
     roomId,
-    roomLabel: resolveRoomLabel(roomId, roomLabelById),
+    roomLabel: resolveRoomLabel(roomId, roomLabelById, activityPackageId),
     teamId,
     teamLabel,
     liveRoomId: liveSession?.roomId ?? null,
@@ -161,12 +164,14 @@ export const buildGatewayWorldSummary = ({
   hasAuthoritativeSnapshot,
   queryStatus,
   sessions,
+  activityPackageId,
 }: {
   authoritativeWorld: GatewayWorldSnapshot | null | undefined;
   gatewayWorld: GatewayWorldSnapshot | null | undefined;
   hasAuthoritativeSnapshot: boolean;
   queryStatus: GatewayAuthoritativeQueryStatus;
   sessions: GatewaySessionSummary[];
+  activityPackageId?: string | null;
 }): GatewayWorldSummary => {
   const state = buildStructuredStateSummary({
     sectionLabel: "snapshot.world",
@@ -188,7 +193,10 @@ export const buildGatewayWorldSummary = ({
   }
 
   const roomLabelById = new Map(
-    rawWorld.rooms.map((room) => [room.id, room.label?.trim() || getRoomLabel(room.id)]),
+    rawWorld.rooms.map((room) => [
+      room.id,
+      room.label?.trim() || getRoomLabel(room.id, activityPackageId ?? undefined),
+    ]),
   );
   const sessionByAgentId = new Map(
     sessions.map((session) => [session.agentId, session]),
@@ -245,6 +253,7 @@ export const buildGatewayWorldSummary = ({
         teamLabel: membership?.teamLabel ?? null,
         roomLabelById,
         sessionByAgentId,
+        activityPackageId,
       });
     })
     .sort(sortEntitySummaries);

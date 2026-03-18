@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { THE_FOOL_SCORE_ANNOTATION_KEYS } from "./activities/theFoolV1";
+import { getDefaultActivityPackage } from "./activityRuntime";
 import type {
   GatewayActivity,
   GatewayActivityRunSummary,
@@ -19,7 +20,7 @@ import type {
   GatewaySessionSummary,
 } from "../types";
 import {
-  DEFAULT_GATEWAY_ROOM_IDS,
+  getGatewayRoomIds,
   getRoomLabel,
   normalizeControlDispatchMethod,
   resolveSessionRoomId,
@@ -149,6 +150,8 @@ const AUTHORITATIVE_QUERY_CHECK_LABELS: Record<
   replay: "Replay",
   audit: "Audit",
 };
+
+const DEFAULT_ACTIVITY_PACKAGE_ID = getDefaultActivityPackage().id;
 
 interface AuthoritativeQueryState {
   configured: boolean;
@@ -875,7 +878,9 @@ const applyOrchestrationEvent = (
       activityRun: {
         id: readString(payload, "activityRunId", "id") ?? previous.activityRun?.id ?? "activity-run",
         templateId:
-          readString(payload, "templateId") ?? previous.activityRun?.templateId ?? "the-fool-v1",
+          readString(payload, "templateId") ??
+          previous.activityRun?.templateId ??
+          DEFAULT_ACTIVITY_PACKAGE_ID,
         status: readString(payload, "status") ?? "running",
         currentStageId:
           readString(payload, "currentStageId", "stageId") ??
@@ -890,7 +895,7 @@ const applyOrchestrationEvent = (
       ...nextState,
       activityRun: {
         id: previous.activityRun?.id ?? readString(payload, "activityRunId") ?? "activity-run",
-        templateId: previous.activityRun?.templateId ?? "the-fool-v1",
+        templateId: previous.activityRun?.templateId ?? DEFAULT_ACTIVITY_PACKAGE_ID,
         status: previous.activityRun?.status ?? "running",
         currentStageId:
           readString(payload, "toStageId", "currentStageId", "stageId") ?? null,
@@ -1772,23 +1777,27 @@ export function useGatewayOverview(): GatewayOverview {
   );
 
   return useMemo(() => {
-    const roomCounts = DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
+    const activityPackageId = orchestration.activityRun?.templateId ?? undefined;
+    const gatewayRoomIds = getGatewayRoomIds(activityPackageId);
+    const fallbackRoomId = gatewayRoomIds.at(-1) ?? "room";
+    const roomCounts = gatewayRoomIds.map((roomId) => ({
       roomId,
-      label: getRoomLabel(roomId),
-      count: sessions.filter((session) => resolveSessionRoomId(session.key) === roomId)
-        .length,
+      label: getRoomLabel(roomId, activityPackageId),
+      count: sessions.filter(
+        (session) => resolveSessionRoomId(session.key, activityPackageId) === roomId,
+      ).length,
     }));
 
     const allSessionSummaries: GatewaySessionSummary[] = [...sessions]
       .sort((left, right) => normalizeTimestamp(right.updatedAt) - normalizeTimestamp(left.updatedAt))
       .map((session) => {
-        const roomId = resolveSessionRoomId(session.key);
+        const roomId = resolveSessionRoomId(session.key, activityPackageId);
         const state = deriveContestantState(session);
         return {
           agentId: session.agentId,
           sessionKey: session.key,
           roomId,
-          roomLabel: getRoomLabel(roomId),
+          roomLabel: getRoomLabel(roomId, activityPackageId),
           updatedAt: normalizeTimestamp(session.updatedAt),
           updatedLabel: formatUpdatedLabel(session.updatedAt),
           state,
@@ -1835,22 +1844,22 @@ export function useGatewayOverview(): GatewayOverview {
       },
     ];
 
-    const roomRosters = DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
+    const roomRosters = gatewayRoomIds.map((roomId) => ({
       roomId,
-      label: getRoomLabel(roomId),
+      label: getRoomLabel(roomId, activityPackageId),
       sessions: allSessionSummaries.filter((session) => session.roomId === roomId),
     }));
 
     const allActivities: GatewayActivity[] = messages.map((message) => {
       const relatedRoom = roomByAgent.get(message.senderId);
-      const roomId = relatedRoom?.roomId ?? "quiet-orbit";
+      const roomId = relatedRoom?.roomId ?? fallbackRoomId;
       const timestamp = normalizeTimestamp(message.ts);
 
       return {
         id: message.id,
         agentId: message.senderId,
         roomId,
-        roomLabel: relatedRoom?.roomLabel ?? getRoomLabel(roomId),
+        roomLabel: relatedRoom?.roomLabel ?? getRoomLabel(roomId, activityPackageId),
         content: message.content,
         timestamp,
         timestampLabel: formatClockLabel(timestamp),
@@ -2084,6 +2093,7 @@ export function useGatewayOverview(): GatewayOverview {
       hasAuthoritativeSnapshot: Boolean(authoritativeSnapshot),
       queryStatus: orchestratorQuery,
       sessions: allSessionSummaries,
+      activityPackageId: activityRun?.templateId ?? null,
     });
     const skills = buildGatewaySkillSummary({
       authoritativeSkills,

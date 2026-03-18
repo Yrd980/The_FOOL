@@ -7,6 +7,15 @@ export interface SummaryStat {
   note: string;
 }
 
+export type StageDeskMode = "submission" | "score";
+
+export interface StageCapabilities {
+  hasSubmissionSchema: boolean;
+  supportsSubmissionWindowManagement: boolean;
+  supportsScoring: boolean;
+  supportsAwards: boolean;
+}
+
 export interface StageDefinition {
   id: string;
   label: string;
@@ -15,6 +24,13 @@ export interface StageDefinition {
   contestantActions: string[];
   humanActions: string[];
   systemSignals: string[];
+  allowedActions: string[];
+  submissionSchemaIds: string[];
+  durationSec?: number;
+  capabilities: StageCapabilities;
+  presentation: {
+    deskMode: StageDeskMode;
+  };
 }
 
 export interface StageRuntimeGuide {
@@ -22,6 +38,19 @@ export interface StageRuntimeGuide {
   successSignal: string;
   preferredRoomIds: string[];
   suggestedDurationSec?: number;
+}
+
+export interface ActivityViewModel {
+  packageId: string;
+  badgeLabel: string;
+  title: string;
+  description: string;
+  defaultStageId: string | null;
+  stages: StageDefinition[];
+  stageRuntimeGuides: Record<string, StageRuntimeGuide>;
+  summaryStats: SummaryStat[];
+  integrationDocs: IntegrationDoc[];
+  operatorCommands: OperatorCommand[];
 }
 
 export interface IntegrationDoc {

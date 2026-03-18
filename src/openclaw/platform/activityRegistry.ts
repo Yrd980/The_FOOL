@@ -1,3 +1,4 @@
+import type { ActivityUiMetadata } from "../activityMetadata";
 import type {
   ScoreAnnotations,
   SkillBinding,
@@ -26,6 +27,7 @@ export interface ActivityPackage {
   ) => SubmissionData;
   inferSubmissionTeamId?: (submissionId: string) => string | undefined;
   scoreConfig?: ActivityScoreConfig;
+  metadata?: ActivityUiMetadata;
 }
 
 const activityPackages = new Map<string, ActivityPackage>();
@@ -44,6 +46,31 @@ export const getActivityPackage = (activityPackageId: string): ActivityPackage =
   }
   return activityPackage;
 };
+
+export const tryGetActivityPackage = (
+  activityPackageId: string | null | undefined,
+): ActivityPackage | undefined => {
+  if (!activityPackageId) {
+    return undefined;
+  }
+
+  return activityPackages.get(activityPackageId);
+};
+
+export const getDefaultActivityPackage = (): ActivityPackage => {
+  const firstActivityPackage = activityPackages.values().next().value;
+  if (!firstActivityPackage) {
+    throw new Error("No activity package has been registered.");
+  }
+  return firstActivityPackage;
+};
+
+export const findActivityPackageByStageId = (
+  stageId: string,
+): ActivityPackage | undefined =>
+  [...activityPackages.values()].find((activityPackage) =>
+    activityPackage.stageTemplates.some((stageTemplate) => stageTemplate.id === stageId),
+  );
 
 export const listActivityPackages = (): ActivityPackage[] =>
   [...activityPackages.values()];
