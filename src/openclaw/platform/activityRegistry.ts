@@ -11,6 +11,9 @@ import type {
 export interface ActivityScoreConfig {
   allowedStageIds?: string[];
   requiredAnnotations?: string[];
+  extractLegacyAnnotations?: (
+    record: Record<string, unknown>,
+  ) => ScoreAnnotations;
   normalizeAnnotations?: (annotations: ScoreAnnotations) => ScoreAnnotations;
 }
 

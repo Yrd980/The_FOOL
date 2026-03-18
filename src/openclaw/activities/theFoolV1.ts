@@ -12,6 +12,12 @@ import type {
 } from "../platform/contracts";
 
 export const THE_FOOL_V1_TEMPLATE_ID = "the-fool-v1";
+const THE_FOOL_ACTIVITY_DOC_VERSION = "1.0.0";
+const THE_FOOL_SKILL_DOC_VERSION = "0.1.0";
+const THE_FOOL_REQUIREMENTS_DOC_ID =
+  "docs/activities/the-fool-v1/requirements.md";
+const THE_FOOL_SCENE_SPEC_DOC_ID =
+  "docs/activities/the-fool-v1/scene-spec.md";
 
 export const THE_FOOL_SCORE_ANNOTATION_KEYS = {
   favorite: "favorite",
@@ -185,12 +191,30 @@ const theFoolSkillBindings = [
   {
     role: "agent",
     docId: "skill.md",
-    version: "0.1.0",
+    version: THE_FOOL_SKILL_DOC_VERSION,
   },
   {
     role: "agent",
     docId: "heartbeat.md",
-    version: "0.1.0",
+    version: THE_FOOL_SKILL_DOC_VERSION,
+  },
+  ...theFoolStageTemplates.map((stageTemplate) => ({
+    role: "agent",
+    stageId: stageTemplate.id,
+    docId: `${THE_FOOL_REQUIREMENTS_DOC_ID}#${stageTemplate.id}`,
+    version: THE_FOOL_ACTIVITY_DOC_VERSION,
+  })),
+  ...theFoolStageTemplates.map((stageTemplate) => ({
+    role: "host",
+    stageId: stageTemplate.id,
+    docId: `${THE_FOOL_SCENE_SPEC_DOC_ID}#${stageTemplate.id}`,
+    version: THE_FOOL_ACTIVITY_DOC_VERSION,
+  })),
+  {
+    role: "judge",
+    stageId: "act-7-ai-judging",
+    docId: `${THE_FOOL_REQUIREMENTS_DOC_ID}#act-7-ai-judging`,
+    version: THE_FOOL_ACTIVITY_DOC_VERSION,
   },
 ];
 
@@ -664,6 +688,30 @@ export const normalizeTheFoolScoreAnnotations = (
   };
 };
 
+export const extractTheFoolLegacyScoreAnnotations = (
+  record: Record<string, unknown>,
+): ScoreAnnotations => {
+  const favoriteValue = record[THE_FOOL_SCORE_ANNOTATION_KEYS.favorite];
+  const mostAbsurdValue = record[THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd];
+  const favorite =
+    typeof favoriteValue === "string"
+      ? favoriteValue.trim()
+      : "";
+  const mostAbsurd =
+    typeof mostAbsurdValue === "string"
+      ? mostAbsurdValue.trim()
+      : "";
+
+  return {
+    ...(favorite
+      ? { [THE_FOOL_SCORE_ANNOTATION_KEYS.favorite]: favorite }
+      : {}),
+    ...(mostAbsurd
+      ? { [THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd]: mostAbsurd }
+      : {}),
+  };
+};
+
 export const theFoolV1ActivityPackage: ActivityPackage = registerActivityPackage({
   id: THE_FOOL_V1_TEMPLATE_ID,
   initialStageId: "act-1-intro",
@@ -680,6 +728,7 @@ export const theFoolV1ActivityPackage: ActivityPackage = registerActivityPackage
       THE_FOOL_SCORE_ANNOTATION_KEYS.favorite,
       THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd,
     ],
+    extractLegacyAnnotations: extractTheFoolLegacyScoreAnnotations,
     normalizeAnnotations: normalizeTheFoolScoreAnnotations,
   },
 });

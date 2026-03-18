@@ -2,7 +2,7 @@ import type {
   ActivityRoomSceneRole,
   ActivityStageMetadata,
 } from "./openclaw/activityMetadata";
-import { resolveActivityPackage } from "./openclaw/activityRuntime";
+import { tryResolveActivityPackage } from "./openclaw/activityRuntime";
 import type {
   ActivityViewModel,
   GatewayOverview,
@@ -12,6 +12,9 @@ import type {
   StageRuntimeGuide,
   SummaryStat,
 } from "./types";
+
+const PENDING_ACTIVITY_PACKAGE_ID = "openclaw:pending-activity";
+const PENDING_STAGE_ID = "activity-pending";
 
 const buildFallbackStageMetadata = (
   stage: StageDefinition,
@@ -129,10 +132,116 @@ const buildFallbackIntegrationDocs = (): IntegrationDoc[] => [
   },
 ];
 
+const buildPendingStageDefinition = (
+  fallbackStageId?: string | null,
+): StageDefinition => {
+  const normalizedStageId = fallbackStageId?.trim() || PENDING_STAGE_ID;
+  const hasAuthorityStage = Boolean(fallbackStageId?.trim());
+
+  return {
+    id: normalizedStageId,
+    label: hasAuthorityStage ? "Authority Stage" : "Bootstrap Pending",
+    title: hasAuthorityStage
+      ? normalizedStageId
+      : "Awaiting Activity Template",
+    summary: hasAuthorityStage
+      ? `平台已经声明当前 stage 为 ${normalizedStageId}，但前端还没拿到对应 activity package，所以这里不会默认套用任何 reference activity 文案。`
+      : "authority template 和 preview stage 目前都还没装配完成，renderer 先保持通用 pending shell。",
+    contestantActions: [
+      hasAuthorityStage
+        ? "继续按权威 stage 推进，等待 activity package 接入后补齐活动 copy。"
+        : "等待平台或 preview route 明确当前活动。",
+    ],
+    humanActions: [
+      "观察 authority snapshot / query 是否已经给出 templateId、stageId 和技能绑定。",
+    ],
+    systemSignals: [
+      "不再默认套用 The Fool 前端文案，直到活动包被显式解析成功。",
+    ],
+    allowedActions: [],
+    submissionSchemaIds: [],
+    capabilities: {
+      hasSubmissionSchema: false,
+      supportsSubmissionWindowManagement: false,
+      supportsScoring: false,
+      supportsAwards: false,
+    },
+    presentation: {
+      deskMode: "submission",
+    },
+  };
+};
+
+const buildPendingActivityViewModel = ({
+  requestedActivityPackageId,
+  fallbackStageId,
+}: {
+  requestedActivityPackageId?: string | null;
+  fallbackStageId?: string | null;
+}): ActivityViewModel => {
+  const stage = buildPendingStageDefinition(fallbackStageId);
+  const templateCopy = requestedActivityPackageId?.trim()
+    ? `当前 authority templateId = ${requestedActivityPackageId.trim()}，但本地 registry 里还没有对应 activity package。`
+    : "当前 authority templateId 还不可用。";
+
+  return {
+    packageId: requestedActivityPackageId?.trim() || PENDING_ACTIVITY_PACKAGE_ID,
+    badgeLabel: "OpenClaw / Activity Pending",
+    title: "OpenClaw Activity Pending",
+    description: `${templateCopy} 前端先展示通用待装配壳，不再默认长成 The Fool。`,
+    defaultStageId: stage.id,
+    stages: [stage],
+    stageRuntimeGuides: {
+      [stage.id]: buildStageRuntimeGuide({
+        operatorHint:
+          "先以 authority stage / world / skills 为准，等 activity package 注册完成后再接入活动专属 copy。",
+        successSignal:
+          "一旦拿到已注册 templateId，对应 stage copy、room roles 和 operator cue 会自动接管当前视图。",
+        preferredRoomIds: [],
+        roomRoles: {},
+      }),
+    },
+    summaryStats: [
+      {
+        label: "状态",
+        value: "Pending Activity",
+        note: "当前 renderer 只消费 authority signal，不再把未知活动默认渲染成 The Fool。",
+      },
+      {
+        label: "来源",
+        value: requestedActivityPackageId?.trim() || "awaiting authority",
+        note: "templateId 解析成功前，activity-specific docs 和 scene cue 都保持未装配。",
+      },
+      {
+        label: "边界",
+        value: "platform-first",
+        note: "未知 authority 不再偷用 reference activity 作为前台真相。",
+      },
+    ],
+    integrationDocs: buildFallbackIntegrationDocs(),
+    operatorCommands: [],
+  };
+};
+
 export const buildActivityViewModel = (
-  activityPackageId?: string | null,
+  {
+    activityPackageId,
+    requestedActivityPackageId,
+    fallbackStageId,
+  }: {
+    activityPackageId?: string | null;
+    requestedActivityPackageId?: string | null;
+    fallbackStageId?: string | null;
+  } = {},
 ): ActivityViewModel => {
-  const activityPackage = resolveActivityPackage(activityPackageId);
+  const activityPackage = tryResolveActivityPackage(activityPackageId);
+  if (!activityPackage) {
+    return buildPendingActivityViewModel({
+      requestedActivityPackageId,
+      fallbackStageId,
+    });
+  }
+
   const metadata = activityPackage.metadata;
   const roomRoles = (metadata?.rooms?.roles ?? []).reduce<
     Record<string, ActivityRoomSceneRole>

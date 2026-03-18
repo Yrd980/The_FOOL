@@ -10,9 +10,9 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  THE_FOOL_SCORE_ANNOTATION_KEYS,
-  theFoolV1ActivityPackage,
-} from "../src/openclaw/activities/theFoolV1";
+  DEFAULT_REFERENCE_ACTIVITY_TEMPLATE_ID,
+} from "../src/openclaw/activities";
+import { normalizeActivityScoreAnnotations } from "../src/openclaw/activityRuntime";
 import { getActivityPackage } from "../src/openclaw/platform/activityRegistry";
 import type {
   ActivityRunState,
@@ -193,14 +193,15 @@ const authToken =
   process.env.VITE_OPENCLAW_TOKEN?.trim() ||
   "molt-claw-local-dev";
 
-const bootstrapActivityTemplateId =
+const bootstrapReferenceActivityTemplateId =
+  process.env.OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID?.trim() ||
   process.env.OPENCLAW_ACTIVITY_TEMPLATE_ID?.trim() ||
-  theFoolV1ActivityPackage.id;
+  DEFAULT_REFERENCE_ACTIVITY_TEMPLATE_ID;
 
 const resolveActivityPackageByTemplateId = (templateId?: string | null) =>
-  getActivityPackage(templateId ?? bootstrapActivityTemplateId);
+  getActivityPackage(templateId ?? bootstrapReferenceActivityTemplateId);
 
-const defaultActivityPackage = resolveActivityPackageByTemplateId();
+const bootstrapReferenceActivityPackage = resolveActivityPackageByTemplateId();
 
 const supportedRpcMethods = [
   "connect",
@@ -256,9 +257,9 @@ const buildSeedProjection = (now = Date.now()): ProjectionState => ({
   snapshotId: `snapshot-${now}`,
   activityRun: {
     id: "activity-run-01",
-    templateId: defaultActivityPackage.id,
+    templateId: bootstrapReferenceActivityPackage.id,
     status: "running",
-    currentStageId: defaultActivityPackage.initialStageId,
+    currentStageId: bootstrapReferenceActivityPackage.initialStageId,
     startedAt: now,
   },
   timers: [],
@@ -432,44 +433,10 @@ const readSubmissionVersionRecords = (
 
 const readScoreAnnotations = (
   value: unknown,
-  templateId = defaultActivityPackage.id,
+  templateId = bootstrapReferenceActivityPackage.id,
 ): ScoreAnnotations => {
   const rawScore = isRecord(value) ? value : {};
-  const nextAnnotations: ScoreAnnotations = {};
-
-  if (isRecord(rawScore.annotations)) {
-    for (const [key, annotationValue] of Object.entries(rawScore.annotations)) {
-      if (
-        typeof annotationValue === "string" &&
-        annotationValue.trim().length > 0
-      ) {
-        nextAnnotations[key] = annotationValue.trim();
-      }
-    }
-  }
-
-  const favorite =
-    typeof rawScore[THE_FOOL_SCORE_ANNOTATION_KEYS.favorite] === "string"
-      ? rawScore[THE_FOOL_SCORE_ANNOTATION_KEYS.favorite].trim()
-      : "";
-  if (favorite) {
-    nextAnnotations[THE_FOOL_SCORE_ANNOTATION_KEYS.favorite] = favorite;
-  }
-
-  const mostAbsurd =
-    typeof rawScore[THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd] === "string"
-      ? rawScore[THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd].trim()
-      : "";
-  if (mostAbsurd) {
-    nextAnnotations[THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd] = mostAbsurd;
-  }
-
-  const scoreConfig = resolveActivityPackageByTemplateId(templateId).scoreConfig;
-  if (scoreConfig?.normalizeAnnotations) {
-    return scoreConfig.normalizeAnnotations(nextAnnotations);
-  }
-
-  return nextAnnotations;
+  return normalizeActivityScoreAnnotations(rawScore, templateId);
 };
 
 const buildScoreSummary = (

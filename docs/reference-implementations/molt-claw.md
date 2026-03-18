@@ -88,13 +88,15 @@
 
 - `src/openclaw/platform/contracts.ts` 收口平台通用 contract
 - `src/openclaw/platform/activityRegistry.ts` 提供活动包注册与加载边界
+- `src/openclaw/activities/index.ts` 现在作为显式 activity registration/bootstrap 入口，避免 browser 侧再依赖隐式 side effect
 - `src/openclaw/activities/theFoolV1.ts` 承载 The Fool v1 的 stage/schema/world/score config
-- `src/openclaw/activities/theFoolV1.ts` 现在也承载 The Fool v1 的前端 stage copy、runtime guide、room aliases、room scene roles、UI summary 等 activity metadata
-- `src/data.ts` 不再维护 The Fool 静态 stage 数组，而是从 activity package 装配 activity-driven view model
-- `scripts/openclaw-orchestrator.ts` 不再直接把 The Fool 的十幕、schema 和 world seed 写死在主文件里，而是从 activity package 装配
+- `src/openclaw/activities/theFoolV1.ts` 现在也承载 The Fool v1 的前端 stage copy、runtime guide、room aliases、room scene roles、UI summary，以及 stage-specific skill/doc bindings 等 activity metadata
+- `src/data.ts` 不再维护 The Fool 静态 stage 数组，而是从 activity package 装配 activity-driven view model；当 authority/template 还没解出来时，前端会退回通用 pending shell，而不是默认长成 The Fool
+- `scripts/openclaw-orchestrator.ts` 不再直接把 The Fool 的十幕、schema 和 world seed 写死在主文件里，而是从 activity package 装配；bootstrap 语义也已改成“explicit reference activity”，支持 `OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID`
 - `src/presentation.ts` 的 room narrative / live copy 已改成消费 activity metadata 里的 room scene roles，不再硬编码 `main-stage` / `team-room-*` / `quiet-orbit`
 - `src/openclaw/useGatewayOverview.ts` 与 `src/openclaw/overviewSharedState.ts` 在拿不到 `templateId` 时，已优先退回 authority world label / raw room id，而不是默认套用 The Fool room catalog
-- `src/openclaw/control.ts` 的 room alias / room catalog 已改成从 activity package 的 world + metadata 派生；`submit` / `update_submission` / `submit_score` envelope builder 也已收口成平台通用 payload，`scripts/openclaw-control.ts` 继续保留 The Fool CLI 兼容输入
+- `src/openclaw/useGatewayOverview.ts` 与 `scripts/openclaw-orchestrator.ts` 读取 score annotations 时，旧 `favorite` / `mostAbsurd` 顶层字段兼容已下沉到 activity package 的 `scoreConfig.extractLegacyAnnotations`
+- `src/openclaw/control.ts` 的 room alias / room catalog 已改成从 activity package 的 world + metadata 派生；`submit` / `update_submission` / `submit_score` envelope builder 也已收口成平台通用 payload，`scripts/openclaw-control.ts` 则改成通用 payload / annotations 输入 + The Fool 兼容别名
 
 当前 The Fool v1 在这个 worktree 里的 submission write loop 已收口为：
 
@@ -156,11 +158,12 @@
   - `eventIds`
   - `emittedSequences`
 - CLI 兼容层当前仍接受：
+  - `--annotations-json`
   - `--favorite`
   - `--most-absurd`
   - `--weirdest`
   - `--absurd`
-  但它们会先映射到通用 `annotations` 再进入平台 command
+  其中 The Fool 专属 flags 会先映射到通用 `annotations` 再进入平台 command
 
 ### 4.3 Act VIII Award Grant
 
@@ -185,10 +188,11 @@
 - recent backend health evidence（来自 `snapshot.health`、audit 与 query checks）
 - event provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）
 - `snapshot` / `scores` / `events` / `replay` / `audit` 的单独 query client
-- score annotations 的 typed summary；renderer 侧兼容读取旧 `favorite` / `mostAbsurd` 字段，但 shared state 内部优先使用通用 `annotations`
+- score annotations 的 typed summary；renderer 侧对旧 `favorite` / `mostAbsurd` 字段的兼容也已收口到 activity package 抽取器，shared state 内部优先使用通用 `annotations`
 - `/show`、`/show/:stageId`、`/control/stages/:stageId` 当前都已经改成按 authority stage + activity metadata 解析 active stage，不再以内建 The Fool stages 作为唯一来源
 - `src/presentation.ts` 的 stage desk / submission / score narrative 已改成消费 stage capabilities + activity metadata，不再依赖 `stageId.includes("submission" | "judging" | "award")`
 - `src/presentation.ts` 的 room stage-fit / heat / activity headline 已改成消费 activity metadata 的 room scene roles，不再在 shared presentation 层解析 The Fool room id 命名
+- authority/template 还不可用时，browser app shell 会显示通用 pending activity shell，不再默认退回首个 reference activity package
 
 `/show` 侧当前已经在同一层 shared state 之上补出 show-specific composition，而不是继续直接复用 control-first 分组：
 
@@ -203,14 +207,18 @@
 当前仍未完整暴露或未完全闭环的点：
 
 - 当前 local fixture 暴露出来的 team-room / entity placement mismatch 仍未被 backend 修正
-- stage-specific skill bindings 仍未在 seed data 内提供
 - `/show` 当前 room spotlight 仍会部分受 live session heat 影响；在 live session 很稀疏时，还没有完全收敛到更强的 act-level world cue
-- browser / CLI 侧仍保留一轮 The Fool 兼容层：
+- browser / CLI / orchestrator 侧仍保留一轮 The Fool 兼容层：
+  - 旧 `favorite` / `mostAbsurd` 顶层 score 字段仍被接受，但兼容解析已经下沉到 The Fool activity package，而不是继续散在平台通用层
   - `scripts/openclaw-control.ts` 仍接受 `--favorite` / `--most-absurd` / `--weirdest` / `--absurd`，然后映射到通用 `annotations`
-  - `scripts/openclaw-control.ts` 仍用 `TeamProjectSubmissionData` / `normalizeTheFoolTeamProjectSubmissionData` 帮 The Fool CLI 预校验 payload
-- bootstrap default activity 仍保留一轮：
-  - browser app shell 在拿不到 authority `templateId` 且没有 preview stage 时，仍会退回已注册的 default activity package 来生成初始 stage view model
-  - `scripts/openclaw-orchestrator.ts` 当前支持 `OPENCLAW_ACTIVITY_TEMPLATE_ID` 覆盖 bootstrap 活动，但本地默认值仍是 The Fool v1，方便参考实现直接起第一条 run
+- explicit reference activity bootstrap 仍保留一轮：
+  - browser app shell 已经不再默认退回 The Fool，但本地 orchestrator 仍会在无存量 projection 时，以 reference activity 的语义 bootstrap 第一条 run
+  - `scripts/openclaw-orchestrator.ts` 当前支持 `OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID`（并兼容旧 `OPENCLAW_ACTIVITY_TEMPLATE_ID`）覆盖 bootstrap 活动；未显式配置时，本地默认 reference activity 仍是 The Fool v1，方便参考实现直接起第一条 run
+
+这几个兼容层这轮还保留的原因是：
+
+- 旧 score 顶层字段和 CLI flags 仍有现成操作习惯与历史 payload，需要给 The Fool operator 一轮缓冲；但它们已经不再占据平台通用 contract
+- local orchestrator 仍只有单 run / 单 reference activity 启动路径；在真正引入多活动 run bootstrap 前，保留一个显式 reference activity 默认值可以继续保证参考实现开箱即跑
 
 这里的含义是：
 

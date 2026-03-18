@@ -3,7 +3,7 @@ import { ControlHeader } from "./components/ControlHeader";
 import { ControlMode } from "./components/ControlMode";
 import { ShowMode } from "./components/ShowMode";
 import { buildActivityViewModel, buildOperatorCommands } from "./data";
-import { resolveActivityPackageId } from "./openclaw/activityRuntime";
+import { tryResolveActivityPackageId } from "./openclaw/activityRuntime";
 import { useGatewayOverview } from "./openclaw/useGatewayOverview";
 
 type AppMode = "control" | "show";
@@ -39,12 +39,16 @@ const getRouteFromPath = (): AppRoute => {
 function App() {
   const [route, setRoute] = useState<AppRoute>(getRouteFromPath);
   const gateway = useGatewayOverview();
-  const activity = buildActivityViewModel(
-    resolveActivityPackageId({
-      templateId: gateway.activityRun?.templateId,
-      previewStageId: route.previewStageId,
-    }),
-  );
+  const resolvedActivityPackageId = tryResolveActivityPackageId({
+    templateId: gateway.activityRun?.templateId,
+    previewStageId: route.previewStageId,
+  });
+  const activity = buildActivityViewModel({
+    activityPackageId: resolvedActivityPackageId,
+    requestedActivityPackageId: gateway.activityRun?.templateId ?? null,
+    fallbackStageId:
+      route.previewStageId ?? gateway.authorityStageId ?? gateway.activityRun?.currentStageId,
+  });
   const stages = activity.stages;
   const validatedPreviewStageId =
     route.previewStageId &&

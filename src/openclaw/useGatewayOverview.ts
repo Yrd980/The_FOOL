@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  extractActivityScoreAnnotations,
   findActivityPackageByStageId,
-  getActivityScoreAnnotationKeys,
 } from "./activityRuntime";
 import type {
   GatewayActivity,
@@ -364,22 +364,10 @@ const readScoreAnnotations = (
   record: Record<string, unknown>,
   activityPackageId?: string | null,
 ): GatewayScoreSnapshot["annotations"] => {
-  const nextAnnotations: NonNullable<GatewayScoreSnapshot["annotations"]> = {};
-
-  if (isRecord(record.annotations)) {
-    for (const [key, value] of Object.entries(record.annotations)) {
-      if (typeof value === "string" && value.trim().length > 0) {
-        nextAnnotations[key] = value.trim();
-      }
-    }
-  }
-
-  for (const annotationKey of getActivityScoreAnnotationKeys(activityPackageId)) {
-    const legacyValue = readString(record, annotationKey);
-    if (legacyValue) {
-      nextAnnotations[annotationKey] = legacyValue;
-    }
-  }
+  const nextAnnotations = extractActivityScoreAnnotations(
+    record,
+    activityPackageId,
+  );
 
   return Object.keys(nextAnnotations).length > 0 ? nextAnnotations : undefined;
 };

@@ -41,8 +41,6 @@ import {
 } from "../src/openclaw/control";
 import {
   THE_FOOL_SCORE_ANNOTATION_KEYS,
-  normalizeTheFoolTeamProjectSubmissionData,
-  type TeamProjectSubmissionData,
 } from "../src/openclaw/activities/theFoolV1";
 
 type CommandName =
@@ -74,6 +72,7 @@ const USAGE = `Usage:
   bun run openclaw:control -- submit <activity-run-id> <submission-id> <payload-json>
   bun run openclaw:control -- update-submission <activity-run-id> <submission-id> <payload-json>
   bun run openclaw:control -- lock-submission <activity-run-id> <submission-id>
+  bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> --annotations-json <json>
   bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> --favorite <text> --most-absurd <text>
   bun run openclaw:control -- grant-award <activity-run-id> <award-id> <entity-id> [label] [reason]
   bun run openclaw:control -- snapshot <activity-run-id>
@@ -1046,7 +1045,7 @@ const parseSubmissionCommandArgs = (
 ): {
   activityRunId: string;
   submissionId: string;
-  data: TeamProjectSubmissionData;
+  data: Record<string, unknown>;
 } => {
   const { positional } = parseLongOptions(rawArgs);
   const [activityRunId, submissionId, payloadJson] = positional;
@@ -1054,50 +1053,26 @@ const parseSubmissionCommandArgs = (
     fail(USAGE);
   }
 
-  const parsed = parsePayloadJson(payloadJson);
-  const posterOrDeck =
-    typeof parsed.posterOrDeck === "string" ? parsed.posterOrDeck.trim() : "";
-  const elevatorPitch =
-    typeof parsed.elevatorPitch === "string" ? parsed.elevatorPitch.trim() : "";
-  const highlights = Array.isArray(parsed.highlights)
-    ? parsed.highlights.map((entry) =>
-        typeof entry === "string" ? entry.trim() : "",
-      )
-    : [];
-  const risk = typeof parsed.risk === "string" ? parsed.risk.trim() : "";
-
-  if (!posterOrDeck || !elevatorPitch || !risk) {
-    fail(
-      `${commandName} payload must include non-empty posterOrDeck, elevatorPitch, and risk fields.`,
-    );
-  }
-
-  if (
-    highlights.length !== 3 ||
-    highlights.some((entry) => entry.length === 0)
-  ) {
-    fail(
-      `${commandName} payload must include highlights as an array of exactly 3 non-empty strings.`,
-    );
-  }
-
   return {
     activityRunId,
     submissionId,
-    data: (() => {
-      try {
-        return normalizeTheFoolTeamProjectSubmissionData({
-          posterOrDeck,
-          elevatorPitch,
-          highlights: highlights as [string, string, string],
-          risk,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Invalid payload.";
-        fail(`${commandName} ${message}`);
-      }
-    })(),
+    data: parsePayloadJson(payloadJson),
   };
+};
+
+const parseAnnotationsJson = (
+  source: string,
+): Record<string, string> => {
+  const parsed = parsePayloadJson(source);
+  return Object.entries(parsed).reduce<Record<string, string>>(
+    (result, [key, value]) => {
+      if (typeof value === "string" && value.trim().length > 0) {
+        result[key] = value.trim();
+      }
+      return result;
+    },
+    {},
+  );
 };
 
 const parseSubmitScoreArgs = (
@@ -1118,23 +1093,44 @@ const parseSubmitScoreArgs = (
   }
 
   const reason = options.reason?.trim();
+  const annotationsFromJson = options["annotations-json"]?.trim()
+    ? parseAnnotationsJson(options["annotations-json"])
+    : {};
   const favorite = options.favorite?.trim();
   const mostAbsurd =
     options["most-absurd"]?.trim() ??
     options.weirdest?.trim() ??
     options.absurd?.trim();
+  const isUsingTheFoolCompatFlags =
+    favorite !== undefined || mostAbsurd !== undefined;
 
   if (!reason) {
     fail("submit-score requires --reason <text>.");
   }
 
-  if (!favorite) {
+  if (isUsingTheFoolCompatFlags && !favorite) {
     fail("submit-score requires --favorite <text>.");
   }
 
-  if (!mostAbsurd) {
+  if (isUsingTheFoolCompatFlags && !mostAbsurd) {
     fail(
       "submit-score requires --most-absurd <text>. Aliases --weirdest / --absurd are accepted.",
+    );
+  }
+
+  const annotations = {
+    ...annotationsFromJson,
+    ...(favorite
+      ? { [THE_FOOL_SCORE_ANNOTATION_KEYS.favorite]: favorite }
+      : {}),
+    ...(mostAbsurd
+      ? { [THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd]: mostAbsurd }
+      : {}),
+  };
+
+  if (Object.keys(annotations).length === 0) {
+    fail(
+      "submit-score requires score annotations. Use --annotations-json '{\"key\":\"value\"}' or the The Fool compatibility flags.",
     );
   }
 
@@ -1144,10 +1140,7 @@ const parseSubmitScoreArgs = (
       submissionId,
       score,
       reason,
-      annotations: {
-        [THE_FOOL_SCORE_ANNOTATION_KEYS.favorite]: favorite,
-        [THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd]: mostAbsurd,
-      },
+      annotations,
     },
   };
 };

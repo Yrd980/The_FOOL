@@ -1,3 +1,4 @@
+import "./activities";
 import {
   findActivityPackageByStageId,
   getActivityPackage,
@@ -5,6 +6,7 @@ import {
   tryGetActivityPackage,
   type ActivityPackage,
 } from "./platform/activityRegistry";
+import type { ScoreAnnotations } from "./platform/contracts";
 
 export interface ActivityRoomCatalog {
   packageId: string;
@@ -13,6 +15,29 @@ export interface ActivityRoomCatalog {
   aliasMap: Record<string, string>;
   labels: Record<string, string>;
 }
+
+const readInlineScoreAnnotations = (
+  record: Record<string, unknown>,
+): ScoreAnnotations => {
+  const annotations = record.annotations;
+  if (
+    typeof annotations !== "object" ||
+    annotations === null ||
+    Array.isArray(annotations)
+  ) {
+    return {};
+  }
+
+  return Object.entries(annotations).reduce<ScoreAnnotations>(
+    (result, [key, value]) => {
+      if (typeof value === "string" && value.trim().length > 0) {
+        result[key] = value.trim();
+      }
+      return result;
+    },
+    {},
+  );
+};
 
 const normalizeRoomAlias = (room: string): string =>
   room.trim().toLowerCase().replace(/[\s_]+/g, "-");
@@ -62,13 +87,13 @@ export const tryResolveActivityPackage = (
   activityPackageId?: string | null,
 ): ActivityPackage | undefined => tryGetActivityPackage(activityPackageId);
 
-export const resolveActivityPackageId = ({
+export const tryResolveActivityPackageId = ({
   templateId,
   previewStageId,
 }: {
   templateId?: string | null;
   previewStageId?: string | null;
-} = {}): string => {
+} = {}): string | null => {
   const templateActivityPackage = tryGetActivityPackage(templateId);
   if (
     previewStageId &&
@@ -90,7 +115,22 @@ export const resolveActivityPackageId = ({
     return templateActivityPackage.id;
   }
 
-  return getDefaultActivityPackage().id;
+  return null;
+};
+
+export const resolveActivityPackageId = ({
+  templateId,
+  previewStageId,
+}: {
+  templateId?: string | null;
+  previewStageId?: string | null;
+} = {}): string => {
+  return (
+    tryResolveActivityPackageId({
+      templateId,
+      previewStageId,
+    }) ?? getDefaultActivityPackage().id
+  );
 };
 
 export const buildActivityRoomCatalog = (
@@ -108,6 +148,28 @@ export const tryBuildActivityRoomCatalog = (
 export const getActivityScoreAnnotationKeys = (
   activityPackageId?: string | null,
 ): string[] => tryResolveActivityPackage(activityPackageId)?.scoreConfig?.requiredAnnotations ?? [];
+
+export const extractActivityScoreAnnotations = (
+  record: Record<string, unknown>,
+  activityPackageId?: string | null,
+): ScoreAnnotations => {
+  const activityPackage = tryResolveActivityPackage(activityPackageId);
+  return {
+    ...(activityPackage?.scoreConfig?.extractLegacyAnnotations?.(record) ?? {}),
+    ...readInlineScoreAnnotations(record),
+  };
+};
+
+export const normalizeActivityScoreAnnotations = (
+  record: Record<string, unknown>,
+  activityPackageId?: string | null,
+): ScoreAnnotations => {
+  const activityPackage = tryResolveActivityPackage(activityPackageId);
+  const annotations = extractActivityScoreAnnotations(record, activityPackageId);
+  return activityPackage?.scoreConfig?.normalizeAnnotations
+    ? activityPackage.scoreConfig.normalizeAnnotations(annotations)
+    : annotations;
+};
 
 export const getActivityStageTemplate = ({
   activityPackageId,
