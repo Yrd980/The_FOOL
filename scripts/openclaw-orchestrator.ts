@@ -9,143 +9,33 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  THE_FOOL_SCORE_ANNOTATION_KEYS,
+  theFoolV1ActivityPackage,
+} from "../src/openclaw/activities/theFoolV1";
+import { getActivityPackage } from "../src/openclaw/platform/activityRegistry";
+import type {
+  ActivityRunState,
+  ActorRole,
+  AwardProjection,
+  CommandEnvelope,
+  EventCommandContext,
+  EventEnvelope,
+  ScoreAnnotations,
+  ScoreProjection,
+  ScoreSummaryItem,
+  StageTemplate,
+  SubmissionData,
+  SubmissionProjection,
+  SubmissionVersionRecord,
+  TimerProjection,
+  TimerStatus,
+} from "../src/openclaw/platform/contracts";
 
-type Role = "agent" | "host" | "judge" | "viewer" | "admin";
-type TimerStatus = "idle" | "running" | "paused" | "ended";
+type Role = ActorRole;
 type ReceiptStatus = "accepted" | "replayed";
 type AuditStatus = "accepted" | "replayed" | "rejected" | "conflict";
-
-interface StageTemplate {
-  id: string;
-  name: string;
-  durationSec?: number;
-  allowedActions: string[];
-  submissionSchemaIds?: string[];
-}
-
-interface SubmissionSchema {
-  id: string;
-  fields: Array<{
-    key: string;
-    type: "text" | "file" | "link" | "json";
-    required: boolean;
-  }>;
-}
-
-type SubmissionData = Record<string, unknown>;
 type SubmissionCommandType = "submit" | "update_submission";
-
-interface SubmissionVersionRecord {
-  version: number;
-  updatedAt: number;
-  actorId: string;
-  actorRole: Role;
-  data: SubmissionData;
-}
-
-interface SkillBinding {
-  role: string;
-  stageId?: string;
-  docId: string;
-  version: string;
-}
-
-interface ActivityRunState {
-  id: string;
-  templateId: string;
-  status: "draft" | "running" | "paused" | "finished";
-  currentStageId: string | null;
-  startedAt?: number;
-  endedAt?: number;
-}
-
-interface EventCommandContext {
-  commandId?: string;
-  idempotencyKey?: string;
-  actorId?: string;
-  actorRole?: Role;
-}
-
-interface TimerProjection {
-  id: string;
-  stageId: string;
-  durationSec: number;
-  remainingMs: number;
-  state: TimerStatus;
-  kind: "countdown";
-  startedAt?: number;
-  pausedAt?: number;
-  endedAt?: number;
-  endsAt?: number;
-  commandContext?: EventCommandContext;
-}
-
-interface SubmissionProjection {
-  id: string;
-  activityRunId: string;
-  submitterId: string;
-  schemaId: string;
-  data: SubmissionData;
-  version: number;
-  versions: SubmissionVersionRecord[];
-  locked: boolean;
-  teamId?: string;
-  stageId?: string;
-  openedAt?: number;
-  updatedAt: number;
-  lockedAt?: number;
-}
-
-interface AwardProjection {
-  awardId: string;
-  label: string;
-  entityId: string;
-  reason?: string;
-  grantedAt: number;
-}
-
-interface ScoreProjection {
-  id: string;
-  activityRunId: string;
-  stageId: string;
-  judgeId: string;
-  judgeRole: Role;
-  targetType: "team" | "submission";
-  targetId: string;
-  submissionId?: string;
-  teamId?: string;
-  score: number;
-  reason: string;
-  favorite: string;
-  mostAbsurd: string;
-  submittedAt: number;
-}
-
-interface CommandEnvelope<TPayload = Record<string, unknown>> {
-  id: string;
-  actorId: string;
-  actorRole: Role;
-  activityRunId?: string;
-  type: string;
-  payload: TPayload;
-  issuedAt: number;
-  idempotencyKey?: string;
-}
-
-interface EventEnvelope<TPayload = Record<string, unknown>> {
-  id: string;
-  sequence: number;
-  type: string;
-  activityRunId?: string;
-  entityId?: string;
-  roomId?: string;
-  commandId?: string;
-  idempotencyKey?: string;
-  actorId?: string;
-  actorRole?: Role;
-  timestamp: number;
-  payload: TPayload;
-}
 
 interface CommandReceipt {
   status: ReceiptStatus;
@@ -245,16 +135,7 @@ interface ScoreQueryResult {
   currentStageId: string | null;
   scoreCount: number;
   scores: ScoreProjection[];
-  scoreSummary: Array<{
-    targetType: "team" | "submission";
-    targetId: string;
-    teamId?: string;
-    submissionId?: string;
-    judgeCount: number;
-    totalScore: number;
-    averageScore: number;
-    lastSubmittedAt: number;
-  }>;
+  scoreSummary: ScoreSummaryItem[];
   fromSequence: number | null;
   toSequence: number | null;
   lastSequence: number;
@@ -312,144 +193,10 @@ const authToken =
   process.env.VITE_OPENCLAW_TOKEN?.trim() ||
   "molt-claw-local-dev";
 
-const stageTemplates: StageTemplate[] = [
-  {
-    id: "act-1-intro",
-    name: "自我介绍",
-    durationSec: 300,
-    allowedActions: ["talk", "reaction", "bet", "query"],
-  },
-  {
-    id: "act-2-preference",
-    name: "组队偏好",
-    durationSec: 240,
-    allowedActions: ["talk", "query"],
-  },
-  {
-    id: "act-3-assignment",
-    name: "组织龙虾分组",
-    durationSec: 180,
-    allowedActions: ["broadcast", "talk", "query"],
-  },
-  {
-    id: "act-4-discussion",
-    name: "队内讨论",
-    durationSec: 900,
-    allowedActions: ["move", "talk", "broadcast", "query"],
-  },
-  {
-    id: "act-5-submission",
-    name: "项目提交",
-    durationSec: 420,
-    allowedActions: [
-      "submit",
-      "update_submission",
-      "open_submission",
-      "lock_submission",
-      "query",
-    ],
-    submissionSchemaIds: ["team-project-v1"],
-  },
-  {
-    id: "act-6-human-review",
-    name: "人类观赛点评",
-    durationSec: 480,
-    allowedActions: ["broadcast", "talk", "reaction", "bet"],
-  },
-  {
-    id: "act-7-ai-judging",
-    name: "AI 评委评审",
-    durationSec: 300,
-    allowedActions: ["score", "talk", "query"],
-  },
-  {
-    id: "act-8-awards",
-    name: "颁奖",
-    durationSec: 240,
-    allowedActions: ["broadcast", "grant_award", "query"],
-  },
-  {
-    id: "act-9-co-creation",
-    name: "全体共创艺术品",
-    durationSec: 600,
-    allowedActions: ["submit", "draw", "talk", "query"],
-    submissionSchemaIds: ["personal-poem-v1"],
-  },
-  {
-    id: "act-10-open-mic",
-    name: "人类观众感想点评",
-    durationSec: 300,
-    allowedActions: ["talk", "broadcast"],
-  },
-];
+const defaultActivityPackage = theFoolV1ActivityPackage;
 
-const submissionSchemas: SubmissionSchema[] = [
-  {
-    id: "team-project-v1",
-    fields: [
-      { key: "posterOrDeck", type: "file", required: true },
-      { key: "elevatorPitch", type: "text", required: true },
-      { key: "highlights", type: "json", required: true },
-      { key: "risk", type: "text", required: true },
-    ],
-  },
-  {
-    id: "personal-poem-v1",
-    fields: [
-      { key: "poem", type: "text", required: true },
-      { key: "moodAtSubmission", type: "text", required: false },
-    ],
-  },
-];
-
-const skillBindings: SkillBinding[] = [
-  {
-    role: "agent",
-    docId: "skill.md",
-    version: "0.1.0",
-  },
-  {
-    role: "agent",
-    docId: "heartbeat.md",
-    version: "0.1.0",
-  },
-];
-
-const worldProjection = {
-  rooms: [
-    { id: "main-stage", label: "Main Stage" },
-    { id: "team-room-1", label: "Team Room 1" },
-    { id: "team-room-2", label: "Team Room 2" },
-    { id: "team-room-3", label: "Team Room 3" },
-    { id: "quiet-orbit", label: "Quiet Orbit" },
-  ],
-  teams: [
-    {
-      id: "team-1",
-      memberIds: ["contestant-01", "contestant-02"],
-      roomId: "team-room-1",
-    },
-    {
-      id: "team-2",
-      memberIds: ["contestant-03", "contestant-04"],
-      roomId: "team-room-2",
-    },
-    {
-      id: "team-3",
-      memberIds: ["contestant-05", "contestant-06"],
-      roomId: "team-room-3",
-    },
-  ],
-  entities: [
-    { id: "contestant-01", kind: "agent", roomId: "main-stage" },
-    { id: "contestant-02", kind: "agent", roomId: "main-stage" },
-    { id: "contestant-03", kind: "agent", roomId: "main-stage" },
-    { id: "contestant-04", kind: "agent", roomId: "main-stage" },
-    { id: "contestant-05", kind: "agent", roomId: "main-stage" },
-    { id: "contestant-06", kind: "agent", roomId: "main-stage" },
-    { id: "host-01", kind: "host", roomId: "main-stage" },
-  ],
-};
+const resolveActivityPackageByTemplateId = (templateId?: string) =>
+  getActivityPackage(templateId ?? defaultActivityPackage.id);
 
 const supportedRpcMethods = [
   "connect",
@@ -488,8 +235,6 @@ const isRole = (value: unknown): value is Role =>
   value === "viewer" ||
   value === "admin";
 
-const countCodePoints = (value: string): number => Array.from(value).length;
-
 const parseJsonFile = <T>(filePath: string): T | null => {
   try {
     return JSON.parse(readFileSync(filePath, "utf8")) as T;
@@ -507,9 +252,9 @@ const buildSeedProjection = (now = Date.now()): ProjectionState => ({
   snapshotId: `snapshot-${now}`,
   activityRun: {
     id: "activity-run-01",
-    templateId: "the-fool-v1",
+    templateId: defaultActivityPackage.id,
     status: "running",
-    currentStageId: "act-1-intro",
+    currentStageId: defaultActivityPackage.initialStageId,
     startedAt: now,
   },
   timers: [],
@@ -679,6 +424,48 @@ const readSubmissionVersionRecords = (
     .sort((left, right) => left.version - right.version);
 
   return records.length > 0 ? records : fallback;
+};
+
+const readScoreAnnotations = (
+  value: unknown,
+  templateId = defaultActivityPackage.id,
+): ScoreAnnotations => {
+  const rawScore = isRecord(value) ? value : {};
+  const nextAnnotations: ScoreAnnotations = {};
+
+  if (isRecord(rawScore.annotations)) {
+    for (const [key, annotationValue] of Object.entries(rawScore.annotations)) {
+      if (
+        typeof annotationValue === "string" &&
+        annotationValue.trim().length > 0
+      ) {
+        nextAnnotations[key] = annotationValue.trim();
+      }
+    }
+  }
+
+  const favorite =
+    typeof rawScore[THE_FOOL_SCORE_ANNOTATION_KEYS.favorite] === "string"
+      ? rawScore[THE_FOOL_SCORE_ANNOTATION_KEYS.favorite].trim()
+      : "";
+  if (favorite) {
+    nextAnnotations[THE_FOOL_SCORE_ANNOTATION_KEYS.favorite] = favorite;
+  }
+
+  const mostAbsurd =
+    typeof rawScore[THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd] === "string"
+      ? rawScore[THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd].trim()
+      : "";
+  if (mostAbsurd) {
+    nextAnnotations[THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd] = mostAbsurd;
+  }
+
+  const scoreConfig = resolveActivityPackageByTemplateId(templateId).scoreConfig;
+  if (scoreConfig?.normalizeAnnotations) {
+    return scoreConfig.normalizeAnnotations(nextAnnotations);
+  }
+
+  return nextAnnotations;
 };
 
 const buildScoreSummary = (
@@ -962,6 +749,10 @@ const applyEventToProjection = (
   if (event.type === "judge.score_submitted") {
     const rawScore =
       isRecord(payload.judgeScore) ? payload.judgeScore : payload;
+    const annotations = readScoreAnnotations(
+      rawScore,
+      next.activityRun.templateId,
+    );
 
     if (
       typeof rawScore.id === "string" &&
@@ -975,9 +766,7 @@ const applyEventToProjection = (
       (rawScore.targetType === "team" || rawScore.targetType === "submission") &&
       typeof rawScore.targetId === "string" &&
       typeof rawScore.score === "number" &&
-      typeof rawScore.reason === "string" &&
-      typeof rawScore.favorite === "string" &&
-      typeof rawScore.mostAbsurd === "string"
+      typeof rawScore.reason === "string"
     ) {
       next = {
         ...next,
@@ -1000,8 +789,7 @@ const applyEventToProjection = (
             typeof rawScore.teamId === "string" ? rawScore.teamId : undefined,
           score: rawScore.score,
           reason: rawScore.reason,
-          favorite: rawScore.favorite,
-          mostAbsurd: rawScore.mostAbsurd,
+          annotations,
           submittedAt:
             typeof rawScore.submittedAt === "number"
               ? rawScore.submittedAt
@@ -1094,6 +882,10 @@ const loadProjection = (): ProjectionState => {
 
 let projection = loadProjection();
 
+const resolveActivityPackage = (
+  templateId = projection.activityRun.templateId,
+) => resolveActivityPackageByTemplateId(templateId);
+
 const rebuildCommandJournal = (records: AuditRecord[]): Map<string, CommandJournalEntry> => {
   const journal = new Map<string, CommandJournalEntry>();
 
@@ -1164,14 +956,14 @@ const buildHealthAgents = (): HealthAgent[] =>
 const buildSnapshotEnvelope = (now = Date.now()) => ({
   snapshotId: projection.snapshotId,
   activityRun: projection.activityRun,
-  world: worldProjection,
+  world: resolveActivityPackage().world,
   timers: projection.timers.map((timer) => ({
     id: timer.id,
     stageId: timer.stageId,
     remainingMs: computeRemainingMs(timer, now),
     state: timer.state,
   })),
-  skills: skillBindings,
+  skills: resolveActivityPackage().skillBindings,
   submissions: projection.submissions.map((submission) => ({
     id: submission.id,
     activityRunId: submission.activityRunId,
@@ -1199,8 +991,7 @@ const buildSnapshotEnvelope = (now = Date.now()) => ({
     teamId: score.teamId,
     score: score.score,
     reason: score.reason,
-    favorite: score.favorite,
-    mostAbsurd: score.mostAbsurd,
+    annotations: score.annotations,
     submittedAt: score.submittedAt,
   })),
   scoreSummary: buildScoreSummary(projection.scores),
@@ -1495,13 +1286,10 @@ const requireScoreRole = (
 };
 
 const findStage = (stageId: string): StageTemplate | undefined =>
-  stageTemplates.find((stage) => stage.id === stageId);
+  resolveActivityPackage().stageTemplates.find((stage) => stage.id === stageId);
 
 const findTeam = (teamId: string) =>
-  worldProjection.teams.find((team) => team.id === teamId);
-
-const findSubmissionSchema = (schemaId: string): SubmissionSchema | undefined =>
-  submissionSchemas.find((schema) => schema.id === schemaId);
+  resolveActivityPackage().world.teams.find((team) => team.id === teamId);
 
 const inferSubmissionSchemaId = (stageId: string | null): string | null => {
   const stage = stageId ? findStage(stageId) : undefined;
@@ -1509,13 +1297,7 @@ const inferSubmissionSchemaId = (stageId: string | null): string | null => {
 };
 
 const inferSubmissionTeamId = (submissionId: string): string | undefined => {
-  const numericSuffix = submissionId.match(/(\d+)$/)?.[1];
-  if (!numericSuffix) {
-    return undefined;
-  }
-
-  const normalized = Number.parseInt(numericSuffix, 10);
-  return Number.isFinite(normalized) ? `team-${normalized}` : undefined;
+  return resolveActivityPackage().inferSubmissionTeamId?.(submissionId);
 };
 
 const requireSubmissionRole = (
@@ -1539,124 +1321,11 @@ const requireSubmissionRole = (
   );
 };
 
-const normalizeRequiredSubmissionString = (
-  rawData: SubmissionData,
-  key: string,
-): string => {
-  const value = rawData[key];
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`payload.data.${key} must be a non-empty string.`);
-  }
-
-  return value.trim();
-};
-
-const normalizeOptionalSubmissionString = (
-  rawData: SubmissionData,
-  key: string,
-): string | undefined => {
-  const value = rawData[key];
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`payload.data.${key} must be a non-empty string when provided.`);
-  }
-
-  return value.trim();
-};
-
 const normalizeSubmissionDataForSchema = (
   schemaId: string,
   rawData: SubmissionData,
-): SubmissionData => {
-  const schema = findSubmissionSchema(schemaId);
-  if (!schema) {
-    throw new Error(`Unknown submission schema ${schemaId}.`);
-  }
-
-  const allowedKeys = new Set(schema.fields.map((field) => field.key));
-  const unknownKeys = Object.keys(rawData).filter((key) => !allowedKeys.has(key));
-  if (unknownKeys.length > 0) {
-    throw new Error(
-      `payload.data contains unsupported fields: ${unknownKeys.join(", ")}.`,
-    );
-  }
-
-  if (schemaId === "team-project-v1") {
-    const posterOrDeck = normalizeRequiredSubmissionString(rawData, "posterOrDeck");
-    const elevatorPitch = normalizeRequiredSubmissionString(rawData, "elevatorPitch");
-    if (countCodePoints(elevatorPitch) > 100) {
-      throw new Error("payload.data.elevatorPitch must be 100 characters or fewer.");
-    }
-
-    const rawHighlights = rawData.highlights;
-    if (
-      !Array.isArray(rawHighlights) ||
-      rawHighlights.length !== 3 ||
-      rawHighlights.some(
-        (entry) => typeof entry !== "string" || entry.trim().length === 0,
-      )
-    ) {
-      throw new Error(
-        "payload.data.highlights must contain exactly 3 non-empty strings.",
-      );
-    }
-
-    const [firstHighlight, secondHighlight, thirdHighlight] = rawHighlights.map(
-      (entry) => entry.trim(),
-    ) as [string, string, string];
-    const risk = normalizeRequiredSubmissionString(rawData, "risk");
-
-    return {
-      posterOrDeck,
-      elevatorPitch,
-      highlights: [firstHighlight, secondHighlight, thirdHighlight],
-      risk,
-    };
-  }
-
-  if (schemaId === "personal-poem-v1") {
-    const poem = normalizeRequiredSubmissionString(rawData, "poem");
-    const moodAtSubmission = normalizeOptionalSubmissionString(
-      rawData,
-      "moodAtSubmission",
-    );
-
-    return {
-      poem,
-      ...(moodAtSubmission ? { moodAtSubmission } : {}),
-    };
-  }
-
-  const normalizedData: SubmissionData = {};
-  for (const field of schema.fields) {
-    const fieldValue = rawData[field.key];
-    if (fieldValue === undefined || fieldValue === null) {
-      if (field.required) {
-        throw new Error(`payload.data.${field.key} is required.`);
-      }
-      continue;
-    }
-
-    if (
-      field.type === "text" ||
-      field.type === "file" ||
-      field.type === "link"
-    ) {
-      normalizedData[field.key] = normalizeRequiredSubmissionString(
-        rawData,
-        field.key,
-      );
-      continue;
-    }
-
-    normalizedData[field.key] = cloneJsonValue(fieldValue);
-  }
-
-  return normalizedData;
-};
+): SubmissionData =>
+  resolveActivityPackage().normalizeSubmissionData(schemaId, rawData);
 
 const validateSubmissionDataForCommand = (
   command: CommandEnvelope,
@@ -1754,16 +1423,6 @@ const assertSubmissionReadyForScoring = (
   handledAt: number,
   submission: SubmissionProjection,
 ): void => {
-  if (submission.schemaId !== "team-project-v1") {
-    throw createCommandError(
-      command,
-      handledAt,
-      "SUBMISSION_SCHEMA_INVALID",
-      `Submission ${submission.id} uses schema ${submission.schemaId}. submit_score currently only supports locked team-project-v1 submissions.`,
-      409,
-    );
-  }
-
   if (submission.version < 1 || submission.versions.length === 0) {
     throw createCommandError(
       command,
@@ -1852,12 +1511,20 @@ const buildScoreProjection = (
   handledAt: number,
 ): ScoreProjection => {
   const currentStageId = projection.activityRun.currentStageId;
-  if (currentStageId !== "act-7-ai-judging") {
+  const scoreConfig = resolveActivityPackage().scoreConfig;
+  const allowedStageIds = scoreConfig?.allowedStageIds ?? [];
+
+  if (
+    !currentStageId ||
+    (allowedStageIds.length > 0 && !allowedStageIds.includes(currentStageId))
+  ) {
     throw createCommandError(
       command,
       handledAt,
       "SCORE_STAGE_REQUIRED",
-      "submit_score is only allowed during act-7-ai-judging.",
+      allowedStageIds.length > 0
+        ? `submit_score is only allowed during ${allowedStageIds.join(", ")}.`
+        : "submit_score is not enabled for the current activity.",
       409,
     );
   }
@@ -1875,10 +1542,17 @@ const buildScoreProjection = (
       : Number.NaN;
   const reason =
     typeof payload.reason === "string" ? payload.reason.trim() : "";
-  const favorite =
-    typeof payload.favorite === "string" ? payload.favorite.trim() : "";
-  const mostAbsurd =
-    typeof payload.mostAbsurd === "string" ? payload.mostAbsurd.trim() : "";
+  let annotations: ScoreAnnotations;
+  try {
+    annotations = readScoreAnnotations(payload, projection.activityRun.templateId);
+  } catch (error) {
+    throw createCommandError(
+      command,
+      handledAt,
+      "INVALID_COMMAND",
+      error instanceof Error ? error.message : "Invalid score annotations.",
+    );
+  }
 
   if (!submissionId && !teamId) {
     throw createCommandError(
@@ -1902,12 +1576,19 @@ const buildScoreProjection = (
     );
   }
 
-  if (!reason || !favorite || !mostAbsurd) {
+  const requiredAnnotations = scoreConfig?.requiredAnnotations ?? [];
+  const missingAnnotations = requiredAnnotations.filter(
+    (key) => !annotations[key],
+  );
+
+  if (!reason || missingAnnotations.length > 0) {
     throw createCommandError(
       command,
       handledAt,
       "INVALID_COMMAND",
-      "submit_score requires non-empty payload.reason, payload.favorite, and payload.mostAbsurd.",
+      !reason
+        ? "submit_score requires non-empty payload.reason."
+        : `submit_score requires annotations: ${missingAnnotations.join(", ")}.`,
     );
   }
 
@@ -2016,8 +1697,7 @@ const buildScoreProjection = (
     teamId: resolvedTeamId,
     score: scoreValue,
     reason,
-    favorite,
-    mostAbsurd,
+    annotations,
     submittedAt: handledAt,
   };
 };
@@ -3310,8 +2990,8 @@ const handleWsMessage = (
           ok: true,
           payload: {
             snapshot: buildSnapshotEnvelope(),
-            stageTemplates,
-            submissionSchemas,
+            stageTemplates: resolveActivityPackage().stageTemplates,
+            submissionSchemas: resolveActivityPackage().submissionSchemas,
           },
         }),
       );
@@ -3458,8 +3138,8 @@ const server = Bun.serve<WebSocketSessionData>({
         return sendJson({
           ok: true,
           snapshot: buildSnapshotEnvelope(),
-          stageTemplates,
-          submissionSchemas,
+          stageTemplates: resolveActivityPackage().stageTemplates,
+          submissionSchemas: resolveActivityPackage().submissionSchemas,
         });
       } catch (error) {
         return sendErrorResponse(error);

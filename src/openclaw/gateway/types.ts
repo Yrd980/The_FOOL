@@ -1,4 +1,5 @@
 import type { ControlActorRole } from "../control";
+import type { ScoreAnnotations } from "../platform/contracts";
 
 export type ConnectionState =
   | "idle"
@@ -130,8 +131,7 @@ export interface GatewayScoreSnapshot {
   teamId?: string;
   score: number;
   reason: string;
-  favorite: string;
-  mostAbsurd: string;
+  annotations?: ScoreAnnotations;
   submittedAt: number;
 }
 

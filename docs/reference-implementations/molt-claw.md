@@ -84,6 +84,14 @@
   - `eventIds`
   - stable `code + message`
 
+当前代码结构上的平台 / 活动边界也已经开始落地：
+
+- `src/openclaw/platform/contracts.ts` 收口平台通用 contract
+- `src/openclaw/platform/activityRegistry.ts` 提供活动包注册与加载边界
+- `src/openclaw/activities/theFoolV1.ts` 承载 The Fool v1 的 stage/schema/world/score config
+- `scripts/openclaw-orchestrator.ts` 不再直接把 The Fool 的十幕、schema 和 world seed 写死在主文件里，而是从 activity package 装配
+- `src/openclaw/control.ts` / `scripts/openclaw-control.ts` 仍保留 The Fool CLI 兼容输入，但平台命令 payload 已优先回到通用结构
+
 当前 The Fool v1 在这个 worktree 里的 submission write loop 已收口为：
 
 - `open_submission -> submit -> update_submission -> lock_submission`
@@ -118,7 +126,8 @@
 - authoritative command 为 `submit_score`
 - 成功后产生 `judge.score_submitted`
 - 只允许 `judge` 发起，`admin` 可作为 override
-- 默认只允许在 `act-7-ai-judging` 阶段提交
+- 平台 score projection 当前已改成通用 `annotations: Record<string, string>`；`favorite` / `mostAbsurd` 不再作为平台通用 score 字段
+- The Fool v1 继续通过 activity package 要求 `favorite` / `mostAbsurd` 两个 annotation，并限制默认只允许在 `act-7-ai-judging` 阶段提交
 - score target 当前绑定到 locked team-project submission，且该 submission 必须有真实结构化 payload，不能只是 opened/locked 空壳
 - 同一个 judge 对同一个 submission，或解析到同一个 team 的重复评分，当前直接 reject
 - snapshot 至少能稳定读到：
@@ -142,6 +151,12 @@
   - `handledAt`
   - `eventIds`
   - `emittedSequences`
+- CLI 兼容层当前仍接受：
+  - `--favorite`
+  - `--most-absurd`
+  - `--weirdest`
+  - `--absurd`
+  但它们会先映射到通用 `annotations` 再进入平台 command
 
 ### 4.3 Act VIII Award Grant
 
@@ -166,6 +181,7 @@
 - recent backend health evidence（来自 `snapshot.health`、audit 与 query checks）
 - event provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）
 - `snapshot` / `scores` / `events` / `replay` / `audit` 的单独 query client
+- score annotations 的 typed summary；renderer 侧兼容读取旧 `favorite` / `mostAbsurd` 字段，但 shared state 内部优先使用通用 `annotations`
 
 `/show` 侧当前已经在同一层 shared state 之上补出 show-specific composition，而不是继续直接复用 control-first 分组：
 
@@ -182,6 +198,10 @@
 - 当前 local fixture 暴露出来的 team-room / entity placement mismatch 仍未被 backend 修正
 - stage-specific skill bindings 仍未在 seed data 内提供
 - `/show` 当前 room spotlight 仍会部分受 live session heat 影响；在 live session 很稀疏时，还没有完全收敛到更强的 act-level world cue
+- `src/data.ts` 里的 stage list / runtime guide / operator copy 仍是 The Fool 静态前端数据，尚未改成从 activity package / scene adapter 装配
+- `src/App.tsx` 仍以内建 `stages` 作为 preview / fallback 来源，尚未让 preview route 和 stage meta 完全脱离 The Fool 静态数组
+- `src/openclaw/control.ts` 里的 room alias / default room catalog 仍偏向 The Fool 当前世界模型，尚未收回活动包或活动 seed
+- orchestrator 当前虽然已经支持 activity package 注册与按 `templateId` 解析，但默认 bootstrap 仍直接从 The Fool v1 activity package 启动第一条本地 run
 
 这里的含义是：
 

@@ -184,6 +184,19 @@ The Fool 应作为第一份 `ActivityTemplate` / `ActivityRun` 接入平台，�
 - 让 The Fool 的 seed / stage / schema / award 以活动包形式存在
 - 让 `/show` scene 选择函数只依赖 `currentStageId`
 
+结合当前 `molt-claw` worktree，这一轮已经实际落地到：
+
+- 平台通用 contract 已独立收口到 `src/openclaw/platform/contracts.ts`
+- 活动包注册边界已独立收口到 `src/openclaw/platform/activityRegistry.ts`
+- The Fool v1 的 stage/schema/world/score config 已搬到 `src/openclaw/activities/theFoolV1.ts`
+- score projection 已改成通用 `annotations`，The Fool 的 `favorite` / `mostAbsurd` 只留在活动包与 CLI 兼容层
+
+因此下一批最值得继续收口的是：
+
+- 把 `src/data.ts` 里的 stage/runtime guide 静态数组改成 activity-driven view model
+- 把 `src/openclaw/control.ts` 的 room aliases / default room catalog 从通用 helper 挪到活动包
+- 让 `/show` / `/control` 的 preview 与 operator workspace 进一步依赖 authority + activity meta，而不是 The Fool 静态前端数据
+
 ## 6. 风险信号
 
 如果推进过程中出现下面这些现象，通常说明平台和活动又开始混了：

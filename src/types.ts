@@ -1,4 +1,5 @@
 import type { ControlActorRole } from "./openclaw/control";
+import type { ScoreAnnotations } from "./openclaw/platform/contracts";
 
 export interface SummaryStat {
   label: string;
@@ -175,8 +176,7 @@ export interface GatewayScoreEntrySummary {
   judgeRole: ControlActorRole | null;
   score: number;
   reason: string;
-  favorite: string;
-  mostAbsurd: string;
+  annotations: ScoreAnnotations;
   submittedAt: number;
   submittedLabel: string;
 }
@@ -468,8 +468,7 @@ export interface OrchestratorScoreProjection {
   teamId?: string;
   score: number;
   reason: string;
-  favorite: string;
-  mostAbsurd: string;
+  annotations: ScoreAnnotations;
   submittedAt: number;
 }
 

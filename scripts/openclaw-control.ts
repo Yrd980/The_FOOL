@@ -40,6 +40,7 @@ import {
   type SubmitScorePayload,
   type TeamProjectSubmissionData,
 } from "../src/openclaw/control";
+import { THE_FOOL_SCORE_ANNOTATION_KEYS } from "../src/openclaw/activities/theFoolV1";
 
 type CommandName =
   | "probe"
@@ -1133,8 +1134,10 @@ const parseSubmitScoreArgs = (
       submissionId,
       score,
       reason,
-      favorite,
-      mostAbsurd,
+      annotations: {
+        [THE_FOOL_SCORE_ANNOTATION_KEYS.favorite]: favorite,
+        [THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd]: mostAbsurd,
+      },
     },
   };
 };
@@ -1381,8 +1384,7 @@ if (normalizedCommand === "submit-score") {
       submissionId: scorePayload.submissionId,
       score: scorePayload.score,
       reason: scorePayload.reason,
-      favorite: scorePayload.favorite,
-      mostAbsurd: scorePayload.mostAbsurd,
+      annotations: scorePayload.annotations,
       idempotencyKey: `submit-score-${activityRunId}-${scorePayload.submissionId}-${Date.now()}`,
     }),
     summary: `submit_score ${activityRunId} / ${scorePayload.submissionId} (${scorePayload.score}/10)`,

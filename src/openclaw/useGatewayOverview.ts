@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { THE_FOOL_SCORE_ANNOTATION_KEYS } from "./activities/theFoolV1";
 import type {
   GatewayActivity,
   GatewayActivityRunSummary,
@@ -356,6 +357,35 @@ const extractSubmissionVersions = (
   return versions.length > 0 ? versions : undefined;
 };
 
+const readScoreAnnotations = (
+  record: Record<string, unknown>,
+): GatewayScoreSnapshot["annotations"] => {
+  const nextAnnotations: NonNullable<GatewayScoreSnapshot["annotations"]> = {};
+
+  if (isRecord(record.annotations)) {
+    for (const [key, value] of Object.entries(record.annotations)) {
+      if (typeof value === "string" && value.trim().length > 0) {
+        nextAnnotations[key] = value.trim();
+      }
+    }
+  }
+
+  const favorite = readString(record, THE_FOOL_SCORE_ANNOTATION_KEYS.favorite);
+  if (favorite) {
+    nextAnnotations[THE_FOOL_SCORE_ANNOTATION_KEYS.favorite] = favorite;
+  }
+
+  const mostAbsurd = readString(
+    record,
+    THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd,
+  );
+  if (mostAbsurd) {
+    nextAnnotations[THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd] = mostAbsurd;
+  }
+
+  return Object.keys(nextAnnotations).length > 0 ? nextAnnotations : undefined;
+};
+
 const extractScoreUpdate = (
   event: GatewayEventEnvelope,
 ): GatewayScoreSnapshot | null => {
@@ -405,8 +435,7 @@ const extractScoreUpdate = (
     teamId: readString(judgeScore, "teamId") ?? undefined,
     score,
     reason: readString(judgeScore, "reason") ?? "",
-    favorite: readString(judgeScore, "favorite") ?? "",
-    mostAbsurd: readString(judgeScore, "mostAbsurd") ?? "",
+    annotations: readScoreAnnotations(judgeScore),
     submittedAt,
   };
 };
@@ -992,8 +1021,7 @@ const buildScoreEntrySummary = (
     judgeRole: score.judgeRole ?? null,
     score: score.score,
     reason: score.reason,
-    favorite: score.favorite,
-    mostAbsurd: score.mostAbsurd,
+    annotations: score.annotations ?? {},
     submittedAt,
     submittedLabel: formatClockLabel(submittedAt),
   };
@@ -1483,7 +1511,7 @@ export function useGatewayOverview(): GatewayOverview {
   const [orchestration, setOrchestration] = useState<OrchestrationState>(
     EMPTY_ORCHESTRATION_STATE,
   );
-  const [authoritativeQuery, setAuthoritativeQuery] = useState<AuthoritativeQueryState>(
+  const [authoritativeQueryState, setAuthoritativeQuery] = useState<AuthoritativeQueryState>(
     EMPTY_AUTHORITATIVE_QUERY_STATE,
   );
 
@@ -1545,16 +1573,6 @@ export function useGatewayOverview(): GatewayOverview {
 
   useEffect(() => {
     if (!orchestratorQueryConfig) {
-      setAuthoritativeQuery({
-        ...EMPTY_AUTHORITATIVE_QUERY_STATE,
-        note: !gatewayUrl && !orchestratorQueryBaseUrl
-          ? "Authoritative HTTP query path is not configured yet."
-          : !gatewayToken && !orchestratorQueryToken
-            ? "Authoritative HTTP query path needs VITE_OPENCLAW_TOKEN or VITE_OPENCLAW_ORCHESTRATOR_TOKEN."
-            : gatewayUrl
-              ? "Set VITE_OPENCLAW_ORCHESTRATOR_URL, or point VITE_OPENCLAW_URL at local ws://127.0.0.1:18791 to enable browser authoritative queries."
-              : "Authoritative HTTP query path is unavailable.",
-      });
       return;
     }
 
@@ -1729,6 +1747,30 @@ export function useGatewayOverview(): GatewayOverview {
     orchestratorQueryToken,
   ]);
 
+  const authoritativeQuery = useMemo<AuthoritativeQueryState>(
+    () =>
+      orchestratorQueryConfig
+        ? authoritativeQueryState
+        : {
+            ...EMPTY_AUTHORITATIVE_QUERY_STATE,
+            note: !gatewayUrl && !orchestratorQueryBaseUrl
+              ? "Authoritative HTTP query path is not configured yet."
+              : !gatewayToken && !orchestratorQueryToken
+                ? "Authoritative HTTP query path needs VITE_OPENCLAW_TOKEN or VITE_OPENCLAW_ORCHESTRATOR_TOKEN."
+                : gatewayUrl
+                  ? "Set VITE_OPENCLAW_ORCHESTRATOR_URL, or point VITE_OPENCLAW_URL at local ws://127.0.0.1:18791 to enable browser authoritative queries."
+                  : "Authoritative HTTP query path is unavailable.",
+          },
+    [
+      authoritativeQueryState,
+      gatewayToken,
+      gatewayUrl,
+      orchestratorQueryBaseUrl,
+      orchestratorQueryConfig,
+      orchestratorQueryToken,
+    ],
+  );
+
   return useMemo(() => {
     const roomCounts = DEFAULT_GATEWAY_ROOM_IDS.map((roomId) => ({
       roomId,
@@ -1867,6 +1909,11 @@ export function useGatewayOverview(): GatewayOverview {
           .sort((left, right) => right.timestamp - left.timestamp)
           .slice(0, 12)
       : orchestration.domainEvents;
+    const authoritativeAwardFallbackTs =
+      authoritativeSnapshot?.health?.ts ??
+      orchestration.health?.ts ??
+      authoritativeQuery.lastSuccessfulAt ??
+      0;
     const authoritativeAwards =
       Array.isArray(authoritativeSnapshot?.awards)
         ? authoritativeSnapshot.awards
@@ -1874,7 +1921,9 @@ export function useGatewayOverview(): GatewayOverview {
               if (!award.label || !award.entityId) {
                 return null;
               }
-              const grantedAt = normalizeTimestamp(award.grantedAt ?? Date.now());
+              const grantedAt = normalizeTimestamp(
+                award.grantedAt ?? authoritativeAwardFallbackTs,
+              );
               return {
                 id: award.awardId ?? `${award.label}-${award.entityId}-${grantedAt}`,
                 label: award.label,

@@ -12,6 +12,12 @@ The renderer surfaces share the same stage model and OpenClaw gateway data.
 
 Formal truth still belongs to `docs/*`; the local backend is an implementation of those docs, not a replacement for them.
 
+Current code boundaries inside `src/openclaw` are now split as:
+
+- `platform/*`: generic OpenClaw platform contracts and activity registration boundary
+- `activities/theFoolV1.ts`: The Fool v1 activity package, including stage/schema/world seed and activity-specific score rules
+- `gateway/*`, `useGatewayOverview.ts`, `control.ts`: renderer/control adapters and shared consumers of authority state
+
 Formal requirements now live under `docs/`:
 
 - `docs/openclaw-platform/requirements.md`
@@ -101,6 +107,13 @@ bun run openclaw:control -- audit activity-run-01 --limit 20
 - `submit_score`
 - `grant_award`
 
+这一轮平台化收口后，当前代码边界还额外具备：
+
+- 平台通用类型不再直接暴露 The Fool 的 `favorite` / `mostAbsurd` score 字段
+- 通用 score contract 已改成 `annotations`
+- The Fool 的 stage/schema/world/score config 已作为 activity package 接入 orchestrator
+- CLI 仍兼容 `--favorite` / `--most-absurd`，但只作为 The Fool adapter 输入，不再代表平台通用字段
+
 renderer 侧现状：
 
 - `/show` 和 `/control` 会优先跟随平台下发的 `activityRun.currentStageId`
@@ -137,6 +150,8 @@ renderer 侧现状：
   - 当前 seed skill bindings 仍只有 global docs，没有 stage-specific bindings
   - `/show` 当前 room spotlight 仍会部分受 live session heat 影响；在 fixture 只有极少 live session 时，节目镜头仍可能偏向 heat 更高的 room，而不是更强的 act-level world cue
   - `/show` 当前虽然已经把 submission / score / world / skill 重新编排成节目叙事，但还没有形成独立于现有 show layout 的更完整编排模板
+  - `src/data.ts` 里的 The Fool stage list / runtime guide / operator 文案仍是静态前端数据，还没有完全 activity-driven
+  - `src/openclaw/control.ts` 里的 room alias 和默认 room catalog 仍偏 The Fool 当前世界模型，还没有进一步收回活动包
 
 这意味着当前 worktree 的主线，已经从“静态十幕页面”推进到了“消费 orchestrator 快照和事件的双界面客户端”。
 

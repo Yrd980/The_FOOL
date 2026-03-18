@@ -1,3 +1,16 @@
+import {
+  THE_FOOL_SCORE_ANNOTATION_KEYS,
+  normalizeTheFoolTeamProjectSubmissionData,
+  type TeamProjectSubmissionData,
+} from "./activities/theFoolV1";
+import type {
+  ActorRole as PlatformActorRole,
+  CommandEnvelope,
+  ScoreAnnotations,
+} from "./platform/contracts";
+
+export type { CommandEnvelope, TeamProjectSubmissionData };
+
 const DIRECT_GATEWAY_URL = "ws://127.0.0.1:18789";
 export const DEFAULT_ORCHESTRATOR_HTTP_URL = "http://127.0.0.1:18791";
 const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1"]);
@@ -17,29 +30,11 @@ export const GATEWAY_CONNECT_CLIENT_ID = "gateway-client";
 export const GATEWAY_CONNECT_CLIENT_MODE = "ui";
 export const GATEWAY_OPERATOR_READ_SCOPE = "operator.read";
 
-export type ControlActorRole = "agent" | "host" | "judge" | "viewer" | "admin";
-
-export interface TeamProjectSubmissionData extends Record<string, unknown> {
-  posterOrDeck: string;
-  elevatorPitch: string;
-  highlights: [string, string, string];
-  risk: string;
-}
+export type ControlActorRole = PlatformActorRole;
 
 export interface SubmissionCommandPayload {
   submissionId: string;
   data: Record<string, unknown>;
-}
-
-export interface CommandEnvelope<TPayload = Record<string, unknown>> {
-  id: string;
-  actorId: string;
-  actorRole: ControlActorRole;
-  activityRunId?: string;
-  type: string;
-  payload: TPayload;
-  issuedAt: number;
-  idempotencyKey?: string;
 }
 
 export interface GatewayCapabilitySnapshot {
@@ -72,14 +67,15 @@ export const ORCHESTRATOR_HTTP_QUERY_PATHS = {
   audit: "/api/orchestrator/audit",
 } as const;
 
-export const SCORE_MOST_ABSURD_FIELD = "mostAbsurd" as const;
+export const SCORE_MOST_ABSURD_FIELD =
+  THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd;
 
 export interface SubmitScorePayload {
   submissionId: string;
+  teamId?: string;
   score: number;
   reason: string;
-  favorite: string;
-  mostAbsurd: string;
+  annotations?: ScoreAnnotations;
 }
 
 const ROOM_ALIASES: Record<string, string> = {
@@ -133,8 +129,6 @@ const hasWrappingQuotes = (value: string): boolean =>
   value.length >= 2 &&
   ((value.startsWith('"') && value.endsWith('"')) ||
     (value.startsWith("'") && value.endsWith("'")));
-
-const countCodePoints = (value: string): number => Array.from(value).length;
 
 export const normalizeControlConfigValue = (
   value: string | undefined,
@@ -418,49 +412,6 @@ export const buildOpenSubmissionEnvelope = ({
     idempotencyKey,
   });
 
-const normalizeTeamProjectSubmissionData = ({
-  posterOrDeck,
-  elevatorPitch,
-  highlights,
-  risk,
-}: TeamProjectSubmissionData): TeamProjectSubmissionData => {
-  const normalizedPosterOrDeck = posterOrDeck.trim();
-  const normalizedElevatorPitch = elevatorPitch.trim();
-  const normalizedRisk = risk.trim();
-  const normalizedHighlights = highlights.map((entry) => entry.trim()) as [
-    string,
-    string,
-    string,
-  ];
-
-  if (!normalizedPosterOrDeck) {
-    throw new Error("posterOrDeck is required.");
-  }
-
-  if (!normalizedElevatorPitch) {
-    throw new Error("elevatorPitch is required.");
-  }
-
-  if (countCodePoints(normalizedElevatorPitch) > 100) {
-    throw new Error("elevatorPitch must be 100 characters or fewer.");
-  }
-
-  if (normalizedHighlights.some((entry) => entry.length === 0)) {
-    throw new Error("highlights must contain exactly 3 non-empty strings.");
-  }
-
-  if (!normalizedRisk) {
-    throw new Error("risk is required.");
-  }
-
-  return {
-    posterOrDeck: normalizedPosterOrDeck,
-    elevatorPitch: normalizedElevatorPitch,
-    highlights: normalizedHighlights,
-    risk: normalizedRisk,
-  };
-};
-
 const buildSubmissionCommandEnvelope = ({
   actorId,
   actorRole = "agent",
@@ -490,7 +441,7 @@ const buildSubmissionCommandEnvelope = ({
     type,
     payload: {
       submissionId: normalizedSubmissionId,
-      data: normalizeTeamProjectSubmissionData(data),
+      data: normalizeTheFoolTeamProjectSubmissionData(data),
     },
     idempotencyKey,
   });
@@ -588,6 +539,7 @@ export const buildSubmitScoreEnvelope = ({
   submissionId,
   score,
   reason,
+  annotations,
   favorite,
   mostAbsurd,
   idempotencyKey,
@@ -597,8 +549,9 @@ export const buildSubmitScoreEnvelope = ({
   submissionId: string;
   score: number;
   reason: string;
-  favorite: string;
-  mostAbsurd: string;
+  annotations?: ScoreAnnotations;
+  favorite?: string;
+  mostAbsurd?: string;
   idempotencyKey?: string;
 }): CommandEnvelope<SubmitScorePayload> => {
   const normalizedScore = Math.round(score);
@@ -608,8 +561,21 @@ export const buildSubmitScoreEnvelope = ({
 
   const normalizedSubmissionId = submissionId.trim();
   const normalizedReason = reason.trim();
-  const normalizedFavorite = favorite.trim();
-  const normalizedMostAbsurd = mostAbsurd.trim();
+  const normalizedAnnotations = Object.entries({
+    ...(annotations ?? {}),
+    ...(favorite?.trim()
+      ? { [THE_FOOL_SCORE_ANNOTATION_KEYS.favorite]: favorite.trim() }
+      : {}),
+    ...(mostAbsurd?.trim()
+      ? { [THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd]: mostAbsurd.trim() }
+      : {}),
+  }).reduce<ScoreAnnotations>((result, [key, value]) => {
+    const normalizedValue = value.trim();
+    if (normalizedValue) {
+      result[key] = normalizedValue;
+    }
+    return result;
+  }, {});
 
   if (!normalizedSubmissionId) {
     throw new Error("Submission id is required.");
@@ -619,12 +585,8 @@ export const buildSubmitScoreEnvelope = ({
     throw new Error("Score reason is required.");
   }
 
-  if (!normalizedFavorite) {
-    throw new Error("Favorite field is required.");
-  }
-
-  if (!normalizedMostAbsurd) {
-    throw new Error("mostAbsurd field is required.");
+  if (Object.keys(normalizedAnnotations).length === 0) {
+    throw new Error("At least one score annotation is required.");
   }
 
   return buildCommandEnvelope({
@@ -636,8 +598,7 @@ export const buildSubmitScoreEnvelope = ({
       submissionId: normalizedSubmissionId,
       score: normalizedScore,
       reason: normalizedReason,
-      favorite: normalizedFavorite,
-      mostAbsurd: normalizedMostAbsurd,
+      annotations: normalizedAnnotations,
     },
     idempotencyKey,
   });
