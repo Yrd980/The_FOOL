@@ -1,4 +1,7 @@
-import type { ActivityStageMetadata } from "./openclaw/activityMetadata";
+import type {
+  ActivityRoomSceneRole,
+  ActivityStageMetadata,
+} from "./openclaw/activityMetadata";
 import { resolveActivityPackage } from "./openclaw/activityRuntime";
 import type {
   ActivityViewModel,
@@ -78,16 +81,19 @@ const buildStageRuntimeGuide = ({
   successSignal,
   preferredRoomIds,
   durationSec,
+  roomRoles,
 }: {
   operatorHint: string;
   successSignal: string;
   preferredRoomIds?: string[];
   durationSec?: number;
+  roomRoles: Record<string, ActivityRoomSceneRole>;
 }): StageRuntimeGuide => ({
   operatorHint,
   successSignal,
   preferredRoomIds: preferredRoomIds ?? [],
   suggestedDurationSec: durationSec,
+  roomRoles,
 });
 
 const buildFallbackSummaryStats = (stageCount: number): SummaryStat[] => [
@@ -128,6 +134,12 @@ export const buildActivityViewModel = (
 ): ActivityViewModel => {
   const activityPackage = resolveActivityPackage(activityPackageId);
   const metadata = activityPackage.metadata;
+  const roomRoles = (metadata?.rooms?.roles ?? []).reduce<
+    Record<string, ActivityRoomSceneRole>
+  >((result, roomRole) => {
+    result[roomRole.roomId] = roomRole.role;
+    return result;
+  }, {});
   const stages = activityPackage.stageTemplates.map((stageTemplate, index) => {
     const stageLabel =
       metadata?.stages[stageTemplate.id]?.label?.trim() || `Stage ${index + 1}`;
@@ -186,6 +198,7 @@ export const buildActivityViewModel = (
         successSignal: stageMetadata.successSignal,
         preferredRoomIds: stageMetadata.preferredRoomIds,
         durationSec: stage.durationSec,
+        roomRoles,
       });
       return result;
     },

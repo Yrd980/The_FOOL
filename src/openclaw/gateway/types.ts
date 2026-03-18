@@ -70,7 +70,7 @@ export interface GatewayStatusResponse {
 
 export interface GatewayActivityRunSnapshot {
   id: string;
-  templateId: string;
+  templateId: string | null;
   status: string;
   currentStageId: string | null;
 }

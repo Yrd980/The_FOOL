@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { THE_FOOL_SCORE_ANNOTATION_KEYS } from "./activities/theFoolV1";
-import { getDefaultActivityPackage } from "./activityRuntime";
+import {
+  findActivityPackageByStageId,
+  getActivityScoreAnnotationKeys,
+} from "./activityRuntime";
 import type {
   GatewayActivity,
   GatewayActivityRunSummary,
@@ -150,8 +152,6 @@ const AUTHORITATIVE_QUERY_CHECK_LABELS: Record<
   replay: "Replay",
   audit: "Audit",
 };
-
-const DEFAULT_ACTIVITY_PACKAGE_ID = getDefaultActivityPackage().id;
 
 interface AuthoritativeQueryState {
   configured: boolean;
@@ -362,6 +362,7 @@ const extractSubmissionVersions = (
 
 const readScoreAnnotations = (
   record: Record<string, unknown>,
+  activityPackageId?: string | null,
 ): GatewayScoreSnapshot["annotations"] => {
   const nextAnnotations: NonNullable<GatewayScoreSnapshot["annotations"]> = {};
 
@@ -373,17 +374,11 @@ const readScoreAnnotations = (
     }
   }
 
-  const favorite = readString(record, THE_FOOL_SCORE_ANNOTATION_KEYS.favorite);
-  if (favorite) {
-    nextAnnotations[THE_FOOL_SCORE_ANNOTATION_KEYS.favorite] = favorite;
-  }
-
-  const mostAbsurd = readString(
-    record,
-    THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd,
-  );
-  if (mostAbsurd) {
-    nextAnnotations[THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd] = mostAbsurd;
+  for (const annotationKey of getActivityScoreAnnotationKeys(activityPackageId)) {
+    const legacyValue = readString(record, annotationKey);
+    if (legacyValue) {
+      nextAnnotations[annotationKey] = legacyValue;
+    }
   }
 
   return Object.keys(nextAnnotations).length > 0 ? nextAnnotations : undefined;
@@ -391,6 +386,7 @@ const readScoreAnnotations = (
 
 const extractScoreUpdate = (
   event: GatewayEventEnvelope,
+  activityPackageId?: string | null,
 ): GatewayScoreSnapshot | null => {
   const payload = isRecord(event.payload) ? event.payload : {};
   const judgeScore = isRecord(payload.judgeScore) ? payload.judgeScore : payload;
@@ -438,7 +434,7 @@ const extractScoreUpdate = (
     teamId: readString(judgeScore, "teamId") ?? undefined,
     score,
     reason: readString(judgeScore, "reason") ?? "",
-    annotations: readScoreAnnotations(judgeScore),
+    annotations: readScoreAnnotations(judgeScore, activityPackageId),
     submittedAt,
   };
 };
@@ -519,6 +515,39 @@ const stageIdFromPayload = (payload: Record<string, unknown>): string | null => 
   }
 
   return null;
+};
+
+const inferActivityPackageIdFromStageId = (
+  stageId: string | null | undefined,
+): string | null => {
+  const normalizedStageId = stageId?.trim();
+  if (!normalizedStageId) {
+    return null;
+  }
+
+  return findActivityPackageByStageId(normalizedStageId)?.id ?? null;
+};
+
+const resolveEventActivityPackageId = ({
+  payload,
+  previous,
+}: {
+  payload: Record<string, unknown>;
+  previous: OrchestrationState;
+}): string | null => {
+  const activityRun = isRecord(payload.activityRun) ? payload.activityRun : null;
+  const explicitTemplateId =
+    readString(payload, "templateId") ??
+    (activityRun ? readString(activityRun, "templateId") : null);
+
+  if (explicitTemplateId) {
+    return explicitTemplateId;
+  }
+
+  return (
+    previous.activityRun?.templateId ??
+    inferActivityPackageIdFromStageId(stageIdFromPayload(payload))
+  );
 };
 
 const upsertById = <T extends { id: string }>(items: T[], nextItem: T): T[] => {
@@ -862,6 +891,10 @@ const applyOrchestrationEvent = (
   event: GatewayEventEnvelope,
 ): OrchestrationState => {
   const payload = isRecord(event.payload) ? event.payload : {};
+  const activityPackageId = resolveEventActivityPackageId({
+    payload,
+    previous,
+  });
   const nextDomainEvent = buildDomainEventSummary(event);
   let nextState: OrchestrationState = {
     ...previous,
@@ -878,9 +911,7 @@ const applyOrchestrationEvent = (
       activityRun: {
         id: readString(payload, "activityRunId", "id") ?? previous.activityRun?.id ?? "activity-run",
         templateId:
-          readString(payload, "templateId") ??
-          previous.activityRun?.templateId ??
-          DEFAULT_ACTIVITY_PACKAGE_ID,
+          activityPackageId,
         status: readString(payload, "status") ?? "running",
         currentStageId:
           readString(payload, "currentStageId", "stageId") ??
@@ -895,7 +926,11 @@ const applyOrchestrationEvent = (
       ...nextState,
       activityRun: {
         id: previous.activityRun?.id ?? readString(payload, "activityRunId") ?? "activity-run",
-        templateId: previous.activityRun?.templateId ?? DEFAULT_ACTIVITY_PACKAGE_ID,
+        templateId:
+          activityPackageId ??
+          inferActivityPackageIdFromStageId(
+            readString(payload, "toStageId", "currentStageId", "stageId"),
+          ),
         status: previous.activityRun?.status ?? "running",
         currentStageId:
           readString(payload, "toStageId", "currentStageId", "stageId") ?? null,
@@ -926,7 +961,7 @@ const applyOrchestrationEvent = (
   }
 
   if (event.type === "judge.score_submitted") {
-    const score = extractScoreUpdate(event);
+    const score = extractScoreUpdate(event, activityPackageId);
     if (score) {
       const nextScores = upsertById(nextState.scores, score).sort(
         (left, right) => right.submittedAt - left.submittedAt,
@@ -1777,27 +1812,68 @@ export function useGatewayOverview(): GatewayOverview {
   );
 
   return useMemo(() => {
-    const activityPackageId = orchestration.activityRun?.templateId ?? undefined;
-    const gatewayRoomIds = getGatewayRoomIds(activityPackageId);
-    const fallbackRoomId = gatewayRoomIds.at(-1) ?? "room";
-    const roomCounts = gatewayRoomIds.map((roomId) => ({
-      roomId,
-      label: getRoomLabel(roomId, activityPackageId),
-      count: sessions.filter(
-        (session) => resolveSessionRoomId(session.key, activityPackageId) === roomId,
-      ).length,
-    }));
+    const authoritativeSnapshot = authoritativeQuery.snapshot?.snapshot ?? null;
+    const authoritativeActivityRun =
+      authoritativeSnapshot?.activityRun ?? orchestration.activityRun;
+    const authoritativeWorld = authoritativeSnapshot?.world ?? null;
+    const authoritativeTimers =
+      authoritativeSnapshot?.timers ?? orchestration.timers;
+    const authoritativeSkills = authoritativeSnapshot?.skills ?? null;
+    const authoritativeSubmissions =
+      authoritativeSnapshot?.submissions ?? orchestration.submissions;
+    const authoritativeScoreEntries =
+      authoritativeQuery.scores?.scores ??
+      authoritativeSnapshot?.scores ??
+      orchestration.scores;
+    const authoritativeScoreSummary =
+      authoritativeQuery.scores?.scoreSummary ??
+      authoritativeSnapshot?.scoreSummary ??
+      orchestration.scoreSummary;
+    const activityPackageId =
+      authoritativeActivityRun?.templateId ??
+      inferActivityPackageIdFromStageId(authoritativeActivityRun?.currentStageId) ??
+      null;
+    const roomLabelById = new Map(
+      (authoritativeWorld ?? orchestration.world ?? { rooms: [] }).rooms.map((room) => [
+        room.id,
+        room.label?.trim() || room.id,
+      ]),
+    );
+    const observedRoomIds = new Set<string>(
+      getGatewayRoomIds(activityPackageId, { fallbackToDefault: false }),
+    );
+
+    for (const room of authoritativeWorld?.rooms ?? []) {
+      observedRoomIds.add(room.id);
+    }
+    for (const team of authoritativeWorld?.teams ?? []) {
+      if (team.roomId) {
+        observedRoomIds.add(team.roomId);
+      }
+    }
+    for (const entity of authoritativeWorld?.entities ?? []) {
+      if (entity.roomId) {
+        observedRoomIds.add(entity.roomId);
+      }
+    }
 
     const allSessionSummaries: GatewaySessionSummary[] = [...sessions]
       .sort((left, right) => normalizeTimestamp(right.updatedAt) - normalizeTimestamp(left.updatedAt))
       .map((session) => {
-        const roomId = resolveSessionRoomId(session.key, activityPackageId);
+        const roomId = resolveSessionRoomId(session.key, activityPackageId, {
+          fallbackToDefault: false,
+        });
+        observedRoomIds.add(roomId);
         const state = deriveContestantState(session);
         return {
           agentId: session.agentId,
           sessionKey: session.key,
           roomId,
-          roomLabel: getRoomLabel(roomId, activityPackageId),
+          roomLabel:
+            roomLabelById.get(roomId) ??
+            getRoomLabel(roomId, activityPackageId, {
+              fallbackToDefault: false,
+            }),
           updatedAt: normalizeTimestamp(session.updatedAt),
           updatedLabel: formatUpdatedLabel(session.updatedAt),
           state,
@@ -1844,27 +1920,54 @@ export function useGatewayOverview(): GatewayOverview {
       },
     ];
 
-    const roomRosters = gatewayRoomIds.map((roomId) => ({
-      roomId,
-      label: getRoomLabel(roomId, activityPackageId),
-      sessions: allSessionSummaries.filter((session) => session.roomId === roomId),
-    }));
+    const fallbackRoomId =
+      authoritativeWorld?.rooms.at(-1)?.id ??
+      [...observedRoomIds].at(-1) ??
+      "room";
 
     const allActivities: GatewayActivity[] = messages.map((message) => {
       const relatedRoom = roomByAgent.get(message.senderId);
       const roomId = relatedRoom?.roomId ?? fallbackRoomId;
+      observedRoomIds.add(roomId);
       const timestamp = normalizeTimestamp(message.ts);
 
       return {
         id: message.id,
         agentId: message.senderId,
         roomId,
-        roomLabel: relatedRoom?.roomLabel ?? getRoomLabel(roomId, activityPackageId),
+        roomLabel:
+          relatedRoom?.roomLabel ??
+          roomLabelById.get(roomId) ??
+          getRoomLabel(roomId, activityPackageId, {
+            fallbackToDefault: false,
+          }),
         content: message.content,
         timestamp,
         timestampLabel: formatClockLabel(timestamp),
       };
     });
+
+    const resolvedRoomIds = [...observedRoomIds].sort((left, right) =>
+      left.localeCompare(right),
+    );
+    const roomCounts = resolvedRoomIds.map((roomId) => ({
+      roomId,
+      label:
+        roomLabelById.get(roomId) ??
+        getRoomLabel(roomId, activityPackageId, {
+          fallbackToDefault: false,
+        }),
+      count: allSessionSummaries.filter((session) => session.roomId === roomId).length,
+    }));
+    const roomRosters = resolvedRoomIds.map((roomId) => ({
+      roomId,
+      label:
+        roomLabelById.get(roomId) ??
+        getRoomLabel(roomId, activityPackageId, {
+          fallbackToDefault: false,
+        }),
+      sessions: allSessionSummaries.filter((session) => session.roomId === roomId),
+    }));
 
     const contestants: GatewayContestantSummary[] = allSessionSummaries
       .map((session) => {
@@ -1888,24 +1991,6 @@ export function useGatewayOverview(): GatewayOverview {
         const leftSignal = Math.max(left.updatedAt, left.recentActivity?.timestamp ?? 0);
         return rightSignal - leftSignal;
       });
-
-    const authoritativeSnapshot = authoritativeQuery.snapshot?.snapshot ?? null;
-    const authoritativeActivityRun =
-      authoritativeSnapshot?.activityRun ?? orchestration.activityRun;
-    const authoritativeWorld = authoritativeSnapshot?.world ?? null;
-    const authoritativeTimers =
-      authoritativeSnapshot?.timers ?? orchestration.timers;
-    const authoritativeSkills = authoritativeSnapshot?.skills ?? null;
-    const authoritativeSubmissions =
-      authoritativeSnapshot?.submissions ?? orchestration.submissions;
-    const authoritativeScoreEntries =
-      authoritativeQuery.scores?.scores ??
-      authoritativeSnapshot?.scores ??
-      orchestration.scores;
-    const authoritativeScoreSummary =
-      authoritativeQuery.scores?.scoreSummary ??
-      authoritativeSnapshot?.scoreSummary ??
-      orchestration.scoreSummary;
     const authoritativeEventPage =
       authoritativeQuery.events?.events.length
         ? authoritativeQuery.events

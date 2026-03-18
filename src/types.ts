@@ -1,3 +1,4 @@
+import type { ActivityRoomSceneRole } from "./openclaw/activityMetadata";
 import type { ControlActorRole } from "./openclaw/control";
 import type { ScoreAnnotations } from "./openclaw/platform/contracts";
 
@@ -38,6 +39,7 @@ export interface StageRuntimeGuide {
   successSignal: string;
   preferredRoomIds: string[];
   suggestedDurationSec?: number;
+  roomRoles: Record<string, ActivityRoomSceneRole>;
 }
 
 export interface ActivityViewModel {
@@ -109,7 +111,7 @@ export interface GatewayContestantSummary extends GatewaySessionSummary {
 
 export interface GatewayActivityRunSummary {
   id: string;
-  templateId: string;
+  templateId: string | null;
   status: string;
   currentStageId: string | null;
   snapshotId: string | null;

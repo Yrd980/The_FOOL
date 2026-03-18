@@ -45,7 +45,7 @@ export function ShowMode({
   const roomHeatById = new Map(roomHeat.map((room) => [room.roomId, room]));
   const hottestRoom = roomHeat[0] ?? null;
   const emptyState = buildShowEmptyState(gateway, stage);
-  const showState = buildShowStateCopy(focusContestant, stage);
+  const showState = buildShowStateCopy(focusContestant, stage, runtimeGuide);
   const audience = buildShowAudienceComposition({
     gateway,
     stage,
@@ -154,7 +154,7 @@ export function ShowMode({
       timestampLabel: platformBeatTimestamp,
       tone: audience.platformCue.tone,
     },
-    ...buildShowEvents(gateway, stageContestants).filter(
+    ...buildShowEvents(gateway, stageContestants, runtimeGuide).filter(
       (event) => event.eyebrow !== "Platform Cue",
     ),
   ]

@@ -193,10 +193,14 @@ const authToken =
   process.env.VITE_OPENCLAW_TOKEN?.trim() ||
   "molt-claw-local-dev";
 
-const defaultActivityPackage = theFoolV1ActivityPackage;
+const bootstrapActivityTemplateId =
+  process.env.OPENCLAW_ACTIVITY_TEMPLATE_ID?.trim() ||
+  theFoolV1ActivityPackage.id;
 
-const resolveActivityPackageByTemplateId = (templateId?: string) =>
-  getActivityPackage(templateId ?? defaultActivityPackage.id);
+const resolveActivityPackageByTemplateId = (templateId?: string | null) =>
+  getActivityPackage(templateId ?? bootstrapActivityTemplateId);
+
+const defaultActivityPackage = resolveActivityPackageByTemplateId();
 
 const supportedRpcMethods = [
   "connect",

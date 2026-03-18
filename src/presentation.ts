@@ -1,3 +1,4 @@
+import type { ActivityRoomSceneRole } from "./openclaw/activityMetadata";
 import type {
   GatewayContestantSummary,
   GatewayOverview,
@@ -15,6 +16,7 @@ export interface FocusRoomSummary {
 
 export interface RankedContestant extends GatewayContestantSummary {
   isInFocusRoom: boolean;
+  roomRole: ActivityRoomSceneRole | null;
   stageFitLabel: string;
   stageFitTone: UiTone;
   attentionLabel: string;
@@ -33,6 +35,7 @@ export interface RoomHeatSummary {
   roomId: string;
   label: string;
   count: number;
+  roomRole: ActivityRoomSceneRole | null;
   activityCount: number;
   heatScore: number;
   heatLabel: string;
@@ -72,21 +75,33 @@ const heatWeight = {
   muted: 3,
 };
 
+const resolveRoomRole = (
+  roomId: string,
+  runtimeGuide: StageRuntimeGuide,
+): ActivityRoomSceneRole | null => runtimeGuide.roomRoles[roomId] ?? null;
+
 const buildStageFit = (
   contestant: GatewayContestantSummary,
   focusRoomIds: Set<string>,
-): Pick<RankedContestant, "isInFocusRoom" | "stageFitLabel" | "stageFitTone"> => {
+  runtimeGuide: StageRuntimeGuide,
+): Pick<
+  RankedContestant,
+  "isInFocusRoom" | "roomRole" | "stageFitLabel" | "stageFitTone"
+> => {
+  const roomRole = resolveRoomRole(contestant.roomId, runtimeGuide);
   if (focusRoomIds.has(contestant.roomId)) {
     return {
       isInFocusRoom: true,
+      roomRole,
       stageFitLabel: "On Script",
       stageFitTone: "warm",
     };
   }
 
-  if (contestant.roomId === "quiet-orbit") {
+  if (roomRole === "holding") {
     return {
       isInFocusRoom: false,
+      roomRole,
       stageFitLabel: "Holding",
       stageFitTone: "idle",
     };
@@ -94,6 +109,7 @@ const buildStageFit = (
 
   return {
     isInFocusRoom: false,
+    roomRole,
     stageFitLabel: "Side Room",
     stageFitTone: "active",
   };
@@ -200,7 +216,7 @@ export const rankContestants = (
 
   return gateway.contestants
     .map((contestant) => {
-      const stageFit = buildStageFit(contestant, focusRoomIds);
+      const stageFit = buildStageFit(contestant, focusRoomIds, runtimeGuide);
       return {
         ...contestant,
         ...stageFit,
@@ -213,6 +229,7 @@ export const rankContestants = (
 export const buildShowStateCopy = (
   contestant: RankedContestant | null,
   stage: StageDefinition,
+  runtimeGuide: StageRuntimeGuide,
 ): ShowStateCopy => {
   if (!contestant) {
     return {
@@ -277,10 +294,10 @@ export const buildShowStateCopy = (
     };
   }
 
-  if (contestant.roomId === "quiet-orbit") {
+  if (resolveRoomRole(contestant.roomId, runtimeGuide) === "holding") {
     return {
       label: "退到后景冷静",
-      action: "在 Quiet Orbit 整理情绪",
+      action: `在 ${contestant.roomLabel} 整理情绪`,
       note: `${contestant.agentId} 暂时撤出主线，但这通常只是下一轮反扑前的缓冲。`,
       tone: "idle",
     };
@@ -306,6 +323,7 @@ export const buildRoomHeatSummaries = (
 
   return gateway.roomRosters
     .map((room) => {
+      const roomRole = resolveRoomRole(room.roomId, runtimeGuide);
       const activityCount = activityCountByRoom[room.roomId] ?? 0;
       const stateScore = room.sessions.reduce((sum, session) => sum + heatWeight[session.state], 0);
       const heatScore =
@@ -326,7 +344,7 @@ export const buildRoomHeatSummaries = (
         heatLabel = "开始有戏";
         heatTone = "warm";
       } else {
-        heatLabel = room.roomId === "quiet-orbit" ? "幕后缓冲" : "低火蓄势";
+        heatLabel = roomRole === "holding" ? "幕后缓冲" : "低火蓄势";
         heatTone = "idle";
       }
 
@@ -337,7 +355,7 @@ export const buildRoomHeatSummaries = (
         story = `刚刚有 ${activityCount} 条新剧情从这里冒出来，像是在后台偷跑正片。`;
       } else if (room.sessions.length > 0) {
         story = `${room.sessions.length} 位选手在这里压着气氛，离真正炸开只差一根火柴。`;
-      } else if (room.roomId === "quiet-orbit") {
+      } else if (roomRole === "holding") {
         story = "情绪、停顿和下一轮反扑都先在这里喘一口气。";
       }
 
@@ -345,6 +363,7 @@ export const buildRoomHeatSummaries = (
         roomId: room.roomId,
         label: room.label,
         count: room.sessions.length,
+        roomRole,
         activityCount,
         heatScore,
         heatLabel,
@@ -365,20 +384,22 @@ export const buildRoomHeatSummaries = (
 export const buildShowEvents = (
   gateway: GatewayOverview,
   contestants: RankedContestant[],
+  runtimeGuide: StageRuntimeGuide,
 ): ShowEventSummary[] => {
   const contestantById = new Map(contestants.map((contestant) => [contestant.agentId, contestant]));
   const activityEvents = gateway.activities.map((activity) => {
     const contestant = contestantById.get(activity.agentId);
+    const roomRole = resolveRoomRole(activity.roomId, runtimeGuide);
 
     let headline = `${activity.agentId} 刚往 ${activity.roomLabel} 扔进一句能剪预告的台词`;
     if (contestant?.state === "raised-hand") {
       headline = `${activity.agentId} 正在抢麦，想把现场再往前拱一步`;
-    } else if (activity.roomId === "main-stage") {
+    } else if (roomRole === "stage") {
       headline = `${activity.agentId} 又把主舞台顶亮了一格`;
-    } else if (activity.roomId.startsWith("team-room")) {
-      headline = `${activity.agentId} 在 ${activity.roomLabel} 憋出一段新的队内剧情`;
-    } else if (activity.roomId === "quiet-orbit") {
-      headline = `${activity.agentId} 在 Quiet Orbit 低声回血，像在准备下一波反扑`;
+    } else if (roomRole === "collaboration") {
+      headline = `${activity.agentId} 在 ${activity.roomLabel} 憋出一段新的协作剧情`;
+    } else if (roomRole === "holding") {
+      headline = `${activity.agentId} 在 ${activity.roomLabel} 低声回血，像在准备下一波反扑`;
     }
 
     return {

@@ -38,9 +38,12 @@ import {
   type GatewayCapabilitySnapshot,
   type OrchestratorEventQuery,
   type SubmitScorePayload,
-  type TeamProjectSubmissionData,
 } from "../src/openclaw/control";
-import { THE_FOOL_SCORE_ANNOTATION_KEYS } from "../src/openclaw/activities/theFoolV1";
+import {
+  THE_FOOL_SCORE_ANNOTATION_KEYS,
+  normalizeTheFoolTeamProjectSubmissionData,
+  type TeamProjectSubmissionData,
+} from "../src/openclaw/activities/theFoolV1";
 
 type CommandName =
   | "probe"
@@ -1081,12 +1084,19 @@ const parseSubmissionCommandArgs = (
   return {
     activityRunId,
     submissionId,
-    data: {
-      posterOrDeck,
-      elevatorPitch,
-      highlights: highlights as [string, string, string],
-      risk,
-    },
+    data: (() => {
+      try {
+        return normalizeTheFoolTeamProjectSubmissionData({
+          posterOrDeck,
+          elevatorPitch,
+          highlights: highlights as [string, string, string],
+          risk,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Invalid payload.";
+        fail(`${commandName} ${message}`);
+      }
+    })(),
   };
 };
 

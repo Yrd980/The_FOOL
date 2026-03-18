@@ -24,9 +24,17 @@ export interface ActivityRoomAliasMeta {
   aliases: string[];
 }
 
+export type ActivityRoomSceneRole = "stage" | "collaboration" | "holding";
+
+export interface ActivityRoomRoleMeta {
+  roomId: string;
+  role: ActivityRoomSceneRole;
+}
+
 export interface ActivityRoomsMeta {
   fallbackRoomId?: string;
   aliases?: ActivityRoomAliasMeta[];
+  roles?: ActivityRoomRoleMeta[];
 }
 
 export interface ActivityStageMetadata {

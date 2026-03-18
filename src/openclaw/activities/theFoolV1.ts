@@ -263,6 +263,13 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       { roomId: "team-room-3", aliases: ["team-3", "team3"] },
       { roomId: "quiet-orbit", aliases: ["quiet"] },
     ],
+    roles: [
+      { roomId: "main-stage", role: "stage" },
+      { roomId: "team-room-1", role: "collaboration" },
+      { roomId: "team-room-2", role: "collaboration" },
+      { roomId: "team-room-3", role: "collaboration" },
+      { roomId: "quiet-orbit", role: "holding" },
+    ],
   },
   stages: {
     "act-1-intro": {

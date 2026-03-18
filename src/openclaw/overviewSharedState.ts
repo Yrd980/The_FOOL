@@ -51,7 +51,12 @@ const resolveRoomLabel = (
     return null;
   }
 
-  return roomLabelById.get(roomId) ?? getRoomLabel(roomId, activityPackageId ?? undefined);
+  return (
+    roomLabelById.get(roomId) ??
+    getRoomLabel(roomId, activityPackageId ?? undefined, {
+      fallbackToDefault: false,
+    })
+  );
 };
 
 const buildStructuredStateSummary = ({
@@ -195,7 +200,10 @@ export const buildGatewayWorldSummary = ({
   const roomLabelById = new Map(
     rawWorld.rooms.map((room) => [
       room.id,
-      room.label?.trim() || getRoomLabel(room.id, activityPackageId ?? undefined),
+      room.label?.trim() ||
+        getRoomLabel(room.id, activityPackageId ?? undefined, {
+          fallbackToDefault: false,
+        }),
     ]),
   );
   const sessionByAgentId = new Map(

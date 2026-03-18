@@ -1,19 +1,15 @@
 import {
-  THE_FOOL_SCORE_ANNOTATION_KEYS,
-  normalizeTheFoolTeamProjectSubmissionData,
-  type TeamProjectSubmissionData,
-} from "./activities/theFoolV1";
-import {
   buildActivityRoomCatalog,
-  getDefaultActivityPackage,
+  tryBuildActivityRoomCatalog,
 } from "./activityRuntime";
 import type {
   ActorRole as PlatformActorRole,
   CommandEnvelope,
   ScoreAnnotations,
+  SubmissionData,
 } from "./platform/contracts";
 
-export type { CommandEnvelope, TeamProjectSubmissionData };
+export type { CommandEnvelope };
 
 const DIRECT_GATEWAY_URL = "ws://127.0.0.1:18789";
 export const DEFAULT_ORCHESTRATOR_HTTP_URL = "http://127.0.0.1:18791";
@@ -71,9 +67,6 @@ export const ORCHESTRATOR_HTTP_QUERY_PATHS = {
   audit: "/api/orchestrator/audit",
 } as const;
 
-export const SCORE_MOST_ABSURD_FIELD =
-  THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd;
-
 export interface SubmitScorePayload {
   submissionId: string;
   teamId?: string;
@@ -85,10 +78,13 @@ export interface SubmitScorePayload {
 const normalizeAlias = (room: string): string =>
   room.trim().toLowerCase().replace(/[\s_]+/g, "-");
 
-const DEFAULT_ACTIVITY_PACKAGE_ID = getDefaultActivityPackage().id;
-
-const resolveRoomCatalog = (activityPackageId?: string) =>
-  buildActivityRoomCatalog(activityPackageId ?? DEFAULT_ACTIVITY_PACKAGE_ID);
+const resolveRoomCatalog = (
+  activityPackageId?: string | null,
+  options?: { fallbackToDefault?: boolean },
+) =>
+  options?.fallbackToDefault === false
+    ? tryBuildActivityRoomCatalog(activityPackageId)
+    : buildActivityRoomCatalog(activityPackageId);
 
 const normalizeAgentId = (agentId: string): string => {
   const normalized = agentId.trim();
@@ -179,9 +175,12 @@ export const summarizeGatewayOrchestrationContract = ({
 
 export const resolveControlRoomId = (
   room: string,
-  activityPackageId?: string,
+  activityPackageId?: string | null,
 ): string => {
   const roomCatalog = resolveRoomCatalog(activityPackageId);
+  if (!roomCatalog) {
+    throw new Error("No activity room catalog is registered.");
+  }
   const resolved = roomCatalog.aliasMap[normalizeAlias(room)];
   if (!resolved) {
     throw new Error(
@@ -191,33 +190,47 @@ export const resolveControlRoomId = (
   return resolved;
 };
 
-export const getGatewayRoomIds = (activityPackageId?: string): string[] =>
-  resolveRoomCatalog(activityPackageId).roomIds;
+export const getGatewayRoomIds = (
+  activityPackageId?: string | null,
+  options?: { fallbackToDefault?: boolean },
+): string[] =>
+  resolveRoomCatalog(activityPackageId, options)?.roomIds ?? [];
 
 export const buildGatewaySessionKey = (
   agentId: string,
   room: string,
-  activityPackageId?: string,
+  activityPackageId?: string | null,
 ): string =>
   `agent:${normalizeAgentId(agentId)}:${resolveControlRoomId(room, activityPackageId)}`;
 
 const normalizeSessionRoomId = (
   roomId: string,
-  activityPackageId?: string,
+  activityPackageId?: string | null,
+  options?: { fallbackToDefault?: boolean },
 ): string =>
-  resolveRoomCatalog(activityPackageId).aliasMap[normalizeAlias(roomId)] ?? roomId;
+  resolveRoomCatalog(activityPackageId, options)?.aliasMap[normalizeAlias(roomId)] ??
+  roomId;
 
 export const resolveSessionRoomId = (
   sessionKey: string | undefined,
-  activityPackageId?: string,
+  activityPackageId?: string | null,
+  options?: { fallbackToDefault?: boolean },
 ): string => {
-  const roomCatalog = resolveRoomCatalog(activityPackageId);
+  const roomCatalog = resolveRoomCatalog(activityPackageId, options);
   if (!sessionKey) {
-    return roomCatalog.fallbackRoomId;
+    return roomCatalog?.fallbackRoomId ?? "room";
   }
 
   const match = sessionKey.match(/^agent:[^:]+:(.+)$/);
-  const roomId = normalizeSessionRoomId(match?.[1] ?? "", activityPackageId);
+  const roomId = normalizeSessionRoomId(
+    match?.[1]?.trim() ?? "",
+    activityPackageId,
+    options,
+  );
+
+  if (!roomCatalog) {
+    return roomId || "room";
+  }
 
   if (roomCatalog.roomIds.includes(roomId)) {
     return roomId;
@@ -228,8 +241,10 @@ export const resolveSessionRoomId = (
 
 export const getRoomLabel = (
   roomId: string,
-  activityPackageId?: string,
-): string => resolveRoomCatalog(activityPackageId).labels[roomId] ?? roomId;
+  activityPackageId?: string | null,
+  options?: { fallbackToDefault?: boolean },
+): string =>
+  resolveRoomCatalog(activityPackageId, options)?.labels[roomId] ?? roomId;
 
 export const normalizeControlGatewayUrl = (
   configuredUrl: string | undefined,
@@ -422,7 +437,7 @@ const buildSubmissionCommandEnvelope = ({
   actorRole?: ControlActorRole;
   activityRunId: string;
   submissionId: string;
-  data: TeamProjectSubmissionData;
+  data: SubmissionData;
   idempotencyKey?: string;
   type: "submit" | "update_submission";
 }): CommandEnvelope<SubmissionCommandPayload> => {
@@ -438,7 +453,7 @@ const buildSubmissionCommandEnvelope = ({
     type,
     payload: {
       submissionId: normalizedSubmissionId,
-      data: normalizeTheFoolTeamProjectSubmissionData(data),
+      data: structuredClone(data),
     },
     idempotencyKey,
   });
@@ -456,7 +471,7 @@ export const buildSubmitEnvelope = ({
   actorRole?: ControlActorRole;
   activityRunId: string;
   submissionId: string;
-  data: TeamProjectSubmissionData;
+  data: SubmissionData;
   idempotencyKey?: string;
 }): CommandEnvelope<SubmissionCommandPayload> =>
   buildSubmissionCommandEnvelope({
@@ -481,7 +496,7 @@ export const buildUpdateSubmissionEnvelope = ({
   actorRole?: ControlActorRole;
   activityRunId: string;
   submissionId: string;
-  data: TeamProjectSubmissionData;
+  data: SubmissionData;
   idempotencyKey?: string;
 }): CommandEnvelope<SubmissionCommandPayload> =>
   buildSubmissionCommandEnvelope({
@@ -537,8 +552,6 @@ export const buildSubmitScoreEnvelope = ({
   score,
   reason,
   annotations,
-  favorite,
-  mostAbsurd,
   idempotencyKey,
 }: {
   actorId: string;
@@ -547,8 +560,6 @@ export const buildSubmitScoreEnvelope = ({
   score: number;
   reason: string;
   annotations?: ScoreAnnotations;
-  favorite?: string;
-  mostAbsurd?: string;
   idempotencyKey?: string;
 }): CommandEnvelope<SubmitScorePayload> => {
   const normalizedScore = Math.round(score);
@@ -558,21 +569,16 @@ export const buildSubmitScoreEnvelope = ({
 
   const normalizedSubmissionId = submissionId.trim();
   const normalizedReason = reason.trim();
-  const normalizedAnnotations = Object.entries({
-    ...(annotations ?? {}),
-    ...(favorite?.trim()
-      ? { [THE_FOOL_SCORE_ANNOTATION_KEYS.favorite]: favorite.trim() }
-      : {}),
-    ...(mostAbsurd?.trim()
-      ? { [THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd]: mostAbsurd.trim() }
-      : {}),
-  }).reduce<ScoreAnnotations>((result, [key, value]) => {
+  const normalizedAnnotations = Object.entries(annotations ?? {}).reduce<ScoreAnnotations>(
+    (result, [key, value]) => {
     const normalizedValue = value.trim();
     if (normalizedValue) {
       result[key] = normalizedValue;
     }
     return result;
-  }, {});
+    },
+    {},
+  );
 
   if (!normalizedSubmissionId) {
     throw new Error("Submission id is required.");
