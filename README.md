@@ -125,12 +125,18 @@ renderer 侧现状：
   - 最近平台事件流与最小 provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）
 - shared typed state 现在会把 `snapshot.health`、`audit`、query `status/source/freshness/error` 归并成稳定 operator evidence，而不是让 `/control` 组件直接手搓原始 payload
 - shared typed state 现在也会把 `snapshot.world` / `snapshot.skills` 归并成稳定的 world/team/skill summaries，而不是让组件直接解析 `rooms` / `teams` / `entities` / `skills` 原始 payload
-- `/show` 继续复用同一份 authoritative state；这轮没有单独扩版，但也不再只停留在 websocket event hint
+- `/show` 现在继续复用同一份 authoritative state，但已经额外补了 audience-facing composition，而不是继续照搬导演台的数据分组
+- `/show` 当前至少会把下列 shared state 重新编排成节目叙事：
+  - current stage 下的 team / room spotlight
+  - world/team/member 的 audience-facing room narrative
+  - submission / score / platform cue 的舞台侧编排
+  - skill / doc 的 backstage context 口吻
+  - state unavailable 时的 soft fallback，而不是后台报错语气
 - 当前 browser consumer 还没完全闭环的部分：
-  - `/show` 还没有把 world/team/skill shared state 重新编排成 show-specific 叙事
   - 当前 local world fixture 仍会真实暴露 team-room mapping 与 entity placement 的 mismatch
   - 当前 seed skill bindings 仍只有 global docs，没有 stage-specific bindings
-  - `/show` 若要单独强化 submission / score / audit 叙事，还需要 show-specific composition，而不是直接照搬导演台证据面板
+  - `/show` 当前 room spotlight 仍会部分受 live session heat 影响；在 fixture 只有极少 live session 时，节目镜头仍可能偏向 heat 更高的 room，而不是更强的 act-level world cue
+  - `/show` 当前虽然已经把 submission / score / world / skill 重新编排成节目叙事，但还没有形成独立于现有 show layout 的更完整编排模板
 
 这意味着当前 worktree 的主线，已经从“静态十幕页面”推进到了“消费 orchestrator 快照和事件的双界面客户端”。
 
@@ -480,7 +486,8 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
   - 自动由 score 推导 award 与更细粒度的权限模型
   - 多活动实例 / 多活动运行并发
 - 当前 renderer/client 还没有补齐：
-  - `/show` 对 shared state 的 show-specific composition；目前 world/team/skill 与 submission/score/audit 仍主要按 control-first 的数据组织复用
+  - `/show` 已经补上 show-specific composition，但当前 audience narrative 仍会受 fixture/live session 稀疏度影响，room spotlight 与 stage-level world cue 还可以继续收紧
+  - stage-specific skill bindings 仍未在 seed data 内提供，所以 `/show` 当前只能把 backstage context 叙述成“沿用全局说明”
 
 ## Structure
 

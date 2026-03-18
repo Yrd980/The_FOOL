@@ -1,6 +1,7 @@
 import {
   buildFocusRooms,
   buildRoomHeatSummaries,
+  buildShowAudienceComposition,
   buildShowEmptyState,
   buildShowEvents,
   buildShowStateCopy,
@@ -29,40 +30,156 @@ export function ShowMode({
   gateway,
 }: ShowModeProps) {
   const contestants = rankContestants(gateway, runtimeGuide);
-  const focusContestant = contestants[0] ?? null;
+  const worldEntityIds = new Set(
+    gateway.world.entities.map((entity) => entity.entityId),
+  );
+  const stageContestants = contestants.filter(
+    (contestant) =>
+      worldEntityIds.has(contestant.agentId) ||
+      contestant.agentId.startsWith("contestant-"),
+  );
+  const focusContestant = stageContestants[0] ?? null;
   const focusRooms = buildFocusRooms(runtimeGuide, gateway);
   const roomHeat = buildRoomHeatSummaries(gateway, runtimeGuide);
+  const roomHeatById = new Map(roomHeat.map((room) => [room.roomId, room]));
   const hottestRoom = roomHeat[0] ?? null;
-  const sideStoryContestant =
-    contestants.find((contestant) => contestant.state === "raised-hand" && !contestant.isInFocusRoom) ??
-    contestants.find((contestant) => contestant.roomId === "quiet-orbit") ??
-    contestants[1] ??
-    null;
   const emptyState = buildShowEmptyState(gateway, stage);
   const showState = buildShowStateCopy(focusContestant, stage);
-  const showEvents = buildShowEvents(gateway, contestants).slice(0, 8);
-  const latestPlatformCue = gateway.domainEvents[0] ?? null;
+  const audience = buildShowAudienceComposition({
+    gateway,
+    stage,
+    runtimeGuide,
+  });
+  const primaryTeamSpotlight = audience.teamRoomSpotlights[0] ?? null;
+  const primaryRoomNarrative = audience.roomNarratives[0] ?? null;
+  const primaryFallback = audience.softFallbacks[0] ?? null;
   const stageIndex = stages.findIndex((item) => item.id === stage.id);
   const livePulse = Math.min(
     99,
-    (hottestRoom?.heatScore ?? 0) + gateway.activities.length * 3 + gateway.totalActiveSessions * 2,
+    (hottestRoom?.heatScore ?? 0) +
+      gateway.activities.length * 3 +
+      gateway.totalActiveSessions * 2,
   );
+  const isScoreStage =
+    stage.id.includes("judging") || stage.id.includes("award");
+  const stageDeskLabel = isScoreStage ? "Judge Board" : "Submission Desk";
+  const stageDeskValue = isScoreStage
+    ? audience.score.leaderLabel ?? "待亮分"
+    : audience.submission.progressLabel;
+  const spotlightTitle =
+    focusContestant?.agentId ??
+    primaryTeamSpotlight?.teamLabel ??
+    primaryFallback?.title ??
+    emptyState.title;
+  const spotlightEyebrow = focusContestant
+    ? `${showState.label} · ${showState.action}`
+    : primaryTeamSpotlight?.headline ??
+      primaryRoomNarrative?.headline ??
+      primaryFallback?.title ??
+      emptyState.eyebrow;
+  const spotlightBody = focusContestant
+    ? [showState.note, primaryTeamSpotlight?.detail]
+        .filter((value): value is string => Boolean(value))
+        .join(" ")
+    : primaryTeamSpotlight?.detail ??
+      primaryRoomNarrative?.detail ??
+      primaryFallback?.body ??
+      emptyState.body;
   const spotlightLine =
     focusContestant?.recentActivity?.content ??
     gateway.activities[0]?.content ??
+    primaryTeamSpotlight?.headline ??
+    primaryRoomNarrative?.headline ??
+    primaryFallback?.body ??
     emptyState.body;
-  const standbyBeats = [
-    emptyState.title,
-    runtimeGuide.successSignal,
-    stage.humanActions[0] ?? "全场都在等第一句能被截进海报和预告片的话。",
-  ];
+  const fallbackCards =
+    audience.softFallbacks.length > 0
+      ? audience.softFallbacks
+      : [
+          {
+            title: emptyState.title,
+            body: emptyState.body,
+          },
+          {
+            title: runtimeGuide.successSignal,
+            body:
+              stage.humanActions[0] ??
+              "全场都在等第一句能被截进海报和预告片的话。",
+          },
+        ];
+  const platformBeatTimestamp =
+    audience.platformCue.timestampLabel ??
+    gateway.activeTimer?.remainingLabel ??
+    "Live";
+  const showEvents = [
+    primaryTeamSpotlight
+      ? {
+          id: `team-spotlight-${primaryTeamSpotlight.id}`,
+          eyebrow: "Team Spotlight",
+          headline: primaryTeamSpotlight.headline,
+          body: primaryTeamSpotlight.detail,
+          roomLabel: primaryTeamSpotlight.roomLabel ?? "show-floor",
+          timestampLabel: platformBeatTimestamp,
+          tone: primaryTeamSpotlight.tone,
+        }
+      : null,
+    primaryRoomNarrative
+      ? {
+          id: `room-story-${primaryRoomNarrative.roomId}`,
+          eyebrow: "Room Story",
+          headline: primaryRoomNarrative.headline,
+          body: primaryRoomNarrative.detail,
+          roomLabel: primaryRoomNarrative.roomLabel,
+          timestampLabel: platformBeatTimestamp,
+          tone: primaryRoomNarrative.tone,
+        }
+      : null,
+    {
+      id: `stage-desk-${stage.id}`,
+      eyebrow: stageDeskLabel,
+      headline: isScoreStage
+        ? audience.score.headline
+        : audience.submission.headline,
+      body: isScoreStage ? audience.score.detail : audience.submission.detail,
+      roomLabel: stageDeskValue,
+      timestampLabel: platformBeatTimestamp,
+      tone: isScoreStage ? audience.score.tone : audience.submission.tone,
+    },
+    {
+      id: `platform-cue-${stage.id}`,
+      eyebrow: "Platform Cue",
+      headline: audience.platformCue.headline,
+      body: audience.platformCue.detail,
+      roomLabel: audience.authorityStageId ?? stage.id,
+      timestampLabel: platformBeatTimestamp,
+      tone: audience.platformCue.tone,
+    },
+    ...buildShowEvents(gateway, stageContestants).filter(
+      (event) => event.eyebrow !== "Platform Cue",
+    ),
+  ]
+    .filter(
+      (
+        event,
+      ): event is {
+        id: string;
+        eyebrow: string;
+        headline: string;
+        body: string;
+        roomLabel: string;
+        timestampLabel: string;
+        tone: keyof typeof toneClasses;
+      } => event !== null,
+    )
+    .slice(0, 8);
 
   const liveLabel =
     gateway.connectionState === "connected" && gateway.totalActiveSessions > 0
       ? "LIVE"
       : gateway.connectionState === "connected"
         ? "STANDBY"
-        : gateway.connectionState === "authenticating" || gateway.connectionState === "connecting"
+        : gateway.connectionState === "authenticating" ||
+            gateway.connectionState === "connecting"
           ? "LINKING"
           : "OFF AIR";
 
@@ -90,24 +207,25 @@ export function ShowMode({
               Main Stage Camera
             </p>
             <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-              {focusContestant ? focusContestant.agentId : emptyState.title}
+              {spotlightTitle}
             </h2>
             <p className="mt-4 text-lg font-medium text-fuchsia-100 sm:text-xl">
-              {focusContestant ? `${showState.label} · ${showState.action}` : emptyState.eyebrow}
+              {spotlightEyebrow}
             </p>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-200">
-              {focusContestant ? showState.note : emptyState.body}
+              {spotlightBody}
             </p>
 
             <div className="mt-8 rounded-[1.6rem] border border-white/10 bg-black/20 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
               <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-400">
-                Tonight's Highlight
+                Tonight&apos;s Highlight
               </p>
               <blockquote className="mt-4 text-xl leading-9 text-white sm:text-2xl">
                 {spotlightLine}
               </blockquote>
               <p className="mt-4 text-sm leading-7 text-slate-300">
-                当前节目任务是 {stage.title}。观众不是来读配置的，而是来看谁正在出镜、谁正在拱节奏、谁突然把全场点亮。
+                当前节目任务是 {stage.title}。观众看到的不该是 control 卡片翻版，而是
+                谁正在出镜、哪支队伍正在成形、哪间房正在把本幕推向下一拍。
               </p>
             </div>
 
@@ -117,12 +235,17 @@ export function ShowMode({
                   Camera Landing
                 </p>
                 <p className="mt-3 text-xl font-semibold text-white">
-                  {focusContestant?.roomLabel ?? "Main Stage"}
+                  {primaryTeamSpotlight?.roomLabel ??
+                    primaryRoomNarrative?.roomLabel ??
+                    focusContestant?.roomLabel ??
+                    "Main Stage"}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  {focusContestant
-                    ? "这位 contestant 现在真的挂在这个房间里，镜头不是演的。"
-                    : "主舞台还在等第一位 contestant 正式冲进画面。"}
+                  {primaryRoomNarrative?.detail ??
+                    (focusContestant
+                      ? "镜头此刻跟着真实房间落点走，不靠前端脑补假机位。"
+                      : primaryFallback?.body ??
+                        "主舞台还在等第一位 contestant 正式冲进画面。")}
                 </p>
               </article>
               <article className="rounded-[1.2rem] border border-white/10 bg-white/6 p-4">
@@ -144,7 +267,9 @@ export function ShowMode({
                   {focusRooms.map((room) => room.label).join(" / ")}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  本幕最值得切镜头的机位一共 {focusRooms.length} 个。
+                  {primaryTeamSpotlight
+                    ? `${primaryTeamSpotlight.teamLabel} 正在把 ${primaryTeamSpotlight.roomLabel ?? "当前机位"} 推成这幕的重点房间。`
+                    : `本幕最值得切镜头的机位一共 ${focusRooms.length} 个。`}
                 </p>
               </article>
             </div>
@@ -155,12 +280,10 @@ export function ShowMode({
                   Authority Stage
                 </p>
                 <p className="mt-3 text-lg font-semibold text-white">
-                  {gateway.activityRun?.currentStageId ?? "local-preview"}
+                  {audience.authorityStageId ?? "local-preview"}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  {gateway.activityRun
-                    ? "这次镜头切到哪一幕，优先由平台权威状态决定。"
-                    : "还没接到权威 stage 时，节目先使用本地预演幕。"}
+                  {audience.stageHeadline}
                 </p>
               </article>
               <article className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
@@ -173,20 +296,20 @@ export function ShowMode({
                 <p className="mt-2 text-sm leading-6 text-slate-300">
                   {gateway.activeTimer
                     ? `${gateway.activeTimer.stateLabel} · ${gateway.activeTimer.stageId ?? "current-stage"}`
-                    : "当前还没有平台计时信息。"}
+                    : "倒计时还没切进前台时，节目会先按这一幕的现场节奏往前推。"}
                 </p>
               </article>
               <article className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
                 <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-400">
-                  Submission Lock
+                  {stageDeskLabel}
                 </p>
                 <p className="mt-3 text-lg font-semibold text-white">
-                  {gateway.lockedSubmissionCount}/{gateway.totalSubmissionCount}
+                  {stageDeskValue}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  {gateway.totalSubmissionCount > 0
-                    ? "观众侧也能直接看到结构化提交是否锁定。"
-                    : "这一幕还没有 submission 进度。"}
+                  {isScoreStage
+                    ? audience.score.detail
+                    : audience.submission.detail}
                 </p>
               </article>
             </div>
@@ -200,13 +323,18 @@ export function ShowMode({
               <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
                 <div className="rounded-[1rem] border border-white/8 bg-white/6 px-3 py-3">
                   <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-400">
-                    Crowd Heat
+                    Room Spotlight
                   </p>
-                  <p className="mt-2 text-3xl font-semibold text-white">
-                    {hottestRoom?.heatLabel ?? "待点亮"}
+                  <p className="mt-2 text-2xl font-semibold text-white">
+                    {primaryRoomNarrative?.headline ??
+                      hottestRoom?.heatLabel ??
+                      "待点亮"}
                   </p>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
-                    {hottestRoom?.story ?? emptyState.body}
+                    {primaryRoomNarrative?.detail ??
+                      hottestRoom?.story ??
+                      primaryFallback?.body ??
+                      emptyState.body}
                   </p>
                 </div>
                 <div className="rounded-[1rem] border border-white/8 bg-white/6 px-3 py-3">
@@ -214,15 +342,16 @@ export function ShowMode({
                     Platform Cue
                   </p>
                   <p className="mt-2 text-xl font-semibold text-white">
-                    {latestPlatformCue?.title ?? "平台还没推来新的编排事件"}
+                    {audience.platformCue.headline}
                   </p>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
-                    {latestPlatformCue
-                      ? latestPlatformCue.detail
-                      : sideStoryContestant
-                        ? `${sideStoryContestant.roomLabel} 里还有另一条剧情线在偷偷抬头，随时可能被切进主舞台。`
-                        : "一旦平台开始推送 stage / timer / submission 事件，这里会先把它们顶上来。"}
+                    {audience.platformCue.detail}
                   </p>
+                  {audience.platformCue.timestampLabel ? (
+                    <p className="mt-3 font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-400">
+                      {audience.platformCue.timestampLabel}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </article>
@@ -231,8 +360,12 @@ export function ShowMode({
               <p className="font-mono text-[0.68rem] uppercase tracking-[0.22em] text-slate-400">
                 Act Script
               </p>
-              <h3 className="mt-3 text-2xl font-semibold text-white">{stage.title}</h3>
-              <p className="mt-3 text-sm leading-7 text-slate-300">{stage.summary}</p>
+              <h3 className="mt-3 text-2xl font-semibold text-white">
+                {stage.title}
+              </h3>
+              <p className="mt-3 text-sm leading-7 text-slate-300">
+                {stage.summary}
+              </p>
               <div className="mt-4 space-y-3">
                 {stage.contestantActions.slice(0, 3).map((action) => (
                   <div
@@ -242,6 +375,31 @@ export function ShowMode({
                     {action}
                   </div>
                 ))}
+              </div>
+              <div
+                className={`mt-4 rounded-[1rem] border px-3 py-3 ${toneClasses[audience.backstage.tone]}`}
+              >
+                <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-current/80">
+                  Backstage Context
+                </p>
+                <p className="mt-2 text-sm font-medium text-white">
+                  {audience.backstage.headline}
+                </p>
+                <p className="mt-2 text-sm leading-7 text-slate-100">
+                  {audience.backstage.detail}
+                </p>
+                {audience.backstage.docBadges.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {audience.backstage.docBadges.map((badge) => (
+                      <span
+                        key={badge}
+                        className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-100"
+                      >
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </article>
           </aside>
@@ -297,6 +455,42 @@ export function ShowMode({
         </div>
       </section>
 
+      {audience.softFallbacks.length > 0 ? (
+        <section className="rounded-[1.8rem] border border-white/10 bg-black/20 p-5 backdrop-blur sm:p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="font-mono text-[0.72rem] uppercase tracking-[0.24em] text-slate-400">
+                Standby Notes
+              </p>
+              <h3 className="mt-2 text-2xl font-semibold text-white">
+                现场偶尔会慢半拍，但不会突然变成后台报错页
+              </h3>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/6 px-3 py-1 font-mono text-[0.72rem] uppercase tracking-[0.2em] text-slate-200">
+              {audience.softFallbacks.length} soft fallback
+            </span>
+          </div>
+          <div className="mt-5 grid gap-3 lg:grid-cols-3">
+            {audience.softFallbacks.map((fallback) => (
+              <article
+                key={fallback.title}
+                className="rounded-[1.2rem] border border-dashed border-white/15 bg-white/6 p-4"
+              >
+                <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-slate-400">
+                  gentle fallback
+                </p>
+                <h4 className="mt-3 text-lg font-semibold text-white">
+                  {fallback.title}
+                </h4>
+                <p className="mt-2 text-sm leading-7 text-slate-300">
+                  {fallback.body}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(24rem,0.9fr)]">
         <article className="rounded-[1.8rem] border border-white/10 bg-white/6 p-5 backdrop-blur sm:p-6">
           <div className="flex items-center justify-between gap-3">
@@ -325,22 +519,28 @@ export function ShowMode({
                     <span>•</span>
                     <span>{event.timestampLabel}</span>
                   </div>
-                  <h4 className="mt-3 text-lg font-semibold text-white">{event.headline}</h4>
-                  <p className="mt-2 text-sm leading-7 text-slate-100">{event.body}</p>
+                  <h4 className="mt-3 text-lg font-semibold text-white">
+                    {event.headline}
+                  </h4>
+                  <p className="mt-2 text-sm leading-7 text-slate-100">
+                    {event.body}
+                  </p>
                 </article>
               ))
             ) : (
-              standbyBeats.map((beat) => (
+              fallbackCards.map((beat) => (
                 <article
-                  key={beat}
+                  key={beat.title}
                   className="rounded-[1.2rem] border border-dashed border-white/15 bg-black/20 p-4"
                 >
                   <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-slate-400">
                     warm-up cue
                   </p>
-                  <p className="mt-3 text-base font-medium leading-7 text-white">{beat}</p>
+                  <p className="mt-3 text-base font-medium leading-7 text-white">
+                    {beat.title}
+                  </p>
                   <p className="mt-2 text-sm leading-7 text-slate-300">
-                    主舞台一旦恢复实时心跳，这里就会从预热提示切成真正的现场节奏。
+                    {beat.body}
                   </p>
                 </article>
               ))
@@ -356,54 +556,61 @@ export function ShowMode({
                   Room Radar
                 </p>
                 <h3 className="mt-2 text-2xl font-semibold text-white">
-                  哪个房间正在炸，观众和导播都应该马上感觉到
+                  哪个房间正在升温，观众和导播都应该马上感觉到
                 </h3>
               </div>
               <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 font-mono text-[0.72rem] uppercase tracking-[0.2em] text-slate-200">
-                {roomHeat.length} rooms
+                {audience.roomNarratives.length} room stories
               </span>
             </div>
 
             <div className="mt-5 space-y-3">
-              {roomHeat.map((room) => (
-                <article
-                  key={room.roomId}
-                  className={`rounded-[1.2rem] border p-4 ${toneClasses[room.heatTone]}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-current/80">
-                        {room.label}
-                      </p>
-                      <h4 className="mt-2 text-lg font-semibold text-white">
-                        {room.heatLabel}
-                      </h4>
+              {audience.roomNarratives.map((room) => {
+                const heat = roomHeatById.get(room.roomId);
+                return (
+                  <article
+                    key={room.roomId}
+                    className={`rounded-[1.2rem] border p-4 ${toneClasses[room.tone]}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-[0.65rem] uppercase tracking-[0.18em] text-current/80">
+                          {room.roomLabel}
+                        </p>
+                        <h4 className="mt-2 text-lg font-semibold text-white">
+                          {room.headline}
+                        </h4>
+                      </div>
+                      <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] text-slate-100">
+                        {heat?.count ?? 0} online
+                      </span>
                     </div>
-                    <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.65rem] uppercase tracking-[0.16em] text-slate-100">
-                      {room.count} online
-                    </span>
-                  </div>
-                  <p className="mt-3 text-sm leading-7 text-slate-100">{room.story}</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {room.isFocusRoom ? (
+                    <p className="mt-3 text-sm leading-7 text-slate-100">
+                      {room.detail}
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {room.isFocusRoom ? (
+                        <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-100">
+                          Main Target
+                        </span>
+                      ) : null}
                       <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-100">
-                        Main Target
+                        {heat?.activityCount ?? 0} fresh lines
                       </span>
-                    ) : null}
-                    <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-100">
-                      {room.activityCount} fresh lines
-                    </span>
-                    {room.headliners.map((agentId, index) => (
-                      <span
-                        key={`${room.roomId}-${agentId}-${index}`}
-                        className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-100"
-                      >
-                        {agentId}
-                      </span>
-                    ))}
-                  </div>
-                </article>
-              ))}
+                      {(heat?.headliners ?? []).filter((agentId) =>
+                        worldEntityIds.has(agentId),
+                      ).map((agentId, index) => (
+                        <span
+                          key={`${room.roomId}-${agentId}-${index}`}
+                          className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-100"
+                        >
+                          {agentId}
+                        </span>
+                      ))}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </article>
 
@@ -414,40 +621,58 @@ export function ShowMode({
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <article className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
                 <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-400">
-                  Main Face
+                  Team Spotlight
                 </p>
                 <p className="mt-3 text-xl font-semibold text-white">
-                  {focusContestant?.agentId ?? "主舞台待点亮"}
+                  {primaryTeamSpotlight?.teamLabel ?? "队伍待点亮"}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  {focusContestant ? showState.label : emptyState.eyebrow}
+                  {primaryTeamSpotlight?.headline ??
+                    primaryFallback?.title ??
+                    "正式队伍镜头一到位，这里会先亮起来。"}
                 </p>
               </article>
               <article className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
                 <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-400">
-                  Hottest Room
+                  Room Spotlight
                 </p>
                 <p className="mt-3 text-xl font-semibold text-white">
-                  {hottestRoom?.label ?? "Main Stage"}
+                  {primaryRoomNarrative?.roomLabel ??
+                    hottestRoom?.label ??
+                    "Main Stage"}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  {hottestRoom?.heatLabel ?? "待开播"}
+                  {primaryRoomNarrative?.headline ??
+                    hottestRoom?.heatLabel ??
+                    "房间热度还在酝酿。"}
                 </p>
               </article>
               <article className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
                 <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-400">
-                  System Echo
+                  {stageDeskLabel}
                 </p>
                 <p className="mt-3 text-lg font-semibold text-white">
-                  {stage.systemSignals[0]}
+                  {isScoreStage
+                    ? audience.score.headline
+                    : audience.submission.headline}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  {isScoreStage
+                    ? audience.score.detail
+                    : audience.submission.detail}
                 </p>
               </article>
               <article className="rounded-[1.2rem] border border-white/10 bg-black/20 p-4">
                 <p className="font-mono text-[0.64rem] uppercase tracking-[0.18em] text-slate-400">
-                  Crowd Noise
+                  Backstage Context
                 </p>
                 <p className="mt-3 text-lg font-semibold text-white">
-                  {stage.humanActions[0]}
+                  {audience.backstage.docBadges.length > 0
+                    ? audience.backstage.docBadges.join(" / ")
+                    : "后台提示待同步"}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  {audience.backstage.headline}
                 </p>
               </article>
             </div>

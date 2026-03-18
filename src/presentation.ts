@@ -467,3 +467,383 @@ export const buildShowEmptyState = (
     body: `当前幕是 ${stage.title}。房间已经开好，只差第一只 contestant 说出那句会被观众记住的话。`,
   };
 };
+
+export interface ShowTeamRoomSpotlight {
+  id: string;
+  teamId: string;
+  teamLabel: string;
+  roomId: string | null;
+  roomLabel: string | null;
+  memberIds: string[];
+  headline: string;
+  detail: string;
+  tone: UiTone;
+}
+
+export interface ShowRoomNarrative {
+  roomId: string;
+  roomLabel: string;
+  headline: string;
+  detail: string;
+  tone: UiTone;
+  isFocusRoom: boolean;
+}
+
+export interface ShowSubmissionNarrative {
+  headline: string;
+  detail: string;
+  progressLabel: string;
+  tone: UiTone;
+}
+
+export interface ShowScoreNarrative {
+  headline: string;
+  detail: string;
+  tone: UiTone;
+  leaderLabel: string | null;
+}
+
+export interface ShowPlatformCueNarrative {
+  headline: string;
+  detail: string;
+  timestampLabel: string | null;
+  tone: UiTone;
+}
+
+export interface ShowBackstageNarrative {
+  headline: string;
+  detail: string;
+  docBadges: string[];
+  tone: UiTone;
+}
+
+export interface ShowSoftFallbackNarrative {
+  title: string;
+  body: string;
+}
+
+export interface ShowAudienceComposition {
+  authorityStageId: string | null;
+  stageHeadline: string;
+  teamRoomSpotlights: ShowTeamRoomSpotlight[];
+  roomNarratives: ShowRoomNarrative[];
+  submission: ShowSubmissionNarrative;
+  score: ShowScoreNarrative;
+  platformCue: ShowPlatformCueNarrative;
+  backstage: ShowBackstageNarrative;
+  softFallbacks: ShowSoftFallbackNarrative[];
+}
+
+const stageLooksLike = (
+  stageId: string,
+  keyword: "submission" | "judging" | "award",
+): boolean => stageId.includes(keyword);
+
+const pickSpotlightTone = (
+  placementStatus: "aligned" | "mixed" | "unassigned",
+): UiTone =>
+  placementStatus === "aligned"
+    ? "warm"
+    : placementStatus === "mixed"
+      ? "active"
+      : "idle";
+
+const buildTeamRoomSpotlights = (
+  gateway: GatewayOverview,
+  runtimeGuide: StageRuntimeGuide,
+): ShowTeamRoomSpotlight[] => {
+  if (!gateway.world.available || gateway.world.teams.length === 0) {
+    return [];
+  }
+
+  const focusRoomIds = new Set(runtimeGuide.preferredRoomIds);
+  const scoredTeams = gateway.world.teams
+    .map((team) => {
+      const memberSignalScore = team.members.reduce((score, member) => {
+        if (member.liveState === "raised-hand") {
+          return score + 3;
+        }
+        if (member.liveState === "speaking") {
+          return score + 2;
+        }
+        if (member.liveState === "listening") {
+          return score + 1;
+        }
+        return score;
+      }, 0);
+      const focusScore = team.roomId && focusRoomIds.has(team.roomId) ? 4 : 0;
+      const placementScore =
+        team.placementStatus === "aligned"
+          ? 3
+          : team.placementStatus === "mixed"
+            ? 2
+            : 0;
+
+      return {
+        team,
+        score: memberSignalScore + focusScore + placementScore + team.memberCount,
+      };
+    })
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3);
+
+  return scoredTeams.map(({ team }) => {
+    const memberIds = team.members.map((member) => member.entityId);
+    const roomCopy = team.roomLabel ?? team.roomId ?? "未标注房间";
+    const memberRoomCopy =
+      [...new Set(
+        team.members
+          .map((member) => member.roomLabel ?? member.roomId ?? "未标注房间")
+          .filter((label) => label.trim().length > 0),
+      )].join(" / ") || "别处";
+    const headline =
+      team.placementStatus === "aligned"
+        ? `${team.label} 已在 ${roomCopy} 落位`
+        : team.placementStatus === "mixed"
+          ? `${team.label} 在 ${roomCopy} 与现场走位出现分叉`
+          : `${team.label} 仍在等待稳定机位`;
+
+    const detail =
+      team.placementStatus === "aligned"
+        ? `${memberIds.length} 位成员和队伍分房卡此刻是对齐的，观众看到的是这支队伍完整落位后的现场。`
+        : team.placementStatus === "mixed"
+          ? `官方分房卡把 ${team.label} 写在 ${roomCopy}，但镜头里的成员此刻分散在 ${memberRoomCopy}。节目会忠实保留这份错位感，而不是在前台把它偷偷抹平。`
+          : `${team.label} 还没拿到稳定分房卡，镜头先按目前能确认的成员落点继续推进，等下一次状态更新把人和房间重新对上。`;
+
+    return {
+      id: `${team.teamId}:${team.roomId ?? "unassigned"}`,
+      teamId: team.teamId,
+      teamLabel: team.label,
+      roomId: team.roomId,
+      roomLabel: team.roomLabel,
+      memberIds,
+      headline,
+      detail,
+      tone: pickSpotlightTone(team.placementStatus),
+    };
+  });
+};
+
+const buildRoomNarratives = (
+  gateway: GatewayOverview,
+  runtimeGuide: StageRuntimeGuide,
+): ShowRoomNarrative[] => {
+  const heat = buildRoomHeatSummaries(gateway, runtimeGuide);
+  const roomById = new Map(gateway.world.rooms.map((room) => [room.roomId, room]));
+
+  return heat.slice(0, 4).map((room) => {
+    const worldRoom = roomById.get(room.roomId);
+    const worldDetail = worldRoom
+      ? `${worldRoom.teamCount} 支队伍映射到这里，${worldRoom.occupantCount} 位实体当前在场。`
+      : `${room.count} 个 live session 正在这个房间里冒头。`;
+    const headline = room.isFocusRoom
+      ? `${room.label} 是本幕主镜头房间`
+      : `${room.label} 正在抬高侧线热度`;
+
+    return {
+      roomId: room.roomId,
+      roomLabel: room.label,
+      headline,
+      detail: `${worldDetail} ${room.story}`,
+      tone: room.heatTone,
+      isFocusRoom: room.isFocusRoom,
+    };
+  });
+};
+
+const buildSubmissionNarrative = (
+  gateway: GatewayOverview,
+  stage: StageDefinition,
+): ShowSubmissionNarrative => {
+  const isSubmissionStage = stageLooksLike(stage.id, "submission");
+  const progressLabel = `${gateway.lockedSubmissionCount}/${gateway.totalSubmissionCount}`;
+  const current = gateway.currentSubmission;
+
+  if (!current && gateway.totalSubmissionCount === 0) {
+    return {
+      headline: isSubmissionStage ? "作品提交通道待开启" : "本幕提交不是主线镜头",
+      detail: isSubmissionStage
+        ? "观众先看到的是队伍打磨过程，提交通道一旦开启会在这里转成明确进度。"
+        : "当前幕更关注现场叙事，提交进度会在需要时自然浮出水面。",
+      progressLabel,
+      tone: isSubmissionStage ? "active" : "idle",
+    };
+  }
+
+  if (!current) {
+    return {
+      headline: "提交进度正在同步",
+      detail: `已经看到 ${gateway.totalSubmissionCount} 份 submission 轨迹，镜头会优先等待最新版本落地。`,
+      progressLabel,
+      tone: "warm",
+    };
+  }
+
+  return {
+    headline: current.locked
+      ? `${current.id} 已锁稿`
+      : `${current.id} 还在更新窗口`,
+    detail: current.locked
+      ? `当前版本 v${current.version ?? 1} 已进入锁定态，接下来更适合切到点评和评分镜头。`
+      : `当前版本 v${current.version ?? 1}，最近更新于 ${current.updatedLabel ?? "刚刚"}。观众侧会继续跟随它的成稿过程。`,
+    progressLabel,
+    tone: current.locked ? "critical" : "active",
+  };
+};
+
+const buildScoreNarrative = (
+  gateway: GatewayOverview,
+  stage: StageDefinition,
+): ShowScoreNarrative => {
+  const isJudgingStage = stageLooksLike(stage.id, "judging");
+  const leader = gateway.scoreSummary[0] ?? null;
+
+  if (!leader) {
+    return {
+      headline: isJudgingStage ? "评审席正在写分" : "评分榜暂未点亮",
+      detail: isJudgingStage
+        ? "分数会在评委提交后立刻汇入榜单，观众不用切后台就能看到走势。"
+        : "当前幕重点不在评分，榜单会在评审阶段自动顶到前台。",
+      tone: isJudgingStage ? "active" : "idle",
+      leaderLabel: null,
+    };
+  }
+
+  const leaderLabel = leader.teamId ?? leader.submissionId ?? leader.targetId;
+  return {
+    headline: `${leaderLabel} 暂时领跑`,
+    detail: `平均分 ${leader.averageLabel}，共 ${leader.judgeCount} 位评委已提交。官方评分板一刷新，观众这边就会立刻跟上。`,
+    tone: "critical",
+    leaderLabel,
+  };
+};
+
+const buildPlatformCueNarrative = (
+  gateway: GatewayOverview,
+  stage: StageDefinition,
+): ShowPlatformCueNarrative => {
+  const latestCue = gateway.domainEvents[0] ?? null;
+  if (!latestCue) {
+    return {
+      headline: "平台正在准备下一条节目提示",
+      detail: `当前幕是 ${stage.title}。只要 stage / timer / submission / score 有新动静，这里会先出 cue。`,
+      timestampLabel: null,
+      tone: "idle",
+    };
+  }
+
+  return {
+    headline: latestCue.title,
+    detail: latestCue.detail,
+    timestampLabel: latestCue.timestampLabel,
+    tone: latestCue.tone,
+  };
+};
+
+const buildBackstageNarrative = (
+  gateway: GatewayOverview,
+  stage: StageDefinition,
+): ShowBackstageNarrative => {
+  if (!gateway.skills.available) {
+    return {
+      headline: "幕后说明正在同步",
+      detail: "节目仍可继续观看；文档绑定一旦到位，会在这里提示本幕引用的上下文。",
+      docBadges: [],
+      tone: "idle",
+    };
+  }
+
+  const activeBindings = gateway.skills.currentStageBindings.length > 0
+    ? gateway.skills.currentStageBindings
+    : gateway.skills.globalBindings;
+  const docBadges = activeBindings
+    .slice(0, 3)
+    .map((binding) => `${binding.docId}@${binding.version}`);
+
+  if (activeBindings.length === 0) {
+    return {
+      headline: `${stage.title} 暂无额外文档线索`,
+      detail: "本幕先按现场行为推进，后台上下文会在有新的 skill binding 时补齐。",
+      docBadges: [],
+      tone: "idle",
+    };
+  }
+
+  const sourceCopy = gateway.skills.currentStageBindings.length > 0
+    ? "本幕 backstage context"
+    : "全局 backstage context";
+
+  return {
+    headline: `${sourceCopy} 已就位`,
+    detail: gateway.skills.currentStageBindings.length > 0
+      ? "这一幕已经发了单独的后台说明卡，观众现在看到的是这些说明最终落在舞台上的结果。"
+      : `${stage.title} 这一幕暂时沿用全局说明，后台还没有额外发 stage-specific 台本卡。`,
+    docBadges,
+    tone: gateway.skills.currentStageBindings.length > 0 ? "warm" : "active",
+  };
+};
+
+const buildSoftFallbacks = (
+  gateway: GatewayOverview,
+  stage: StageDefinition,
+): ShowSoftFallbackNarrative[] => {
+  const fallbacks: ShowSoftFallbackNarrative[] = [];
+
+  if (!gateway.world.available) {
+    fallbacks.push({
+      title: "队伍镜头仍在拼接",
+      body: gateway.world.teams.length > 0
+        ? "官方分房卡还在补全，前台先跟着已经在场的队伍和房间动静继续往下讲。"
+        : `当前幕是 ${stage.title}。正式队伍与房间映射一旦到位，镜头会自然切成更完整的节目叙事。`,
+    });
+  }
+
+  if (!gateway.skills.available) {
+    fallbacks.push({
+      title: "幕后上下文暂未到场",
+      body: "节目仍在推进，文档绑定恢复后会补上 backstage 提示。",
+    });
+  }
+
+  if (gateway.connectionState !== "connected" && gateway.totalActiveSessions === 0) {
+    fallbacks.push({
+      title: "前台正在等现场心跳",
+      body: "直播画面暂时偏静态，但不会切成后台报错口吻；连接恢复后节奏会继续滚动。",
+    });
+  }
+
+  return fallbacks;
+};
+
+export const buildShowAudienceComposition = ({
+  gateway,
+  stage,
+  runtimeGuide,
+}: {
+  gateway: GatewayOverview;
+  stage: StageDefinition;
+  runtimeGuide: StageRuntimeGuide;
+}): ShowAudienceComposition => {
+  const authorityStageId = gateway.authorityStageId ?? gateway.activityRun?.currentStageId ?? null;
+  const teamRoomSpotlights = buildTeamRoomSpotlights(gateway, runtimeGuide);
+  const roomNarratives = buildRoomNarratives(gateway, runtimeGuide);
+  const submission = buildSubmissionNarrative(gateway, stage);
+  const score = buildScoreNarrative(gateway, stage);
+  const platformCue = buildPlatformCueNarrative(gateway, stage);
+  const backstage = buildBackstageNarrative(gateway, stage);
+  const softFallbacks = buildSoftFallbacks(gateway, stage);
+
+  return {
+    authorityStageId,
+    stageHeadline: authorityStageId
+      ? `节目当前由 ${authorityStageId} 驱动镜头编排`
+      : `节目当前使用 ${stage.id} 的本地预演镜头`,
+    teamRoomSpotlights,
+    roomNarratives,
+    submission,
+    score,
+    platformCue,
+    backstage,
+    softFallbacks,
+  };
+};
