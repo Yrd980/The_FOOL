@@ -22,9 +22,11 @@ import {
   buildOrchestratorReplayUrl,
   buildOrchestratorScoresUrl,
   buildOrchestratorSnapshotUrl,
+  buildSubmitEnvelope,
   buildSubmitScoreEnvelope,
   buildStartTimerEnvelope,
   buildTransitionStageEnvelope,
+  buildUpdateSubmissionEnvelope,
   normalizeControlConfigValue,
   normalizeControlDispatchMethod,
   normalizeControlGatewayUrl,
@@ -36,6 +38,7 @@ import {
   type GatewayCapabilitySnapshot,
   type OrchestratorEventQuery,
   type SubmitScorePayload,
+  type TeamProjectSubmissionData,
 } from "../src/openclaw/control";
 
 type CommandName =
@@ -45,6 +48,8 @@ type CommandName =
   | "stage"
   | "start-timer"
   | "open-submission"
+  | "submit"
+  | "update-submission"
   | "lock-submission"
   | "submit-score"
   | "grant-award"
@@ -62,6 +67,8 @@ const USAGE = `Usage:
   bun run openclaw:control -- stage <activity-run-id> <target-stage-id>
   bun run openclaw:control -- start-timer <activity-run-id> <stage-id> <duration-sec>
   bun run openclaw:control -- open-submission <activity-run-id> <submission-id>
+  bun run openclaw:control -- submit <activity-run-id> <submission-id> <payload-json>
+  bun run openclaw:control -- update-submission <activity-run-id> <submission-id> <payload-json>
   bun run openclaw:control -- lock-submission <activity-run-id> <submission-id>
   bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> --favorite <text> --most-absurd <text>
   bun run openclaw:control -- grant-award <activity-run-id> <award-id> <entity-id> [label] [reason]
@@ -1029,6 +1036,59 @@ const parseEventQueryArgs = (
   };
 };
 
+const parseSubmissionCommandArgs = (
+  commandName: "submit" | "update-submission",
+  rawArgs: string[],
+): {
+  activityRunId: string;
+  submissionId: string;
+  data: TeamProjectSubmissionData;
+} => {
+  const { positional } = parseLongOptions(rawArgs);
+  const [activityRunId, submissionId, payloadJson] = positional;
+  if (!activityRunId || !submissionId || !payloadJson) {
+    fail(USAGE);
+  }
+
+  const parsed = parsePayloadJson(payloadJson);
+  const posterOrDeck =
+    typeof parsed.posterOrDeck === "string" ? parsed.posterOrDeck.trim() : "";
+  const elevatorPitch =
+    typeof parsed.elevatorPitch === "string" ? parsed.elevatorPitch.trim() : "";
+  const highlights = Array.isArray(parsed.highlights)
+    ? parsed.highlights.map((entry) =>
+        typeof entry === "string" ? entry.trim() : "",
+      )
+    : [];
+  const risk = typeof parsed.risk === "string" ? parsed.risk.trim() : "";
+
+  if (!posterOrDeck || !elevatorPitch || !risk) {
+    fail(
+      `${commandName} payload must include non-empty posterOrDeck, elevatorPitch, and risk fields.`,
+    );
+  }
+
+  if (
+    highlights.length !== 3 ||
+    highlights.some((entry) => entry.length === 0)
+  ) {
+    fail(
+      `${commandName} payload must include highlights as an array of exactly 3 non-empty strings.`,
+    );
+  }
+
+  return {
+    activityRunId,
+    submissionId,
+    data: {
+      posterOrDeck,
+      elevatorPitch,
+      highlights: highlights as [string, string, string],
+      risk,
+    },
+  };
+};
+
 const parseSubmitScoreArgs = (
   rawArgs: string[],
 ): {
@@ -1256,6 +1316,42 @@ if (normalizedCommand === "open-submission") {
       idempotencyKey: `open-${activityRunId}-${submissionId}-${Date.now()}`,
     }),
     summary: `open_submission ${activityRunId} / ${submissionId}`,
+  });
+}
+
+if (normalizedCommand === "submit") {
+  const { activityRunId, submissionId, data } = parseSubmissionCommandArgs(
+    "submit",
+    args,
+  );
+  await dispatchOrPreview({
+    envelope: buildSubmitEnvelope({
+      actorId: resolveActorId(),
+      actorRole: resolveActorRole(),
+      activityRunId,
+      submissionId,
+      data,
+      idempotencyKey: `submit-${activityRunId}-${submissionId}-${Date.now()}`,
+    }),
+    summary: `submit ${activityRunId} / ${submissionId}`,
+  });
+}
+
+if (normalizedCommand === "update-submission") {
+  const { activityRunId, submissionId, data } = parseSubmissionCommandArgs(
+    "update-submission",
+    args,
+  );
+  await dispatchOrPreview({
+    envelope: buildUpdateSubmissionEnvelope({
+      actorId: resolveActorId(),
+      actorRole: resolveActorRole(),
+      activityRunId,
+      submissionId,
+      data,
+      idempotencyKey: `update-submission-${activityRunId}-${submissionId}-${Date.now()}`,
+    }),
+    summary: `update_submission ${activityRunId} / ${submissionId}`,
   });
 }
 

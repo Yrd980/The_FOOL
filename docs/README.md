@@ -88,6 +88,8 @@ Phaser Web、Godot、Unity 都只是 renderer adapter。
 - `transition_stage`
 - `start_timer`
 - `open_submission`
+- `submit`
+- `update_submission`
 - `lock_submission`
 - `submit_score`
 - `grant_award`
@@ -112,11 +114,14 @@ Phaser Web、Godot、Unity 都只是 renderer adapter。
   - `transition_stage`
   - `start_timer`
   - `open_submission`
+  - `submit`
+  - `update_submission`
   - `lock_submission`
   - `submit_score`
   - `grant_award`
 - query
   - current snapshot
+  - current submission payload / version history
   - current score projection / score summary
   - recent events
   - recent score events
@@ -129,6 +134,24 @@ Phaser Web、Godot、Unity 都只是 renderer adapter。
   - `replayedFromIdempotency`
   - `eventIds`
   - stable `code + message`
+- submission contract
+  - authoritative write loop 当前按 `open_submission -> submit -> update_submission -> lock_submission` 收口
+  - `submit` / `update_submission` payload 当前稳定为 `payload.submissionId + payload.data`
+  - `submit` / `update_submission` 当前写入的是完整 payload snapshot，不是 partial patch
+  - `team-project-v1.elevatorPitch` 当前要求为非空字符串，且不超过 100 个字符
+  - `snapshot.submissions[*]` 当前稳定暴露 `data` / `version` / `versions`
+  - `versions[*]` 当前最少包含 `version` / `updatedAt` / `actorId` / `actorRole` / `data`
+  - 当前没有单独的 submission versions query；先通过 `snapshot` / `events` / `replay` / `audit` 追踪
+
+注意：
+
+- 这里描述的是当前 local backend 已经提供的 authoritative contract
+- 它不等于 browser consumer 已经把所有 projection / query 都显示出来
+- 截至当前 worktree，consumer 仍未完整暴露：
+  - `scores` / `scoreSummary`
+  - event provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）
+  - `world/team/skill` typed views
+  - `snapshot` / `scores` / `events` / `replay` / `audit` 的单独 query client
 
 这里的含义是：
 

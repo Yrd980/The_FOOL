@@ -254,8 +254,27 @@ The Fool v1 需要启用以下公共属性：
 
 - submission 不再通过初始 projection 预置 unlocked entries
 - `host` / `admin` 通过 `open_submission` 显式打开窗口
+- `submit` 写入首个 team-project 结构化 payload
+- `update_submission` 在已 opened 且未 locked 时追加完整 payload 新版本
+- `submit` / `update_submission` 都按完整 payload replacement 处理，不支持 partial patch
+- `submit` / `update_submission` 当前最小 payload 固定为：
+  - `posterOrDeck: string`
+  - `elevatorPitch: string <= 100 chars`
+  - `highlights: [string, string, string]`
+  - `risk: string`
+- `snapshot` 至少能稳定读到：
+  - submission 当前 `data`
+  - 当前 `version`
+  - `versions`
 - `lock_submission` 只能锁定已 `opened` 的 submission
 - 同一个 submission 若已 locked，再次 `lock_submission` 应被 reject
+- locked 后再次 `update_submission` 应被 reject
+- 最小 version record 至少包含：
+  - `version`
+  - `updatedAt`
+  - `actorId`
+  - `actorRole`
+  - `data`
 
 ### 8.6 Act VI 人类观赛点评
 
@@ -305,7 +324,7 @@ The Fool v1 需要启用以下公共属性：
 - 成功后产生 `judge.score_submitted`
 - 只允许 `judge` 发起，`admin` 可作为 override
 - 默认只允许在 `act-7-ai-judging` 阶段提交
-- score target 首版绑定到 locked team-project submission
+- score target 首版绑定到 locked team-project submission，且该 submission 必须有真实结构化 payload，不能只是 opened/locked 空壳
 - 同一个 judge 对同一个 submission，或解析到同一个 team 的重复评分，首版直接 reject
 - snapshot 至少能稳定读到：
   - 当前 `scores`
@@ -314,6 +333,8 @@ The Fool v1 需要启用以下公共属性：
   - `GET /api/orchestrator/scores`
   - 最近 N 条 score 事件
   - 从某个 sequence 之后读取 score 事件
+- 当前 worktree 的 backend contract 已经覆盖上述 score query，但 browser consumer 仍只把 `judge.score_submitted` 先接成 domain event feed
+- `scores` / `scoreSummary`、event provenance，以及 `world/team/skill` typed consumer state 仍属于后续 integration gap
 - score command 的 receipt / audit / replay 继续复用统一 contract：
   - `receipt.status`
   - `replayed`
@@ -516,6 +537,7 @@ The Fool v1 至少需要以下事件类型：
 - current stage
 - timer state
 - submission state / lock
+- submission payload / version history
 - score projection / score summary
 - award state 的最小投影结构
 
@@ -525,11 +547,14 @@ The Fool v1 至少需要以下事件类型：
   - `transition_stage`
   - `start_timer`
   - `open_submission`
+  - `submit`
+  - `update_submission`
   - `lock_submission`
   - `submit_score`
   - `grant_award`
 - query
   - snapshot
+  - current submission payload / version history
   - current scores
   - recent events
   - recent score events

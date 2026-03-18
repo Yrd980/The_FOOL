@@ -44,15 +44,18 @@ bun run preview
 bun run openclaw:orchestrator
 bun run openclaw:control -- probe
 bun run openclaw:control -- move contestant-01 main-stage
-bun run openclaw:control -- stage activity-run-01 act-2-preference
-bun run openclaw:control -- start-timer activity-run-01 act-2-preference 240
+bun run openclaw:control -- stage activity-run-01 act-5-submission
+bun run openclaw:control -- start-timer activity-run-01 act-5-submission 420
 bun run openclaw:control -- open-submission activity-run-01 submission-01
+bun run openclaw:control -- submit activity-run-01 submission-01 '{"posterOrDeck":"https://example.com/poster.pdf","elevatorPitch":"AI lobster co-pilot for absurd product teams","highlights":["Live room orchestration","Structured submission history","Replayable scoring"],"risk":"Audience onboarding still depends on live host guidance"}'
+bun run openclaw:control -- update-submission activity-run-01 submission-01 '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"Browser consumer still lags behind typed score views"}'
 bun run openclaw:control -- lock-submission activity-run-01 submission-01
+bun run openclaw:control -- stage activity-run-01 act-7-ai-judging
 bun run openclaw:control -- submit-score activity-run-01 submission-01 9 --reason "Strong systems thinking and crisp delivery" --favorite "Cohesive audience framing" --most-absurd "Treating crustacean drama as a product moat"
 bun run openclaw:control -- grant-award activity-run-01 champion team-1 Champion "Best overall team"
 bun run openclaw:control -- snapshot activity-run-01
-bun run openclaw:control -- scores activity-run-01 --after-sequence 6 --limit 10
-bun run openclaw:control -- events activity-run-01 --after-sequence 6 --limit 10
+bun run openclaw:control -- scores activity-run-01 --after-sequence 7 --limit 10
+bun run openclaw:control -- events activity-run-01 --after-sequence 7 --limit 10
 bun run openclaw:control -- replay activity-run-01 --from-sequence 7 --limit 10
 bun run openclaw:control -- audit activity-run-01 --limit 20
 ```
@@ -92,6 +95,8 @@ bun run openclaw:control -- audit activity-run-01 --limit 20
 - `transition_stage`
 - `start_timer`
 - `open_submission`
+- `submit`
+- `update_submission`
 - `lock_submission`
 - `submit_score`
 - `grant_award`
@@ -102,14 +107,18 @@ renderer 侧现状：
 - 如果 gateway 还没有提供权威 stage，界面才会退回本地 stage 预演
 - 前端解析层已经接好并兼容：
   - session / room chat
-  - activity snapshot
-  - stage / timer / submission / score / award 等领域事件
+  - activity snapshot / websocket delta
+  - stage / timer / submission / award 等领域事件
+  - `judge.score_submitted` 进入 domain event feed
 - 导演台会显示：
   - 当前权威 stage
   - 当前幕 timer
   - submission lock 进度
-  - current score projection / summary
   - 最近平台事件流
+- 当前 browser consumer 还没有完全接上的部分：
+  - `scores` / `scoreSummary` 还没成为稳定 UI state
+  - `/api/orchestrator/snapshot` / `scores` / `events` / `replay` / `audit` 还没有单独的 typed query client
+  - event provenance（`commandId` / `idempotencyKey` / `actorId` / `actorRole`）以及 `world/team/skill` 投影还没完整暴露到 `GatewayOverview`
 
 这意味着当前 worktree 的主线，已经从“静态十幕页面”推进到了“消费 orchestrator 快照和事件的双界面客户端”。
 
@@ -148,11 +157,14 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
 
 - `VITE_OPENCLAW_*` 用于前端 websocket 连接；可以指向 live gateway，也可以指向本地 orchestrator
 - `OPENCLAW_ORCHESTRATOR_URL` / `OPENCLAW_ORCHESTRATOR_TOKEN` 用于让 `openclaw:control` 直接调用 worktree 内的本地 authoritative backend
-  - 一旦配置了 `OPENCLAW_ORCHESTRATOR_URL`，`stage` / `start-timer` / `open-submission` / `lock-submission` / `submit-score` / `grant-award` 以及 `snapshot/scores/events/replay/audit` 都会优先直连本地 backend，而不是走 live gateway 猜 dispatch method
+  - 一旦配置了 `OPENCLAW_ORCHESTRATOR_URL`，`stage` / `start-timer` / `open-submission` / `submit` / `update-submission` / `lock-submission` / `submit-score` / `grant-award` 以及 `snapshot/scores/events/replay/audit` 都会优先直连本地 backend，而不是走 live gateway 猜 dispatch method
 - `openclaw:control` 的本机诊断命令在没有显式 env 时，也会回退读取 `~/.openclaw/openclaw.json -> gateway.auth.token`
   - 这只用于本机 operator 侧 probe / room control；浏览器前端本身仍需要显式 `VITE_OPENCLAW_TOKEN`
+- `openclaw:control` 当前在未显式配置 `OPENCLAW_COMMAND_ACTOR_ROLE` 时默认使用 `host`
+  - 这适合本机 operator/override 路径
+  - 如果要验证 docs 里更严格的 actor 权限路径，`submit` / `update-submission` 前请显式设成 `agent`，`submit-score` 前请显式设成 `judge`
 - `OPENCLAW_COMMAND_METHOD` 只有在 live gateway hello 明确广告该 method 时，才应用于 `openclaw:control` 真正 dispatch `CommandEnvelope`
-- 如果没有配置 `OPENCLAW_COMMAND_METHOD`，`stage` / `start-timer` / `open-submission` / `lock-submission` / `submit-score` / `grant-award` 只会打印 envelope 预览，不会伪装成已经成功 dispatch
+- 如果没有配置 `OPENCLAW_COMMAND_METHOD`，`stage` / `start-timer` / `open-submission` / `submit` / `update-submission` / `lock-submission` / `submit-score` / `grant-award` 只会打印 envelope 预览，不会伪装成已经成功 dispatch
 
 ## Local Backend Contract
 
@@ -179,12 +191,34 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
   - `idempotencyKey`
   - `actorId`
   - `actorRole`
+- 当前 submission write loop 额外稳定为：
+  - commands: `open_submission` -> `submit` -> `update_submission` -> `lock_submission`
+  - `submit` / `update_submission` payload: `payload.submissionId` + `payload.data`
+  - `submit` / `update_submission` 语义是写入完整 payload snapshot，不是 partial patch
+  - `team-project-v1` 当前至少校验：
+    - `posterOrDeck: string`
+    - `elevatorPitch: string`，并限制为 100 字以内
+    - `highlights: [string, string, string]`
+    - `risk: string`
+  - `submission` projection / snapshot 当前至少直接包含：
+    - current `data`
+    - current `version`
+    - `versions`
+    - `openedAt` / `updatedAt` / `lockedAt`
+  - 最小 `version` record 当前稳定为：
+    - `version`
+    - `updatedAt`
+    - `actorId`
+    - `actorRole`
+    - `data`
+  - `update_submission` 只允许在已 opened 且未 locked 时执行
+  - locked 后再次 `update_submission` 直接 reject
 - 当前本地 scoring cut 额外稳定为：
   - command: `submit_score`
   - event: `judge.score_submitted`
   - stage restriction: `act-7-ai-judging`
   - permission: `judge`, `admin` override
-  - target: locked team-project submission
+  - target: locked team-project submission with a real structured payload
   - payload fields: `submissionId` / `score` / `reason` / `favorite` / `mostAbsurd`
   - duplicate semantics: 同一个 judge 对同一个 submission 或解析到同一个 team 的重复评分首版直接 reject
 - 当前查询接口：
@@ -194,8 +228,12 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
   - `GET /api/orchestrator/replay?activityRunId=&afterSequence=&fromSequence=&toSequence=&limit=`
   - `GET /api/orchestrator/audit?activityRunId=&limit=`
 - `snapshot` 当前至少直接包含：
+  - `submissions[].data`
+  - `submissions[].version`
+  - `submissions[].versions`
   - `scores`
   - `scoreSummary`
+- 当前还没有单独的 submission versions endpoint；version trace 先通过 `snapshot` / `events` / `replay` / `audit` 读取
 - `events` / `replay` 当前统一返回：
   - `activityRunId`
   - `fromSequence`
@@ -207,6 +245,54 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
   - current `scores`
   - current `scoreSummary`
   - recent score-only `events`
+
+## Verification Flow
+
+当前推荐的本地 authoritative backend 闭环验证顺序是：
+
+```bash
+# 1. 进入 Act V submission stage
+bun run openclaw:control -- stage activity-run-01 act-5-submission
+
+# 2. 打开 submission shell
+bun run openclaw:control -- open-submission activity-run-01 submission-01
+
+# 3. 提交首个完整 payload
+bun run openclaw:control -- submit activity-run-01 submission-01 \
+  '{"posterOrDeck":"https://example.com/poster.pdf","elevatorPitch":"AI lobster co-pilot for absurd product teams","highlights":["Live room orchestration","Structured submission history","Replayable scoring"],"risk":"Audience onboarding still depends on live host guidance"}'
+
+# 4. 在未锁定前用完整 payload 替换当前 submission
+bun run openclaw:control -- update-submission activity-run-01 submission-01 \
+  '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"Browser consumer still lags behind typed score views"}'
+
+# 5. 锁定 submission
+bun run openclaw:control -- lock-submission activity-run-01 submission-01
+
+# 6. 再次 update，预期收到 SUBMISSION_LOCKED
+bun run openclaw:control -- update-submission activity-run-01 submission-01 \
+  '{"posterOrDeck":"https://example.com/poster-v3.pdf","elevatorPitch":"still too late","highlights":["one","two","three"],"risk":"locked"}'
+
+# 7. 读取 projection / event / replay / audit
+bun run openclaw:control -- snapshot activity-run-01
+bun run openclaw:control -- events activity-run-01 --limit 20
+bun run openclaw:control -- replay activity-run-01 --limit 20
+bun run openclaw:control -- audit activity-run-01 --limit 20
+
+# 8. 进入 Act VII 并提交评分
+bun run openclaw:control -- stage activity-run-01 act-7-ai-judging
+bun run openclaw:control -- submit-score activity-run-01 submission-01 9 \
+  --reason "Strong systems thinking and crisp delivery" \
+  --favorite "Cohesive audience framing" \
+  --most-absurd "Treating crustacean drama as a product moat"
+```
+
+本轮 worktree 内的本地验证至少应确认：
+
+- `snapshot.submissions[*]` 能读到当前 `data`、`version = 2`、两条 `versions[*]`
+- `submission` 相关 sequence 严格递增
+- `submission.updated` / `submission.locked` / `judge.score_submitted` 都能追到 `commandId` / `idempotencyKey` / `actorId` / `actorRole`
+- post-lock `update_submission` 在 `audit` 中显示为 `rejected`，且 `error.code = SUBMISSION_LOCKED`
+- `submit_score` 只对 locked structured submission 成功
 
 ## Live Verification
 
@@ -270,6 +356,8 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
   - `stage`
   - `start-timer`
   - `open-submission`
+  - `submit`
+  - `update-submission`
   - `lock-submission`
   - `submit-score`
   - `grant-award`
@@ -297,16 +385,27 @@ bun run openclaw:control -- move contestant-01 team-room-1
 bun run openclaw:control -- say contestant-01 main-stage "用一句话介绍你的目标"
 
 # Dispatch directly to the local authoritative backend when OPENCLAW_ORCHESTRATOR_URL is set
-bun run openclaw:control -- stage activity-run-01 act-3-assignment
+bun run openclaw:control -- stage activity-run-01 act-5-submission
 
 # Dispatch a countdown command to the local backend or emit a gateway envelope preview
-bun run openclaw:control -- start-timer activity-run-01 act-3-assignment 180
+bun run openclaw:control -- start-timer activity-run-01 act-5-submission 420
 
 # Open a submission window on the local backend or emit a gateway envelope preview
 bun run openclaw:control -- open-submission activity-run-01 submission-01
 
+# Submit the first structured team-project payload
+bun run openclaw:control -- submit activity-run-01 submission-01 \
+  '{"posterOrDeck":"https://example.com/poster.pdf","elevatorPitch":"AI lobster co-pilot for absurd product teams","highlights":["Live room orchestration","Structured submission history","Replayable scoring"],"risk":"Audience onboarding still depends on live host guidance"}'
+
+# Update a still-open submission with a new full payload snapshot
+bun run openclaw:control -- update-submission activity-run-01 submission-01 \
+  '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"Browser consumer still lags behind typed score views"}'
+
 # Generate or dispatch a submission lock command
 bun run openclaw:control -- lock-submission activity-run-01 submission-01
+
+# Move to the judging stage before scoring
+bun run openclaw:control -- stage activity-run-01 act-7-ai-judging
 
 # Submit one structured AI judge score against a locked team-project submission
 bun run openclaw:control -- submit-score activity-run-01 submission-01 9 \
@@ -321,10 +420,10 @@ bun run openclaw:control -- grant-award activity-run-01 champion team-1 Champion
 bun run openclaw:control -- snapshot activity-run-01
 
 # Read the current score projection and recent score-only events
-bun run openclaw:control -- scores activity-run-01 --after-sequence 6 --limit 10
+bun run openclaw:control -- scores activity-run-01 --after-sequence 7 --limit 10
 
 # Read recent events or replay from a known sequence
-bun run openclaw:control -- events activity-run-01 --after-sequence 6 --limit 10
+bun run openclaw:control -- events activity-run-01 --after-sequence 7 --limit 10
 bun run openclaw:control -- replay activity-run-01 --from-sequence 7 --limit 10
 
 # Read recent audit records from the local backend
@@ -354,11 +453,17 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
 - worktree 内现在已经有一个最小 local authoritative backend，但它还只是单进程实现，尚未接进本机 stock `openclaw-gateway.service`
 - 当前 token-only websocket operator session 仍会被 `status` scope 拒绝；导演台主要依赖 hello snapshot / health recent sessions，而完整 live status 目前只在 paired CLI operator 路径上可读
 - 当前 local backend 还没有补齐：
+  - `unlock_submission` / `reopen_submission`
+  - 独立的 submission versions query endpoint（当前通过 `snapshot` / `events` / `replay` / `audit` 追）
   - score completion rule / `scores_completed` auto-transition
   - vote / bet / audience heat / world/presence/message 等更完整的平台服务
   - 自动由 score 推导 award 与更细粒度的权限模型
   - 多活动实例 / 多活动运行并发
-- 当前 renderer 虽然已经能消费这些后端信号，但控制台 UI 还没有做“命令结果回执 / 错误回显 / 本地 backend health”完整操作闭环
+- 当前 renderer/client 还没有补齐：
+  - `scores` / `scoreSummary` 的稳定 UI projection
+  - `snapshot` / `scores` / `events` / `replay` / `audit` 的 typed query client
+  - event provenance 与 `world/team/skill` 的 typed consumer state
+  - “命令结果回执 / 错误回显 / 本地 backend health”完整操作闭环
 
 ## Structure
 
@@ -384,8 +489,8 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
 - `/` redirects to `/show`
 - `dist/` is generated output and should not be kept in the worktree
 - Opening `/` redirects to `/show`
-- `openclaw:control` now supports both room-level commands (`move`, `say`) and orchestration envelopes (`stage`, `start-timer`, `open-submission`, `lock-submission`, `submit-score`, `grant-award`, `command`)
-- `openclaw:control` 现在也支持本地 authoritative backend 的 typed/query commands：`open-submission` / `submit-score` / `grant-award` / `snapshot` / `scores` / `events` / `replay` / `audit`
+- `openclaw:control` now supports both room-level commands (`move`, `say`) and orchestration envelopes (`stage`, `start-timer`, `open-submission`, `submit`, `update-submission`, `lock-submission`, `submit-score`, `grant-award`, `command`)
+- `openclaw:control` 现在也支持本地 authoritative backend 的 typed/query commands：`open-submission` / `submit` / `update-submission` / `submit-score` / `grant-award` / `snapshot` / `scores` / `events` / `replay` / `audit`
 - If `OPENCLAW_ORCHESTRATOR_URL` is configured, orchestration commands dispatch directly to the local backend instead of waiting for a live gateway dispatch method
 - `OpenClawGatewayClient` now uses the same live-verified websocket connect identity as the gateway hello probe: `gateway-client` / `ui` / `operator.read`
 - If `OPENCLAW_COMMAND_METHOD` is not configured, orchestration commands print the generated `CommandEnvelope` JSON instead of pretending to dispatch it

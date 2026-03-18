@@ -32,6 +32,17 @@ interface SubmissionSchema {
   }>;
 }
 
+type SubmissionData = Record<string, unknown>;
+type SubmissionCommandType = "submit" | "update_submission";
+
+interface SubmissionVersionRecord {
+  version: number;
+  updatedAt: number;
+  actorId: string;
+  actorRole: Role;
+  data: SubmissionData;
+}
+
 interface SkillBinding {
   role: string;
   stageId?: string;
@@ -74,7 +85,9 @@ interface SubmissionProjection {
   activityRunId: string;
   submitterId: string;
   schemaId: string;
-  data: Record<string, unknown>;
+  data: SubmissionData;
+  version: number;
+  versions: SubmissionVersionRecord[];
   locked: boolean;
   teamId?: string;
   stageId?: string;
@@ -168,7 +181,7 @@ interface StableErrorBody {
 }
 
 interface ProjectionState {
-  version: 3;
+  version: 4;
   snapshotId: string;
   activityRun: ActivityRunState;
   timers: TimerProjection[];
@@ -468,6 +481,15 @@ const sessions = new Map<string, SessionProjection>();
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
+const isRole = (value: unknown): value is Role =>
+  value === "agent" ||
+  value === "host" ||
+  value === "judge" ||
+  value === "viewer" ||
+  value === "admin";
+
+const countCodePoints = (value: string): number => Array.from(value).length;
+
 const parseJsonFile = <T>(filePath: string): T | null => {
   try {
     return JSON.parse(readFileSync(filePath, "utf8")) as T;
@@ -481,7 +503,7 @@ const ensureDataDir = (): void => {
 };
 
 const buildSeedProjection = (now = Date.now()): ProjectionState => ({
-  version: 3,
+  version: 4,
   snapshotId: `snapshot-${now}`,
   activityRun: {
     id: "activity-run-01",
@@ -553,6 +575,8 @@ const stableSerialize = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
+const cloneJsonValue = <T>(value: T): T => structuredClone(value);
+
 const buildCommandFingerprint = (command: CommandEnvelope): string =>
   stableSerialize({
     actorId: command.actorId,
@@ -613,6 +637,48 @@ const upsertScoreById = (
 ): ScoreProjection[] => {
   const remaining = items.filter((item) => item.id !== nextItem.id);
   return [...remaining, nextItem];
+};
+
+const readSubmissionVersionRecord = (
+  value: unknown,
+): SubmissionVersionRecord | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (
+    typeof value.version !== "number" ||
+    typeof value.updatedAt !== "number" ||
+    typeof value.actorId !== "string" ||
+    !isRole(value.actorRole) ||
+    !isRecord(value.data)
+  ) {
+    return null;
+  }
+
+  return {
+    version: value.version,
+    updatedAt: value.updatedAt,
+    actorId: value.actorId,
+    actorRole: value.actorRole,
+    data: cloneJsonValue(value.data),
+  };
+};
+
+const readSubmissionVersionRecords = (
+  value: unknown,
+  fallback: SubmissionVersionRecord[] = [],
+): SubmissionVersionRecord[] => {
+  if (!Array.isArray(value)) {
+    return fallback;
+  }
+
+  const records = value
+    .map(readSubmissionVersionRecord)
+    .filter((entry): entry is SubmissionVersionRecord => entry !== null)
+    .sort((left, right) => left.version - right.version);
+
+  return records.length > 0 ? records : fallback;
 };
 
 const buildScoreSummary = (
@@ -827,6 +893,11 @@ const applyEventToProjection = (
       const existingSubmission = next.submissions.find(
         (entry) => entry.id === submissionId,
       );
+      const versions = readSubmissionVersionRecords(
+        rawSubmission.versions,
+        existingSubmission?.versions ?? [],
+      );
+      const latestVersionRecord = versions.at(-1);
       const submission: SubmissionProjection = {
         id: submissionId,
         activityRunId:
@@ -845,8 +916,13 @@ const applyEventToProjection = (
             : existingSubmission?.schemaId ?? "unknown-schema",
         data:
           isRecord(rawSubmission.data)
-            ? rawSubmission.data
+            ? cloneJsonValue(rawSubmission.data)
             : existingSubmission?.data ?? {},
+        version:
+          typeof rawSubmission.version === "number"
+            ? rawSubmission.version
+            : latestVersionRecord?.version ?? existingSubmission?.version ?? 0,
+        versions,
         locked:
           typeof rawSubmission.locked === "boolean"
             ? rawSubmission.locked
@@ -867,7 +943,9 @@ const applyEventToProjection = (
         updatedAt:
           typeof rawSubmission.updatedAt === "number"
             ? rawSubmission.updatedAt
-            : event.timestamp,
+            : latestVersionRecord?.updatedAt ??
+              existingSubmission?.updatedAt ??
+              event.timestamp,
         lockedAt:
           typeof rawSubmission.lockedAt === "number"
             ? rawSubmission.lockedAt
@@ -1096,7 +1174,12 @@ const buildSnapshotEnvelope = (now = Date.now()) => ({
   skills: skillBindings,
   submissions: projection.submissions.map((submission) => ({
     id: submission.id,
+    activityRunId: submission.activityRunId,
+    submitterId: submission.submitterId,
     schemaId: submission.schemaId,
+    data: submission.data,
+    version: submission.version,
+    versions: submission.versions,
     locked: submission.locked,
     teamId: submission.teamId,
     stageId: submission.stageId,
@@ -1417,6 +1500,9 @@ const findStage = (stageId: string): StageTemplate | undefined =>
 const findTeam = (teamId: string) =>
   worldProjection.teams.find((team) => team.id === teamId);
 
+const findSubmissionSchema = (schemaId: string): SubmissionSchema | undefined =>
+  submissionSchemas.find((schema) => schema.id === schemaId);
+
 const inferSubmissionSchemaId = (stageId: string | null): string | null => {
   const stage = stageId ? findStage(stageId) : undefined;
   return stage?.submissionSchemaIds?.[0] ?? null;
@@ -1432,17 +1518,289 @@ const inferSubmissionTeamId = (submissionId: string): string | undefined => {
   return Number.isFinite(normalized) ? `team-${normalized}` : undefined;
 };
 
+const requireSubmissionRole = (
+  command: CommandEnvelope,
+  handledAt: number,
+): void => {
+  if (
+    command.actorRole === "agent" ||
+    command.actorRole === "host" ||
+    command.actorRole === "admin"
+  ) {
+    return;
+  }
+
+  throw createCommandError(
+    command,
+    handledAt,
+    "FORBIDDEN",
+    `Command ${command.type} requires agent/host/admin role.`,
+    403,
+  );
+};
+
+const normalizeRequiredSubmissionString = (
+  rawData: SubmissionData,
+  key: string,
+): string => {
+  const value = rawData[key];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`payload.data.${key} must be a non-empty string.`);
+  }
+
+  return value.trim();
+};
+
+const normalizeOptionalSubmissionString = (
+  rawData: SubmissionData,
+  key: string,
+): string | undefined => {
+  const value = rawData[key];
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`payload.data.${key} must be a non-empty string when provided.`);
+  }
+
+  return value.trim();
+};
+
+const normalizeSubmissionDataForSchema = (
+  schemaId: string,
+  rawData: SubmissionData,
+): SubmissionData => {
+  const schema = findSubmissionSchema(schemaId);
+  if (!schema) {
+    throw new Error(`Unknown submission schema ${schemaId}.`);
+  }
+
+  const allowedKeys = new Set(schema.fields.map((field) => field.key));
+  const unknownKeys = Object.keys(rawData).filter((key) => !allowedKeys.has(key));
+  if (unknownKeys.length > 0) {
+    throw new Error(
+      `payload.data contains unsupported fields: ${unknownKeys.join(", ")}.`,
+    );
+  }
+
+  if (schemaId === "team-project-v1") {
+    const posterOrDeck = normalizeRequiredSubmissionString(rawData, "posterOrDeck");
+    const elevatorPitch = normalizeRequiredSubmissionString(rawData, "elevatorPitch");
+    if (countCodePoints(elevatorPitch) > 100) {
+      throw new Error("payload.data.elevatorPitch must be 100 characters or fewer.");
+    }
+
+    const rawHighlights = rawData.highlights;
+    if (
+      !Array.isArray(rawHighlights) ||
+      rawHighlights.length !== 3 ||
+      rawHighlights.some(
+        (entry) => typeof entry !== "string" || entry.trim().length === 0,
+      )
+    ) {
+      throw new Error(
+        "payload.data.highlights must contain exactly 3 non-empty strings.",
+      );
+    }
+
+    const [firstHighlight, secondHighlight, thirdHighlight] = rawHighlights.map(
+      (entry) => entry.trim(),
+    ) as [string, string, string];
+    const risk = normalizeRequiredSubmissionString(rawData, "risk");
+
+    return {
+      posterOrDeck,
+      elevatorPitch,
+      highlights: [firstHighlight, secondHighlight, thirdHighlight],
+      risk,
+    };
+  }
+
+  if (schemaId === "personal-poem-v1") {
+    const poem = normalizeRequiredSubmissionString(rawData, "poem");
+    const moodAtSubmission = normalizeOptionalSubmissionString(
+      rawData,
+      "moodAtSubmission",
+    );
+
+    return {
+      poem,
+      ...(moodAtSubmission ? { moodAtSubmission } : {}),
+    };
+  }
+
+  const normalizedData: SubmissionData = {};
+  for (const field of schema.fields) {
+    const fieldValue = rawData[field.key];
+    if (fieldValue === undefined || fieldValue === null) {
+      if (field.required) {
+        throw new Error(`payload.data.${field.key} is required.`);
+      }
+      continue;
+    }
+
+    if (
+      field.type === "text" ||
+      field.type === "file" ||
+      field.type === "link"
+    ) {
+      normalizedData[field.key] = normalizeRequiredSubmissionString(
+        rawData,
+        field.key,
+      );
+      continue;
+    }
+
+    normalizedData[field.key] = cloneJsonValue(fieldValue);
+  }
+
+  return normalizedData;
+};
+
+const validateSubmissionDataForCommand = (
+  command: CommandEnvelope,
+  handledAt: number,
+  schemaId: string,
+  value: unknown,
+): SubmissionData => {
+  if (!isRecord(value)) {
+    throw createCommandError(
+      command,
+      handledAt,
+      "INVALID_COMMAND",
+      `${command.type} requires payload.data as an object.`,
+    );
+  }
+
+  try {
+    return normalizeSubmissionDataForSchema(schemaId, value);
+  } catch (error) {
+    throw createCommandError(
+      command,
+      handledAt,
+      "INVALID_COMMAND",
+      error instanceof Error ? error.message : "Invalid submission payload.",
+    );
+  }
+};
+
+const buildSubmissionVersionRecord = ({
+  version,
+  updatedAt,
+  actorId,
+  actorRole,
+  data,
+}: {
+  version: number;
+  updatedAt: number;
+  actorId: string;
+  actorRole: Role;
+  data: SubmissionData;
+}): SubmissionVersionRecord => ({
+  version,
+  updatedAt,
+  actorId,
+  actorRole,
+  data: cloneJsonValue(data),
+});
+
+const requireSubmissionActionWindow = ({
+  command,
+  handledAt,
+  submission,
+  action,
+}: {
+  command: CommandEnvelope;
+  handledAt: number;
+  submission: SubmissionProjection;
+  action: "open_submission" | "lock_submission" | SubmissionCommandType;
+}): void => {
+  const currentStageId = projection.activityRun.currentStageId;
+  if (!currentStageId) {
+    throw createCommandError(
+      command,
+      handledAt,
+      "SUBMISSION_STAGE_REQUIRED",
+      `${action} requires an active submission stage.`,
+      409,
+    );
+  }
+
+  if (submission.stageId && submission.stageId !== currentStageId) {
+    throw createCommandError(
+      command,
+      handledAt,
+      "SUBMISSION_STAGE_CLOSED",
+      `${action} is only allowed while ${submission.stageId} is current. Current stage is ${currentStageId}.`,
+      409,
+    );
+  }
+
+  const stage = findStage(currentStageId);
+  if (!stage || !stage.allowedActions.includes(action)) {
+    throw createCommandError(
+      command,
+      handledAt,
+      "SUBMISSION_ACTION_NOT_ALLOWED",
+      `Stage ${currentStageId} does not allow ${action}.`,
+      409,
+    );
+  }
+};
+
+const assertSubmissionReadyForScoring = (
+  command: CommandEnvelope,
+  handledAt: number,
+  submission: SubmissionProjection,
+): void => {
+  if (submission.schemaId !== "team-project-v1") {
+    throw createCommandError(
+      command,
+      handledAt,
+      "SUBMISSION_SCHEMA_INVALID",
+      `Submission ${submission.id} uses schema ${submission.schemaId}. submit_score currently only supports locked team-project-v1 submissions.`,
+      409,
+    );
+  }
+
+  if (submission.version < 1 || submission.versions.length === 0) {
+    throw createCommandError(
+      command,
+      handledAt,
+      "SUBMISSION_PAYLOAD_REQUIRED",
+      `Submission ${submission.id} must contain a structured payload before scoring.`,
+      409,
+    );
+  }
+
+  try {
+    normalizeSubmissionDataForSchema(submission.schemaId, submission.data);
+  } catch (error) {
+    throw createCommandError(
+      command,
+      handledAt,
+      "SUBMISSION_INVALID_PAYLOAD",
+      error instanceof Error
+        ? `Submission ${submission.id} has invalid payload: ${error.message}`
+        : `Submission ${submission.id} has invalid payload.`,
+      409,
+    );
+  }
+};
+
 const buildSubmissionProjection = (
   submissionId: string,
   now: number,
 ): SubmissionProjection => {
   const currentStageId = projection.activityRun.currentStageId;
+  const stage = currentStageId ? findStage(currentStageId) : undefined;
   const schemaId = inferSubmissionSchemaId(currentStageId);
-  if (!schemaId) {
+  if (!stage || !schemaId || !stage.allowedActions.includes("open_submission")) {
     throw new OrchestratorError({
       code: "SUBMISSION_STAGE_REQUIRED",
       message:
-        "open_submission requires the current stage to expose a submission schema.",
+        "open_submission requires the current stage to expose a submission schema and allow open_submission.",
       status: 409,
       handledAt: now,
     });
@@ -1455,6 +1813,8 @@ const buildSubmissionProjection = (
     submitterId: teamId ?? "host-01",
     schemaId,
     data: {},
+    version: 0,
+    versions: [],
     locked: false,
     teamId,
     stageId: currentStageId ?? undefined,
@@ -1605,6 +1965,8 @@ const buildScoreProjection = (
       409,
     );
   }
+
+  assertSubmissionReadyForScoring(command, handledAt, resolvedSubmission);
 
   if (
     teamId &&
@@ -2088,7 +2450,9 @@ const executeFreshCommand = (
   const resolvedActivityRunId = resolveRequestedActivityRunId(
     command.activityRunId,
   );
-  if (command.type === "submit_score") {
+  if (command.type === "submit" || command.type === "update_submission") {
+    requireSubmissionRole(command, handledAt);
+  } else if (command.type === "submit_score") {
     requireScoreRole(command, handledAt);
   } else {
     requireHostRole(command, handledAt);
@@ -2294,6 +2658,111 @@ const executeFreshCommand = (
         handledAt,
       ),
     );
+  } else if (
+    command.type === "submit" ||
+    command.type === "update_submission"
+  ) {
+    const payload = command.payload;
+    const submissionId =
+      typeof payload.submissionId === "string"
+        ? payload.submissionId.trim()
+        : "";
+    if (!submissionId) {
+      throw createCommandError(
+        command,
+        handledAt,
+        "INVALID_COMMAND",
+        `${command.type} requires payload.submissionId.`,
+      );
+    }
+
+    const existingSubmission = projection.submissions.find(
+      (submission) => submission.id === submissionId,
+    );
+    if (!existingSubmission) {
+      throw createCommandError(
+        command,
+        handledAt,
+        "SUBMISSION_NOT_OPENED",
+        `Submission ${submissionId} is not opened.`,
+        409,
+      );
+    }
+
+    requireSubmissionActionWindow({
+      command,
+      handledAt,
+      submission: existingSubmission,
+      action: command.type,
+    });
+
+    if (existingSubmission.locked) {
+      throw createCommandError(
+        command,
+        handledAt,
+        "SUBMISSION_LOCKED",
+        `Submission ${submissionId} is locked and cannot be updated.`,
+        409,
+      );
+    }
+
+    if (command.type === "submit" && existingSubmission.version > 0) {
+      throw createCommandError(
+        command,
+        handledAt,
+        "SUBMISSION_ALREADY_SUBMITTED",
+        `Submission ${submissionId} already has a structured payload. Use update_submission instead.`,
+        409,
+      );
+    }
+
+    if (
+      command.type === "update_submission" &&
+      existingSubmission.version === 0
+    ) {
+      throw createCommandError(
+        command,
+        handledAt,
+        "SUBMISSION_NOT_SUBMITTED",
+        `Submission ${submissionId} does not have an initial payload yet. Use submit first.`,
+        409,
+      );
+    }
+
+    const normalizedData = validateSubmissionDataForCommand(
+      command,
+      handledAt,
+      existingSubmission.schemaId,
+      payload.data,
+    );
+    const version = existingSubmission.version + 1;
+    const versionRecord = buildSubmissionVersionRecord({
+      version,
+      updatedAt: handledAt,
+      actorId: command.actorId,
+      actorRole: command.actorRole,
+      data: normalizedData,
+    });
+    const updatedSubmission: SubmissionProjection = {
+      ...existingSubmission,
+      data: normalizedData,
+      version,
+      versions: [...existingSubmission.versions, versionRecord],
+      updatedAt: handledAt,
+    };
+
+    events.push(
+      queueEvent(
+        "submission.updated",
+        {
+          stageId: updatedSubmission.stageId,
+          changeType: command.type,
+          versionRecord,
+          submission: updatedSubmission,
+        },
+        handledAt,
+      ),
+    );
   } else if (command.type === "lock_submission") {
     const payload = command.payload;
     const submissionId =
@@ -2333,31 +2802,21 @@ const executeFreshCommand = (
       );
     }
 
-    const updatedSubmission: SubmissionProjection = {
-      ...existingSubmission,
-      updatedAt: handledAt,
-    };
-
-    events.push(
-      queueEvent(
-        "submission.updated",
-        {
-          stageId: updatedSubmission.stageId,
-          submission: updatedSubmission,
-        },
-        handledAt,
-      ),
-    );
+    requireSubmissionActionWindow({
+      command,
+      handledAt,
+      submission: existingSubmission,
+      action: "lock_submission",
+    });
 
     events.push(
       queueEvent(
         "submission.locked",
         {
-          stageId: updatedSubmission.stageId,
+          stageId: existingSubmission.stageId,
           submission: {
-            ...updatedSubmission,
+            ...existingSubmission,
             locked: true,
-            updatedAt: handledAt,
             lockedAt: handledAt,
           },
         },

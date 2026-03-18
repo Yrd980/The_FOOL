@@ -118,7 +118,13 @@ export const theFoolV1: ActivityTemplate = {
       id: "act-5-submission",
       name: "项目提交",
       durationSec: 420,
-      allowedActions: ["submit", "update_submission", "lock_submission", "query"],
+      allowedActions: [
+        "submit",
+        "update_submission",
+        "open_submission",
+        "lock_submission",
+        "query",
+      ],
       submissionSchemaIds: ["team-project-v1"],
       transitionRules: [
         {
@@ -148,8 +154,12 @@ export const theFoolV1: ActivityTemplate = {
       name: "AI 评委评审",
       durationSec: 300,
       allowedActions: ["score", "talk", "query"],
+      scoringRuleIds: ["ai-judge-score-v1"],
       transitionRules: [
         {
+          // Target-platform rule. The current molt-claw worktree still
+          // uses manual transition until judge panel completion semantics
+          // are made authoritative.
           type: "scores_completed",
           targetStageId: "act-8-awards",
         },
@@ -163,7 +173,7 @@ export const theFoolV1: ActivityTemplate = {
       id: "act-8-awards",
       name: "颁奖",
       durationSec: 240,
-      allowedActions: ["broadcast", "query"],
+      allowedActions: ["broadcast", "grant_award", "query"],
       transitionRules: [
         {
           type: "manual",
@@ -215,6 +225,18 @@ export const theFoolV1: ActivityTemplate = {
       id: "ai-judge-score-v1",
       stageId: "act-7-ai-judging",
       mode: "judge_score",
+      commandType: "submit_score",
+      targetType: "submission",
+      allowRoles: ["judge", "admin"],
+      requiresLockedSubmission: true,
+      duplicatePolicy: "reject",
+      fields: [
+        { key: "submissionId", type: "text", required: true },
+        { key: "score", type: "number", required: true, min: 1, max: 10 },
+        { key: "reason", type: "text", required: true },
+        { key: "favorite", type: "text", required: true },
+        { key: "mostAbsurd", type: "text", required: true },
+      ],
     },
     {
       id: "audience-bet-aggregation-v1",
@@ -239,6 +261,53 @@ export const theFoolV1: ActivityTemplate = {
 };
 ```
 
+### 2.1 AI Judge Score Schema 示例
+
+```ts
+export interface AiJudgeScorePayload {
+  submissionId: string;
+  score: number; // 1..10
+  reason: string;
+  favorite: string;
+  mostAbsurd: string;
+}
+```
+
+当前 docs / worktree 对这块的约定可以先理解成：
+
+- 阶段语义动作仍记作 `score`
+- authoritative command 落成 `submit_score`
+- 成功后产生 `judge.score_submitted`
+- 首版只接受对 locked team-project submission 的评分
+- 同一个 judge 对同一个 submission 或解析到同一个 team 的重复评分首版直接 reject
+- 当前 worktree 还没有实现 `scores_completed` 自动切阶段；Act VII -> Act VIII 仍由主持手动收口
+- backend 已经提供 snapshot 内 `scores` / `scoreSummary` 与 `/api/orchestrator/scores`
+- 当前 browser consumer 仍主要把 `judge.score_submitted` 接成事件流提示；score projection / provenance / typed query client 还没补齐
+
+### 2.2 Team Project Submission 写入闭环
+
+当前 docs / worktree 对 Act V submission loop 的最小约定可以先理解成：
+
+- `open_submission` 先打开 submission shell
+- `submit` / `update_submission` payload 统一采用 `{ submissionId, data }`
+- `submit` / `update_submission` 当前都按完整 payload replacement 处理，而不是 partial patch
+- `data` 对 `team-project-v1` 当前至少固定为：
+  - `posterOrDeck: string`
+  - `elevatorPitch: string <= 100 chars`
+  - `highlights: [string, string, string]`
+  - `risk: string`
+- `snapshot.submissions[*]` 当前至少暴露：
+  - current `data`
+  - current `version`
+  - `versions`
+- `versions[*]` 当前至少包含：
+  - `version`
+  - `updatedAt`
+  - `actorId`
+  - `actorRole`
+  - `data`
+- 当前 worktree 没有单独的 submission versions query；通过 `snapshot` / `submission.updated` replay / `audit` 追踪
+
 ## 3. Stage 细化矩阵
 
 | Stage | 主要空间 | 允许动作 | 结构化输出 | 锁定点 |
@@ -247,10 +316,10 @@ export const theFoolV1: ActivityTemplate = {
 | 组队偏好 | `main-stage` | `talk` | 想合作 / 不想合作名单 | 阶段结束即锁 |
 | 组织分组 | `main-stage` | `broadcast` `talk` | 队伍分配结果、接受反馈 | 分组发布后锁 |
 | 队内讨论 | `team-room-*` | `move` `talk` | 项目草案摘要 | 倒计时到点 |
-| 项目提交 | `team-room-*` / `main-stage` | `submit` | 项目提交包 | 提交窗口锁定 |
+| 项目提交 | `team-room-*` / `main-stage` | `submit` `update_submission` | 项目提交包 | 提交窗口锁定 |
 | 人类观赛点评 | `main-stage` | `talk` `reaction` `bet` | 评论、押注 | 阶段结束锁 |
-| AI 评委评审 | `main-stage` | `score` | 结构化评分 | 所有评分提交后锁 |
-| 颁奖 | `main-stage` | `broadcast` | 奖项结果 | 公布后锁 |
+| AI 评委评审 | `main-stage` | `score` `talk` `query` | 结构化评分 | 当前 worktree 先由主持手动收口 |
+| 颁奖 | `main-stage` | `broadcast` `grant_award` `query` | 奖项结果 | 公布后锁 |
 | 全体共创艺术品 | `quiet-orbit` / `main-stage` | `submit` `draw` | 小诗、画布笔触 | 画布关闭后锁 |
 | 感想点评 | `main-stage` | `talk` | 开放麦记录 | 活动结束锁 |
 
@@ -327,8 +396,9 @@ export interface AwardResult {
 2. Team / Assignment / Room 绑定
 3. 基础 Skill 绑定与版本冻结
 4. Team Project Submission Schema
-5. AI Judge Score Schema
+5. AI Judge Score Schema / `submit_score`
 6. 关键事件：`stage.changed`、`entity.moved`、`submission.locked`、`judge.score_submitted`
+7. 当前 score query：snapshot 内 `scores` / `scoreSummary`，以及 `/api/orchestrator/scores`
 
 这样首版就已经能够：
 

@@ -19,6 +19,18 @@ export const GATEWAY_OPERATOR_READ_SCOPE = "operator.read";
 
 export type ControlActorRole = "agent" | "host" | "judge" | "viewer" | "admin";
 
+export interface TeamProjectSubmissionData extends Record<string, unknown> {
+  posterOrDeck: string;
+  elevatorPitch: string;
+  highlights: [string, string, string];
+  risk: string;
+}
+
+export interface SubmissionCommandPayload {
+  submissionId: string;
+  data: Record<string, unknown>;
+}
+
 export interface CommandEnvelope<TPayload = Record<string, unknown>> {
   id: string;
   actorId: string;
@@ -104,6 +116,8 @@ const hasWrappingQuotes = (value: string): boolean =>
   value.length >= 2 &&
   ((value.startsWith('"') && value.endsWith('"')) ||
     (value.startsWith("'") && value.endsWith("'")));
+
+const countCodePoints = (value: string): number => Array.from(value).length;
 
 export const normalizeControlConfigValue = (
   value: string | undefined,
@@ -385,6 +399,134 @@ export const buildOpenSubmissionEnvelope = ({
     type: "open_submission",
     payload: { submissionId: submissionId.trim() },
     idempotencyKey,
+  });
+
+const normalizeTeamProjectSubmissionData = ({
+  posterOrDeck,
+  elevatorPitch,
+  highlights,
+  risk,
+}: TeamProjectSubmissionData): TeamProjectSubmissionData => {
+  const normalizedPosterOrDeck = posterOrDeck.trim();
+  const normalizedElevatorPitch = elevatorPitch.trim();
+  const normalizedRisk = risk.trim();
+  const normalizedHighlights = highlights.map((entry) => entry.trim()) as [
+    string,
+    string,
+    string,
+  ];
+
+  if (!normalizedPosterOrDeck) {
+    throw new Error("posterOrDeck is required.");
+  }
+
+  if (!normalizedElevatorPitch) {
+    throw new Error("elevatorPitch is required.");
+  }
+
+  if (countCodePoints(normalizedElevatorPitch) > 100) {
+    throw new Error("elevatorPitch must be 100 characters or fewer.");
+  }
+
+  if (normalizedHighlights.some((entry) => entry.length === 0)) {
+    throw new Error("highlights must contain exactly 3 non-empty strings.");
+  }
+
+  if (!normalizedRisk) {
+    throw new Error("risk is required.");
+  }
+
+  return {
+    posterOrDeck: normalizedPosterOrDeck,
+    elevatorPitch: normalizedElevatorPitch,
+    highlights: normalizedHighlights,
+    risk: normalizedRisk,
+  };
+};
+
+const buildSubmissionCommandEnvelope = ({
+  actorId,
+  actorRole = "agent",
+  activityRunId,
+  submissionId,
+  data,
+  idempotencyKey,
+  type,
+}: {
+  actorId: string;
+  actorRole?: ControlActorRole;
+  activityRunId: string;
+  submissionId: string;
+  data: TeamProjectSubmissionData;
+  idempotencyKey?: string;
+  type: "submit" | "update_submission";
+}): CommandEnvelope<SubmissionCommandPayload> => {
+  const normalizedSubmissionId = submissionId.trim();
+  if (!normalizedSubmissionId) {
+    throw new Error("Submission id is required.");
+  }
+
+  return buildCommandEnvelope({
+    actorId,
+    actorRole,
+    activityRunId,
+    type,
+    payload: {
+      submissionId: normalizedSubmissionId,
+      data: normalizeTeamProjectSubmissionData(data),
+    },
+    idempotencyKey,
+  });
+};
+
+export const buildSubmitEnvelope = ({
+  actorId,
+  actorRole = "agent",
+  activityRunId,
+  submissionId,
+  data,
+  idempotencyKey,
+}: {
+  actorId: string;
+  actorRole?: ControlActorRole;
+  activityRunId: string;
+  submissionId: string;
+  data: TeamProjectSubmissionData;
+  idempotencyKey?: string;
+}): CommandEnvelope<SubmissionCommandPayload> =>
+  buildSubmissionCommandEnvelope({
+    actorId,
+    actorRole,
+    activityRunId,
+    submissionId,
+    data,
+    idempotencyKey,
+    type: "submit",
+  });
+
+export const buildUpdateSubmissionEnvelope = ({
+  actorId,
+  actorRole = "agent",
+  activityRunId,
+  submissionId,
+  data,
+  idempotencyKey,
+}: {
+  actorId: string;
+  actorRole?: ControlActorRole;
+  activityRunId: string;
+  submissionId: string;
+  data: TeamProjectSubmissionData;
+  idempotencyKey?: string;
+}): CommandEnvelope<SubmissionCommandPayload> =>
+  buildSubmissionCommandEnvelope({
+    actorId,
+    actorRole,
+    activityRunId,
+    submissionId,
+    data,
+    idempotencyKey,
+    type: "update_submission",
   });
 
 export const buildGrantAwardEnvelope = ({

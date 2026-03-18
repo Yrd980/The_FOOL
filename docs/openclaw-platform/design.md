@@ -218,6 +218,7 @@ Phaser、Godot、Unity 都落在这一层。
 - `talk`
 - `move`
 - `submit`
+- `update_submission`
 - `vote`
 - `score`
 - `submit_score`
@@ -343,7 +344,25 @@ export interface SnapshotEnvelope {
   };
   timers: Array<{ id: string; stageId?: string; remainingMs: number; state: string }>;
   skills: Array<{ role: string; stageId?: string; docId: string; version: string }>;
-  submissions: Array<{ id: string; schemaId: string; locked: boolean }>;
+  submissions: Array<{
+    id: string;
+    activityRunId: string;
+    submitterId: string;
+    schemaId: string;
+    data: Record<string, unknown>;
+    version: number;
+    versions: Array<{
+      version: number;
+      updatedAt: number;
+      actorId: string;
+      actorRole: "agent" | "host" | "judge" | "viewer" | "admin";
+      data: Record<string, unknown>;
+    }>;
+    locked: boolean;
+    openedAt?: number;
+    updatedAt: number;
+    lockedAt?: number;
+  }>;
   scores: Array<{
     id: string;
     stageId: string;
@@ -425,6 +444,13 @@ export interface SnapshotEnvelope {
 - 一个 audit endpoint，用于读取最小 command audit record
 
 这只是当前 worktree 的实现轮廓，不意味着未来正式平台必须绑定这些具体路径或部署形态。
+
+当前 worktree 的集成状态还应额外区分清楚：
+
+- local orchestrator backend 已经提供 `snapshot` / `scores` / `events` / `replay` / `audit`
+- browser consumer 目前仍主要依赖 websocket snapshot + delta event
+- `scores` / `scoreSummary`、event provenance、`world/team/skill` typed views，以及单独 query client 仍属于后续 integration work
+- 这些 integration gap 不改变上面的 authoritative contract
 
 ## 8. Skill 绑定与发放
 
@@ -531,6 +557,39 @@ Submission Schema 应与 Stage 绑定，但由平台统一解释。
 - final lock
 
 锁定后不可再改，除非主持或管理员显式解锁并留审计。
+
+当前最小 authoritative write loop 可以先稳定为：
+
+- `open_submission` 只负责显式打开 submission shell
+- `submit` 写入首个结构化 payload，并产生 `version = 1`
+- `update_submission` 在未锁定前追加新的完整 payload snapshot
+- `submit` / `update_submission` 都按 full replacement 处理，不支持 partial patch
+- `lock_submission` 只改变 lock state，不再伪装成内容更新
+- 当前 worktree 没有独立 submission versions query；version trace 通过 `snapshot` / `submission.updated` replay / `audit` 读取
+
+当前最小 command payload 可以先采用：
+
+```ts
+export interface SubmissionCommandPayload {
+  submissionId: string;
+  data: Record<string, unknown>;
+}
+
+export interface SubmissionVersion {
+  version: number;
+  updatedAt: number;
+  actorId: string;
+  actorRole: "agent" | "host" | "judge" | "viewer" | "admin";
+  data: Record<string, unknown>;
+}
+```
+
+对 `team-project-v1`，当前最小实现额外约束为：
+
+- `posterOrDeck`: non-empty string
+- `elevatorPitch`: non-empty string, max 100 chars
+- `highlights`: exactly 3 non-empty strings
+- `risk`: non-empty string
 
 ### 10.3 评分与汇总
 

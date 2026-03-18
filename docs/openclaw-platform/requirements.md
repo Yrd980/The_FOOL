@@ -422,6 +422,24 @@ Schema 至少要支持：
 - 版本历史
 - 审计记录
 
+当前最小 contract 至少应稳定到：
+
+- `submit` 创建首个结构化版本
+- `update_submission` 在未锁定前追加新版本
+- `submit` / `update_submission` 写入的是完整 payload snapshot，不是 partial patch
+- `team-project-v1` 当前最小 payload 至少包括：
+  - `posterOrDeck: string`
+  - `elevatorPitch: string <= 100 chars`
+  - `highlights: [string, string, string]`
+  - `risk: string`
+- `snapshot` 可直接读到 submission 当前 payload
+- 最小 `SubmissionVersion` 至少包含：
+  - `version`
+  - `updatedAt`
+  - `actorId`
+  - `actorRole`
+  - `data`
+
 ## 12. 投票与评分模型
 
 平台需要支持观众互动与正式评分。
@@ -492,6 +510,8 @@ JudgeScore 至少应支持以下结构化字段：
 - `transition_stage`
 - `start_timer`
 - `open_submission`
+- `submit`
+- `update_submission`
 - `lock_submission`
 - `submit_score`
 - `grant_award`
@@ -499,6 +519,7 @@ JudgeScore 至少应支持以下结构化字段：
 这些命令至少应满足：
 
 - `transition_stage` / `start_timer` / `open_submission` / `lock_submission` / `grant_award` 由 `host` 或 `admin` 发起
+- `submit` / `update_submission` 由 `agent` 发起，`host` / `admin` 可作为 override
 - `submit_score` 由 `judge` 发起，`admin` 可作为 override
 - 成功后产生对应领域事件
 - 更新当前投影
@@ -720,7 +741,20 @@ export interface Submission {
   submitterId: string;
   schemaId: string;
   data: Record<string, unknown>;
+  version: number;
+  versions: SubmissionVersion[];
+  openedAt?: number;
+  updatedAt: number;
   locked: boolean;
+  lockedAt?: number;
+}
+
+export interface SubmissionVersion {
+  version: number;
+  updatedAt: number;
+  actorId: string;
+  actorRole: Role;
+  data: Record<string, unknown>;
 }
 
 export interface SubmissionLock {
