@@ -33,6 +33,22 @@ OpenClaw 的目标不是做一个“带地图的聊天室”，而是做一个�
 
 但平台层本身不应被某个活动反向硬编码。
 
+### 1.2 平台如何被活动扩展（通用口径）
+
+平台 contract 需要给活动留下明确的扩展点，但这些扩展点必须保持**语义通用**，而不是把某个活动的字段名提升为平台通用字段。
+
+推荐做法：
+
+- **Submission 扩展**：活动通过注册/绑定 `SubmissionSchema` 来定义字段集合、类型、必填与校验口径；平台负责窗口、版本、锁定、审计与回放。
+- **Scoring 扩展**：平台 score 结构保持通用字段（`score` / `reason` / `dimensions` / `extras` 或等价容器），活动的专属评分字段应放入可扩展容器（例如 `annotations` / `extras`），由活动文档定义其 key 语义与校验口径。
+- **World/Seed 扩展**：活动可以提供 `bootstrap seed`（房间/队伍/实体/assignment 的启动建议），但运行时快照中的 `world` 必须来自 authority projection，而不是活动模板静态数据。
+- **Skill 扩展**：活动可以按模板/阶段/角色绑定不同 doc 版本；平台负责分发、版本冻结与审计。
+
+非目标（应避免）：
+
+- 在平台通用 score/submission/snapshot 字段中直接出现活动专属字段名或 stage id。
+- 让 renderer 或 skill 文档变成流程真相来源（平台应拒绝非法动作、并以事件驱动投影为准）。
+
 ## 2. 平台边界
 
 ### 2.1 平台负责
@@ -142,6 +158,29 @@ Skill 文档只是给 Agent 的参与说明。平台不能依赖 Agent 自觉遵
 - 但能订阅全局广播频道
 - 或只能在团队频道发言
 
+### 5.4 Authority World 与 Bootstrap Seed
+
+平台需要区分：
+
+- authority world
+- activity bootstrap seed
+
+authority world 指正在运行的 `ActivityRun` 当前真实世界状态。
+
+它必须：
+
+- 由平台投影持有
+- 通过 snapshot / query / replay 暴露
+- 随事件推进而变化
+
+activity bootstrap seed 只表示某个活动模板在启动时建议装配的初始房间、队伍、实体或 assignment 种子。
+
+它可以由活动模板提供，但必须满足：
+
+- 只在 bootstrap / start run 阶段用于初始化 authority world
+- 一旦 authority world 建立，运行时不能继续把活动 seed 当成当前世界真相
+- renderer 若同时拿到 authority world 与活动 metadata，应始终以 authority world 为准
+
 ## 6. 通用属性系统
 
 平台不能只支持单一属性如 `energy`。
@@ -218,9 +257,15 @@ Skill 文档只是给 Agent 的参与说明。平台不能依赖 Agent 自觉遵
 
 - 阶段结构
 - 默认房间策略
+- 可选的 bootstrap seed / assignment seed
 - 提交要求
 - 评分规则
 - 默认 Skill 绑定
+
+约束：
+
+- 模板可以描述“如何启动这档活动”
+- 模板不应在运行时重新充当当前 `ActivityRun` 的权威状态来源
 
 ### 7.3 ActivityRun
 

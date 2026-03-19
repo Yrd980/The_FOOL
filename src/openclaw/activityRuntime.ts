@@ -2,7 +2,6 @@ import "./activities";
 import {
   findActivityPackageByStageId,
   getActivityPackage,
-  getDefaultActivityPackage,
   tryGetActivityPackage,
   type ActivityPackage,
 } from "./platform/activityRegistry";
@@ -105,8 +104,8 @@ const buildActivityRoomCatalogFromPackage = (
 
 export const resolveActivityPackage = (
   activityPackageId?: string | null,
-): ActivityPackage =>
-  tryGetActivityPackage(activityPackageId) ?? getDefaultActivityPackage();
+): ActivityPackage | undefined =>
+  tryGetActivityPackage(activityPackageId);
 
 export const tryResolveActivityPackage = (
   activityPackageId?: string | null,
@@ -149,19 +148,16 @@ export const resolveActivityPackageId = ({
 }: {
   templateId?: string | null;
   previewStageId?: string | null;
-} = {}): string => {
-  return (
-    tryResolveActivityPackageId({
-      templateId,
-      previewStageId,
-    }) ?? getDefaultActivityPackage().id
-  );
+} = {}): string | null => {
+  return tryResolveActivityPackageId({ templateId, previewStageId });
 };
 
 export const buildActivityRoomCatalog = (
   activityPackageId?: string | null,
-): ActivityRoomCatalog =>
-  buildActivityRoomCatalogFromPackage(resolveActivityPackage(activityPackageId));
+): ActivityRoomCatalog | null => {
+  const activityPackage = resolveActivityPackage(activityPackageId);
+  return activityPackage ? buildActivityRoomCatalogFromPackage(activityPackage) : null;
+};
 
 export const tryBuildActivityRoomCatalog = (
   activityPackageId?: string | null,
@@ -203,12 +199,11 @@ export const getActivityStageTemplate = ({
   activityPackageId?: string | null;
   stageId: string;
 }) =>
-  resolveActivityPackage(activityPackageId).stageTemplates.find(
+  resolveActivityPackage(activityPackageId)?.stageTemplates.find(
     (stageTemplate) => stageTemplate.id === stageId,
   );
 
 export {
   findActivityPackageByStageId,
   getActivityPackage,
-  getDefaultActivityPackage,
 };

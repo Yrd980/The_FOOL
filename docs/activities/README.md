@@ -10,6 +10,7 @@
 
 - 身份、角色、权限、作用域
 - 世界模型、Room / Zone / Channel / Team 的通用语义
+- authority world 与 activity bootstrap seed 的通用边界
 - `ActivityTemplate` / `ActivityRun` / `StageTemplate` / `TransitionRule` 这类抽象
 - 命令、事件、快照、回放、审计、同步协议
 - 通用 Submission / Vote / JudgeScore / Award 模型
@@ -24,6 +25,7 @@
 - 活动名称、活动目标、角色映射
 - stage id、阶段顺序、阶段目标、阶段结束条件
 - 活动使用的 room / channel / team 命名
+- 活动自己的 bootstrap seed / assignment seed 内容
 - 活动专属 submission schema 选择与字段约束
 - 活动专属评分字段、奖项、汇总口径
 - 活动专属术语、玩法、主持口径、观众互动规则

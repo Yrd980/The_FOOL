@@ -24,12 +24,15 @@ import type {
   ScoreAnnotations,
   ScoreProjection,
   ScoreSummaryItem,
+  SkillBinding,
   StageTemplate,
   SubmissionData,
   SubmissionProjection,
+  SubmissionSchema,
   SubmissionVersionRecord,
   TimerProjection,
   TimerStatus,
+  WorldProjection,
 } from "../src/openclaw/platform/contracts";
 
 type Role = ActorRole;
@@ -71,9 +74,13 @@ interface StableErrorBody {
 }
 
 interface ProjectionState {
-  version: 4;
+  version: 6;
   snapshotId: string;
   activityRun: ActivityRunState;
+  stageTemplates: StageTemplate[];
+  submissionSchemas: SubmissionSchema[];
+  world: WorldProjection;
+  skills: SkillBinding[];
   timers: TimerProjection[];
   submissions: SubmissionProjection[];
   scores: ScoreProjection[];
@@ -224,6 +231,8 @@ const supportedEvents = [
   "submission.locked",
   "judge.score_submitted",
   "award.granted",
+  "entity.moved",
+  "team.assigned",
 ];
 
 const timerHandles = new Map<string, ReturnType<typeof setTimeout>>();
@@ -253,7 +262,7 @@ const ensureDataDir = (): void => {
 };
 
 const buildSeedProjection = (now = Date.now()): ProjectionState => ({
-  version: 4,
+  version: 6,
   snapshotId: `snapshot-${now}`,
   activityRun: {
     id: "activity-run-01",
@@ -262,6 +271,10 @@ const buildSeedProjection = (now = Date.now()): ProjectionState => ({
     currentStageId: bootstrapReferenceActivityPackage.initialStageId,
     startedAt: now,
   },
+  stageTemplates: cloneJsonValue(bootstrapReferenceActivityPackage.stageTemplates),
+  submissionSchemas: cloneJsonValue(bootstrapReferenceActivityPackage.submissionSchemas),
+  world: cloneJsonValue(bootstrapReferenceActivityPackage.world),
+  skills: cloneJsonValue(bootstrapReferenceActivityPackage.skillBindings),
   timers: [],
   submissions: [],
   scores: [],
@@ -770,6 +783,87 @@ const applyEventToProjection = (
     }
   }
 
+  if (event.type === "entity.moved") {
+    const entityId =
+      typeof payload.entityId === "string" ? payload.entityId : event.entityId;
+    const toRoomId =
+      typeof payload.toRoomId === "string"
+        ? payload.toRoomId
+        : typeof payload.roomId === "string"
+          ? payload.roomId
+          : undefined;
+    if (entityId && toRoomId !== undefined) {
+      const existingEntity = next.world.entities.find((e) => e.id === entityId);
+      if (existingEntity) {
+        next = {
+          ...next,
+          world: {
+            ...next.world,
+            entities: next.world.entities.map((e) =>
+              e.id === entityId ? { ...e, roomId: toRoomId } : e,
+            ),
+          },
+        };
+      } else {
+        next = {
+          ...next,
+          world: {
+            ...next.world,
+            entities: [
+              ...next.world.entities,
+              {
+                id: entityId,
+                kind: typeof payload.kind === "string" ? payload.kind : "agent",
+                roomId: toRoomId,
+              },
+            ],
+          },
+        };
+      }
+    }
+  }
+
+  if (event.type === "team.assigned") {
+    const rawTeam = isRecord(payload.team) ? payload.team : payload;
+    const teamId = typeof rawTeam.id === "string" ? rawTeam.id : null;
+    if (teamId) {
+      const memberIds = Array.isArray(rawTeam.memberIds)
+        ? (rawTeam.memberIds.filter((m): m is string => typeof m === "string"))
+        : [];
+      const roomId =
+        typeof rawTeam.roomId === "string" ? rawTeam.roomId : undefined;
+      const existingTeam = next.world.teams.find((t) => t.id === teamId);
+      if (existingTeam) {
+        next = {
+          ...next,
+          world: {
+            ...next.world,
+            teams: next.world.teams.map((t) =>
+              t.id === teamId
+                ? {
+                    ...t,
+                    memberIds: memberIds.length > 0 ? memberIds : t.memberIds,
+                    roomId: roomId ?? t.roomId,
+                  }
+                : t,
+            ),
+          },
+        };
+      } else {
+        next = {
+          ...next,
+          world: {
+            ...next.world,
+            teams: [
+              ...next.world.teams,
+              { id: teamId, memberIds, roomId },
+            ],
+          },
+        };
+      }
+    }
+  }
+
   if (event.type === "award.granted") {
     const rawAward = isRecord(payload.award) ? payload.award : payload;
     if (
@@ -927,14 +1021,14 @@ const buildHealthAgents = (): HealthAgent[] =>
 const buildSnapshotEnvelope = (now = Date.now()) => ({
   snapshotId: projection.snapshotId,
   activityRun: projection.activityRun,
-  world: resolveActivityPackage().world,
+  world: projection.world,
   timers: projection.timers.map((timer) => ({
     id: timer.id,
     stageId: timer.stageId,
     remainingMs: computeRemainingMs(timer, now),
     state: timer.state,
   })),
-  skills: resolveActivityPackage().skillBindings,
+  skills: projection.skills,
   submissions: projection.submissions.map((submission) => ({
     id: submission.id,
     activityRunId: submission.activityRunId,
@@ -1257,10 +1351,10 @@ const requireScoreRole = (
 };
 
 const findStage = (stageId: string): StageTemplate | undefined =>
-  resolveActivityPackage().stageTemplates.find((stage) => stage.id === stageId);
+  projection.stageTemplates.find((stage) => stage.id === stageId);
 
 const findTeam = (teamId: string) =>
-  resolveActivityPackage().world.teams.find((team) => team.id === teamId);
+  projection.world.teams.find((team) => team.id === teamId);
 
 const inferSubmissionSchemaId = (stageId: string | null): string | null => {
   const stage = stageId ? findStage(stageId) : undefined;
@@ -1292,11 +1386,74 @@ const requireSubmissionRole = (
   );
 };
 
+const findSubmissionSchema = (schemaId: string) =>
+  projection.submissionSchemas.find((schema) => schema.id === schemaId);
+
+const validateSubmissionDataByPlatformSchema = (
+  schemaId: string,
+  rawData: SubmissionData,
+): SubmissionData => {
+  const schema = findSubmissionSchema(schemaId);
+  if (!schema) {
+    throw new Error(`Unknown submission schema ${schemaId}.`);
+  }
+
+  const allowedKeys = new Set(schema.fields.map((field) => field.key));
+  const unknownKeys = Object.keys(rawData).filter((key) => !allowedKeys.has(key));
+  if (unknownKeys.length > 0) {
+    throw new Error(
+      `payload.data contains unsupported fields: ${unknownKeys.join(", ")}.`,
+    );
+  }
+
+  const normalizedData: SubmissionData = {};
+  for (const field of schema.fields) {
+    const fieldValue = rawData[field.key];
+    if (fieldValue === undefined || fieldValue === null) {
+      if (field.required) {
+        throw new Error(`payload.data.${field.key} is required.`);
+      }
+      continue;
+    }
+
+    if (
+      field.type === "text" ||
+      field.type === "file" ||
+      field.type === "link"
+    ) {
+      if (typeof fieldValue !== "string" || fieldValue.trim().length === 0) {
+        throw new Error(
+          `payload.data.${field.key} must be a non-empty string.`,
+        );
+      }
+      normalizedData[field.key] = fieldValue.trim();
+      continue;
+    }
+
+    normalizedData[field.key] = cloneJsonValue(fieldValue);
+  }
+
+  return normalizedData;
+};
+
 const normalizeSubmissionDataForSchema = (
   schemaId: string,
   rawData: SubmissionData,
-): SubmissionData =>
-  resolveActivityPackage().normalizeSubmissionData(schemaId, rawData);
+): SubmissionData => {
+  try {
+    return resolveActivityPackage().normalizeSubmissionData(schemaId, rawData);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const isUnknownSchema =
+      message.includes("Unknown submission schema") ||
+      message.includes("unknown schema");
+    if (!isUnknownSchema) {
+      throw error;
+    }
+  }
+
+  return validateSubmissionDataByPlatformSchema(schemaId, rawData);
+};
 
 const validateSubmissionDataForCommand = (
   command: CommandEnvelope,
@@ -2961,8 +3118,8 @@ const handleWsMessage = (
           ok: true,
           payload: {
             snapshot: buildSnapshotEnvelope(),
-            stageTemplates: resolveActivityPackage().stageTemplates,
-            submissionSchemas: resolveActivityPackage().submissionSchemas,
+            stageTemplates: projection.stageTemplates,
+            submissionSchemas: projection.submissionSchemas,
           },
         }),
       );
@@ -3109,8 +3266,8 @@ const server = Bun.serve<WebSocketSessionData>({
         return sendJson({
           ok: true,
           snapshot: buildSnapshotEnvelope(),
-          stageTemplates: resolveActivityPackage().stageTemplates,
-          submissionSchemas: resolveActivityPackage().submissionSchemas,
+          stageTemplates: projection.stageTemplates,
+          submissionSchemas: projection.submissionSchemas,
         });
       } catch (error) {
         return sendErrorResponse(error);

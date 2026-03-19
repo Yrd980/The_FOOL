@@ -263,7 +263,7 @@ type OverlayModuleId =
   | "bet-heat"
   | "soft-fallback";
 
-interface ShowAuthoritySlice {
+interface ShowRenderInput {
   currentStageId: TheFoolStageId | null;
   timers: Array<{
     id: string;
@@ -286,13 +286,15 @@ interface ShowAuthoritySlice {
     updatedAt: number;
   }>;
   scores: Array<{
+    id: string;
     stageId: string;
-    submissionId: string;
+    targetType: "team" | "submission";
+    targetId: string;
+    submissionId?: string;
     teamId?: string;
     score: number;
     reason: string;
-    favorite: string;
-    mostAbsurd: string;
+    annotations?: Record<string, string>;
     submittedAt: number;
   }>;
   scoreSummary: Array<{
@@ -320,6 +322,14 @@ interface ShowAuthoritySlice {
     timestamp: number;
   }>;
 }
+
+这里故意没有把 `favorite` / `mostAbsurd` 写成 authority score 的顶层平台字段。
+
+原因是：
+
+- raw authority snapshot 更适合继续保持通用 `scores[*].annotations`
+- The Fool 播出层需要的 `favorite` / `mostAbsurd` 摘要，可以由 show adapter 从 `annotations` 派生
+- 也就是说，这里的 `ShowRenderInput` 表示“/show 渲染输入”，而不是平台原始 snapshot schema 的逐字段拷贝
 
 interface TheFoolActivityMeta {
   stageOrder: TheFoolStageId[];
@@ -400,8 +410,29 @@ const act4DiscussionScene: StageSceneConfig = {
 
 ## 8. 对后续实现的直接约束
 
-如果后续要把这份 spec 落成代码，建议至少遵守下面三点：
+如果后续要把这份 spec 落成代码，建议用下面这份 checklist 作为“落地验收表”（只要有一条不满足，就很容易退回成 dashboard-first，而不是 stage-first 的节目播出）。
 
-1. `/show` 的 scene 选择函数只吃 `currentStageId`，不直接吃 live heat。
-2. spotlight selector 与 overlay module selector 分开写；前者负责挑主对象，后者负责排模块。
-3. `/show/:stageId` 与 `/control/stages/:stageId` 共用同一份 `StageSceneConfig`，但前者面向观众 preview，后者面向 operator workspace。
+### 8.1 `/show`（live）实现 checklist
+
+- **Scene 选择只依赖 authority stage**：scene 选择函数只吃 `activityRun.currentStageId`（或等价 authority 字段）；不得用 live heat / 最近发言房间去覆盖“当前是哪一幕”。
+- **Spotlight 是派生，不是权威**：spotlight 只能在**当前幕**的候选集合里挑对象；heat 只能作为 tie-breaker（见 2.3/2.4）。
+- **Authority-first 渲染输入**：渲染输入必须来自 snapshot/projection（submissions/scores/awards/timers/world 等），不得从 scene config 写入或覆盖这些字段。
+- **Fallback 语气分层**：authority 不可用时给 soft fallback（观众口吻）；诊断信息只出现在 `/control`（operator 口吻）。
+
+### 8.2 `/show/:stageId`（preview）实现 checklist
+
+- **不改写权威**：preview 只能强制“看某一幕的播出模板”，不得修改 `currentStageId`，也不得发起任何会改变 authority state 的命令。
+- **明确标记 preview**：当 `stageId !== currentStageId`，页面必须明确标记为 preview/forced scene（避免误认为 live）。
+- **复用同一份 scene config**：preview 与 live 必须复用同一份 `StageSceneConfig`，差异只能是显示标识与数据可用性处理。
+
+### 8.3 `/control/stages/:stageId`（operator workspace）实现 checklist
+
+- **Backstage evidence 优先**：必须能看到 authority/query 的可用性与证据（freshness/availability/audit/receipt 等），但这些不应泄露到 `/show` 的观众视图。
+- **非当前幕要“安全”**：当查看的不是当前 stage 时，mutation controls 必须进入“准备态/需确认/禁用”之一，避免对非当前幕静默执行危险操作。
+- **不把 scene config 写回 authority**：scene config 只用于渲染编排与模块排序，不能成为权威配置写回通道。
+
+### 8.4 最小配置约束（实现时必须遵守）
+
+- `StageSceneConfig` 里**不出现**任何具体运行实例 ID（submissionId/teamId/awardId 等）；这些都来自 authority runtime object。
+- `StageSceneConfig` 里**不出现** authority 字段（如 `currentStageId`、score 数值、submission payload）；scene config 只声明“怎么播/怎么选主视觉/怎么排模块”。
+- 所有“当前幕”的判断只依赖 authority stage；任何 heat-based 的选择都只能发生在“同一幕内的候选集合”上。

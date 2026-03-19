@@ -8,12 +8,26 @@ export type SubmissionData = Record<string, unknown>;
 
 export type ScoreAnnotations = Record<string, string>;
 
+export interface TransitionRule {
+  id: string;
+  sourceStageId: string;
+  targetStageId: string;
+  type:
+    | "manual"
+    | "timer_expired"
+    | "all_required_submissions_locked"
+    | "scores_completed"
+    | "condition_satisfied";
+  config: Record<string, unknown>;
+}
+
 export interface StageTemplate {
   id: string;
   name: string;
   durationSec?: number;
   allowedActions: string[];
   submissionSchemaIds?: string[];
+  transitionRules?: TransitionRule[];
 }
 
 export interface SubmissionSchemaField {

@@ -120,6 +120,20 @@ Phaser、Godot、Unity 都落在这一层。
 - renderer/client 只能消费 snapshot / event，不能自己成为流程真相源
 - 阶段切换、计时与锁定必须对应真实命令与真实事件
 
+进一步说：
+
+- 活动包可以提供 stage/schema/skill binding 以及可选 bootstrap seed
+- 但 Orchestrator 在运行时必须只相信当前 `ActivityRun` + projection
+- 运行时若无法根据当前 `templateId` 解析活动包，应显式暴露 unavailable / pending，而不是静默回落到某个 reference activity
+
+#### 运行时真相约束（必须明确）
+
+为了避免平台被某个活动或某个 renderer 的局部状态反向硬编码，Orchestrator 在运行时必须满足：
+
+- **只信 authority projection**：`currentStageId`、timer/lock、submission/score/award、world/presence 等运行时状态只从投影读取；活动模板只在 bootstrap 时参与初始化。
+- **无隐式默认活动**：当 `templateId` / activity package 不可用时，返回 unavailable/pending，并在 `/control` 类界面暴露诊断；不要静默 fallback 到“第一个已注册活动”。
+- **命令→事件→投影闭环**：阶段切换、计时与锁定必须由真实 command 触发并产生事件；snapshot 必须反映事件提交后的最新投影，而不是客户端自行推导。
+
 ### 3.4 Rules/Effects Engine
 
 职责：
@@ -198,6 +212,12 @@ Phaser、Godot、Unity 都落在这一层。
 - 所有关键状态变化先变成事件
 - 当前状态投影可重建
 - 客户端只读投影，不直接改写状态
+
+其中 world 相关需要特别约束：
+
+- `world_view` 才是 renderer 与 operator 读取当前世界状态的正式来源
+- 活动模板里的 room / team / entity seed 只用于 bootstrap
+- snapshot 中的 `world` 必须来自当前投影，而不是活动模板静态数据
 
 ### 4.2 当前投影
 
@@ -343,6 +363,8 @@ export interface EventEnvelope<TPayload = Record<string, unknown>> {
 ### 7.1 Snapshot
 
 客户端首次进入应拿到完整快照：
+
+> 注：下面的 `SnapshotEnvelope` 是平台 contract 的**示例形状**，用于表达“authority snapshot 至少应承载哪些语义”。实现可以拆成多个 view/query，但必须保证 renderer 能拿到等价的权威信息，且 `world` 来自投影而非活动 seed。
 
 ```ts
 export interface SnapshotEnvelope {

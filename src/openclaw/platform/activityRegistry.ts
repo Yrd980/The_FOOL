@@ -60,14 +60,6 @@ export const tryGetActivityPackage = (
   return activityPackages.get(activityPackageId);
 };
 
-export const getDefaultActivityPackage = (): ActivityPackage => {
-  const firstActivityPackage = activityPackages.values().next().value;
-  if (!firstActivityPackage) {
-    throw new Error("No activity package has been registered.");
-  }
-  return firstActivityPackage;
-};
-
 export const findActivityPackageByStageId = (
   stageId: string,
 ): ActivityPackage | undefined =>
