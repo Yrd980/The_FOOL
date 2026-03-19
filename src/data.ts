@@ -349,6 +349,10 @@ export const buildOperatorCommands = ({
   const nextStage = currentStageIndex >= 0 ? stages[currentStageIndex + 1] ?? null : null;
   const activityRunId = gateway.activityRun?.id ?? "<activity-run-id>";
   const authorityStageId = gateway.activityRun?.currentStageId ?? stage.id;
+  const isPreview = Boolean(
+    gateway.activityRun?.currentStageId &&
+      gateway.activityRun.currentStageId !== stage.id,
+  );
   const durationSec =
     runtimeGuide.suggestedDurationSec ?? stage.durationSec ?? 300;
   const openSubmission =
@@ -357,6 +361,21 @@ export const buildOperatorCommands = ({
         !submission.locked &&
         (!submission.stageId || submission.stageId === authorityStageId),
     ) ?? null;
+
+  if (isPreview) {
+    return [
+      {
+        label: "⚠ 预演模式",
+        command: "",
+        note: `当前正在预览 ${stage.id}，但权威 stage 是 ${gateway.activityRun?.currentStageId}。以下命令仅供参考，不会实际影响权威状态。`,
+      },
+      {
+        label: "切换到此幕",
+        command: `bun run openclaw:control -- stage ${activityRunId} ${stage.id}`,
+        note: `把权威 stage 从 ${gateway.activityRun?.currentStageId} 推到 ${stage.id}。`,
+      },
+    ];
+  }
 
   const orchestrationCommands: OperatorCommand[] = [
     {

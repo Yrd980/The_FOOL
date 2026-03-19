@@ -1,6 +1,4 @@
 import {
-  buildActivityRoomCatalog,
-  tryBuildActivityRoomCatalog,
   type ActivityRoomCatalog,
 } from "./activityRuntime";
 import type {
@@ -77,7 +75,6 @@ export interface SubmitScorePayload {
 }
 
 interface ControlRoomResolutionOptions {
-  fallbackToDefault?: boolean;
   roomCatalog?: ActivityRoomCatalog | null;
 }
 
@@ -85,13 +82,9 @@ const normalizeAlias = (room: string): string =>
   room.trim().toLowerCase().replace(/[\s_]+/g, "-");
 
 const resolveRoomCatalog = (
-  activityPackageId?: string | null,
+  _activityPackageId?: string | null,
   options?: ControlRoomResolutionOptions,
-) =>
-  options?.roomCatalog ??
-  (options?.fallbackToDefault === false
-    ? tryBuildActivityRoomCatalog(activityPackageId)
-    : buildActivityRoomCatalog(activityPackageId));
+) => options?.roomCatalog ?? null;
 
 const normalizeAgentId = (agentId: string): string => {
   const normalized = agentId.trim();
@@ -555,6 +548,70 @@ export const buildGrantAwardEnvelope = ({
     idempotencyKey,
   });
 
+export const buildMoveEntityEnvelope = ({
+  actorId,
+  activityRunId,
+  entityId,
+  toRoomId,
+  kind,
+  idempotencyKey,
+}: {
+  actorId: string;
+  activityRunId: string;
+  entityId: string;
+  toRoomId: string;
+  kind?: string;
+  idempotencyKey?: string;
+}): CommandEnvelope<{
+  entityId: string;
+  toRoomId: string;
+  kind?: string;
+}> =>
+  buildCommandEnvelope({
+    actorId,
+    actorRole: "host",
+    activityRunId,
+    type: "move_entity",
+    payload: {
+      entityId: entityId.trim(),
+      toRoomId: toRoomId.trim(),
+      ...(kind?.trim() ? { kind: kind.trim() } : {}),
+    },
+    idempotencyKey,
+  });
+
+export const buildAssignTeamEnvelope = ({
+  actorId,
+  activityRunId,
+  teamId,
+  memberIds,
+  roomId,
+  idempotencyKey,
+}: {
+  actorId: string;
+  activityRunId: string;
+  teamId: string;
+  memberIds?: string[];
+  roomId?: string;
+  idempotencyKey?: string;
+}): CommandEnvelope<{
+  teamId: string;
+  memberIds?: string[];
+  roomId?: string;
+}> =>
+  buildCommandEnvelope({
+    actorId,
+    actorRole: "host",
+    activityRunId,
+    type: "assign_team",
+    payload: {
+      teamId: teamId.trim(),
+      ...(memberIds ? { memberIds } : {}),
+      ...(roomId?.trim() ? { roomId: roomId.trim() } : {}),
+    },
+    idempotencyKey,
+  });
+
 export const buildSubmitScoreEnvelope = ({
   actorId,
   activityRunId,
@@ -706,12 +763,7 @@ export const buildGatewayAgentCallArgs = ({
     normalizedAgentId,
     room,
     activityPackageId,
-    roomCatalog
-      ? {
-          fallbackToDefault: false,
-          roomCatalog,
-        }
-      : undefined,
+    roomCatalog ? { roomCatalog } : undefined,
   );
   return buildGatewayCallArgs({
     method: "agent",

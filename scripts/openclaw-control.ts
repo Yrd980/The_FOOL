@@ -23,6 +23,8 @@ import {
   buildOrchestratorScoresUrl,
   buildOrchestratorSnapshotUrl,
   buildSubmitEnvelope,
+  buildAssignTeamEnvelope,
+  buildMoveEntityEnvelope,
   buildSubmitScoreEnvelope,
   buildStartTimerEnvelope,
   buildTransitionStageEnvelope,
@@ -62,6 +64,9 @@ type CommandName =
   | "lock-submission"
   | "submit-score"
   | "grant-award"
+  | "draw"
+  | "move-entity"
+  | "assign-team"
   | "snapshot"
   | "scores"
   | "events"
@@ -82,6 +87,9 @@ const USAGE = `Usage:
   bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> --annotations-json <json>
   bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> --favorite <text> --most-absurd <text>
   bun run openclaw:control -- grant-award <activity-run-id> <award-id> <entity-id> [label] [reason]
+  bun run openclaw:control -- draw <activity-run-id> <entity-id> <draw-data-json>
+  bun run openclaw:control -- move-entity <activity-run-id> <entity-id> <to-room-id> [kind]
+  bun run openclaw:control -- assign-team <activity-run-id> <team-id> [--members <id,id,...>] [--room-id <room-id>]
   bun run openclaw:control -- snapshot <activity-run-id>
   bun run openclaw:control -- scores <activity-run-id> [--after-sequence <n>] [--from-sequence <n>] [--to-sequence <n>] [--limit <n>]
   bun run openclaw:control -- events <activity-run-id> [--after-sequence <n>] [--from-sequence <n>] [--to-sequence <n>] [--limit <n>]
@@ -1086,22 +1094,12 @@ const resolveAgentCommandActivityContext = async ({
       };
     }
 
-    if (activityPackageId) {
-      const roomCatalog = tryBuildActivityRoomCatalog(activityPackageId);
-      if (roomCatalog) {
-        return {
-          activityPackageId,
-          roomCatalog,
-          note: `Room aliases resolved against activity package ${activityPackageId}.`,
-        };
-      }
-    }
-
     return {
       activityPackageId,
       roomCatalog: null,
-      note:
-        "Authoritative snapshot is reachable, but it does not expose enough room metadata yet.",
+      note: activityPackageId
+        ? `Authoritative snapshot is reachable for ${activityPackageId}, but authority world is not available yet.`
+        : "Authoritative snapshot is reachable, but it does not expose enough room metadata yet.",
     };
   } catch (error) {
     return {
@@ -1372,7 +1370,6 @@ if (normalizedCommand === "move" || normalizedCommand === "say") {
   }
 
   const roomResolutionOptions = {
-    fallbackToDefault: false,
     roomCatalog: activityContext.roomCatalog,
   } as const;
 
@@ -1568,6 +1565,69 @@ if (normalizedCommand === "grant-award") {
       idempotencyKey: `award-${activityRunId}-${awardId}-${Date.now()}`,
     }),
     summary: `grant_award ${activityRunId} / ${awardId} -> ${entityId}`,
+  });
+}
+
+if (normalizedCommand === "draw") {
+  const [activityRunId, entityId, drawDataJson] = args;
+  if (!activityRunId || !entityId || !drawDataJson) {
+    fail(USAGE);
+  }
+
+  const drawData = parsePayloadJson(drawDataJson);
+  await dispatchOrPreview({
+    envelope: buildCommandEnvelope({
+      actorId: resolveActorId(),
+      actorRole: resolveActorRole() === "host" ? "agent" : resolveActorRole(),
+      activityRunId,
+      type: "draw",
+      payload: { entityId, data: drawData },
+      idempotencyKey: `draw-${activityRunId}-${entityId}-${Date.now()}`,
+    }),
+    summary: `draw ${activityRunId} / ${entityId}`,
+  });
+}
+
+if (normalizedCommand === "move-entity") {
+  const [activityRunId, entityId, toRoomId, kind] = args;
+  if (!activityRunId || !entityId || !toRoomId) {
+    fail(USAGE);
+  }
+
+  await dispatchOrPreview({
+    envelope: buildMoveEntityEnvelope({
+      actorId: resolveActorId(),
+      activityRunId,
+      entityId,
+      toRoomId,
+      kind: kind || undefined,
+      idempotencyKey: `move-entity-${activityRunId}-${entityId}-${Date.now()}`,
+    }),
+    summary: `move_entity ${activityRunId} / ${entityId} -> ${toRoomId}`,
+  });
+}
+
+if (normalizedCommand === "assign-team") {
+  const { positional, options } = parseLongOptions(args);
+  const [activityRunId, teamId] = positional;
+  if (!activityRunId || !teamId) {
+    fail(USAGE);
+  }
+
+  const membersRaw = normalizeControlConfigValue(options.members);
+  const memberIds = membersRaw ? membersRaw.split(",").map((id) => id.trim()).filter(Boolean) : undefined;
+  const roomId = normalizeControlConfigValue(options["room-id"]);
+
+  await dispatchOrPreview({
+    envelope: buildAssignTeamEnvelope({
+      actorId: resolveActorId(),
+      activityRunId,
+      teamId,
+      memberIds,
+      roomId: roomId || undefined,
+      idempotencyKey: `assign-team-${activityRunId}-${teamId}-${Date.now()}`,
+    }),
+    summary: `assign_team ${activityRunId} / ${teamId}${memberIds ? ` (${memberIds.length} members)` : ""}`,
   });
 }
 

@@ -156,12 +156,26 @@ export function StageWorkspace({
       </div>
 
       <div className="rounded-[1.8rem] border border-slate-200 bg-white p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)] sm:p-6">
+        {gateway.activityRun?.currentStageId &&
+          gateway.activityRun.currentStageId !== stage.id && (
+          <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+            <p className="text-sm font-semibold text-amber-800">
+              Preview Mode
+            </p>
+            <p className="mt-1 text-xs leading-5 text-amber-700">
+              Authority stage is <span className="font-mono">{gateway.activityRun.currentStageId}</span>. Commands in this view are read-only references and will not affect the live run.
+            </p>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <span className="rounded-full border border-[#fecdd3] bg-[#fff1f2] px-3 py-1 font-mono text-[0.72rem] uppercase tracking-[0.22em] text-[#be123c]">
             {stage.label}
           </span>
           <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 font-mono text-[0.72rem] uppercase tracking-[0.22em] text-slate-600">
-            Live Operator View
+            {gateway.activityRun?.currentStageId &&
+              gateway.activityRun.currentStageId !== stage.id
+              ? "Preview"
+              : "Live Operator View"}
           </span>
         </div>
 

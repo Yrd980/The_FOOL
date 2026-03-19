@@ -1828,7 +1828,7 @@ export function useGatewayOverview(): GatewayOverview {
       ]),
     );
     const observedRoomIds = new Set<string>(
-      getGatewayRoomIds(activityPackageId, { fallbackToDefault: false }),
+      getGatewayRoomIds(activityPackageId),
     );
 
     for (const room of authoritativeWorld?.rooms ?? []) {
@@ -1848,9 +1848,7 @@ export function useGatewayOverview(): GatewayOverview {
     const allSessionSummaries: GatewaySessionSummary[] = [...sessions]
       .sort((left, right) => normalizeTimestamp(right.updatedAt) - normalizeTimestamp(left.updatedAt))
       .map((session) => {
-        const roomId = resolveSessionRoomId(session.key, activityPackageId, {
-          fallbackToDefault: false,
-        });
+        const roomId = resolveSessionRoomId(session.key, activityPackageId);
         observedRoomIds.add(roomId);
         const state = deriveContestantState(session);
         return {
@@ -1859,9 +1857,7 @@ export function useGatewayOverview(): GatewayOverview {
           roomId,
           roomLabel:
             roomLabelById.get(roomId) ??
-            getRoomLabel(roomId, activityPackageId, {
-              fallbackToDefault: false,
-            }),
+            getRoomLabel(roomId, activityPackageId),
           updatedAt: normalizeTimestamp(session.updatedAt),
           updatedLabel: formatUpdatedLabel(session.updatedAt),
           state,
@@ -1926,9 +1922,7 @@ export function useGatewayOverview(): GatewayOverview {
         roomLabel:
           relatedRoom?.roomLabel ??
           roomLabelById.get(roomId) ??
-          getRoomLabel(roomId, activityPackageId, {
-            fallbackToDefault: false,
-          }),
+          getRoomLabel(roomId, activityPackageId),
         content: message.content,
         timestamp,
         timestampLabel: formatClockLabel(timestamp),
@@ -1942,18 +1936,14 @@ export function useGatewayOverview(): GatewayOverview {
       roomId,
       label:
         roomLabelById.get(roomId) ??
-        getRoomLabel(roomId, activityPackageId, {
-          fallbackToDefault: false,
-        }),
+        getRoomLabel(roomId, activityPackageId),
       count: allSessionSummaries.filter((session) => session.roomId === roomId).length,
     }));
     const roomRosters = resolvedRoomIds.map((roomId) => ({
       roomId,
       label:
         roomLabelById.get(roomId) ??
-        getRoomLabel(roomId, activityPackageId, {
-          fallbackToDefault: false,
-        }),
+        getRoomLabel(roomId, activityPackageId),
       sessions: allSessionSummaries.filter((session) => session.roomId === roomId),
     }));
 

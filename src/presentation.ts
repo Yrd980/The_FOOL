@@ -329,8 +329,7 @@ export const buildRoomHeatSummaries = (
       const heatScore =
         room.sessions.length * 10 +
         activityCount * 14 +
-        stateScore +
-        (focusRoomIds.has(room.roomId) ? 6 : 0);
+        stateScore;
 
       let heatLabel: string;
       let heatTone: UiTone;
@@ -374,6 +373,9 @@ export const buildRoomHeatSummaries = (
       };
     })
     .sort((left, right) => {
+      if (left.isFocusRoom !== right.isFocusRoom) {
+        return left.isFocusRoom ? -1 : 1;
+      }
       if (left.heatScore !== right.heatScore) {
         return right.heatScore - left.heatScore;
       }

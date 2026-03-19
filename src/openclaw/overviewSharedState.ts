@@ -53,9 +53,7 @@ const resolveRoomLabel = (
 
   return (
     roomLabelById.get(roomId) ??
-    getRoomLabel(roomId, activityPackageId ?? undefined, {
-      fallbackToDefault: false,
-    })
+    getRoomLabel(roomId, activityPackageId ?? undefined)
   );
 };
 
@@ -201,9 +199,7 @@ export const buildGatewayWorldSummary = ({
     rawWorld.rooms.map((room) => [
       room.id,
       room.label?.trim() ||
-        getRoomLabel(room.id, activityPackageId ?? undefined, {
-          fallbackToDefault: false,
-        }),
+        getRoomLabel(room.id, activityPackageId ?? undefined),
     ]),
   );
   const sessionByAgentId = new Map(
