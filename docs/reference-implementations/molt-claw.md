@@ -89,14 +89,14 @@
 - `src/openclaw/platform/contracts.ts` 收口平台通用 contract
 - `src/openclaw/platform/activityRegistry.ts` 提供活动包注册与加载边界
 - `src/openclaw/activities/index.ts` 现在作为显式 activity registration/bootstrap 入口，避免 browser 侧再依赖隐式 side effect
-- `src/openclaw/activities/theFoolV1.ts` 承载 The Fool v1 的 stage/schema/world/score config
+- `src/openclaw/activities/theFoolV1.ts` 承载 The Fool v1 的 stage/schema/world seed/score config
 - `src/openclaw/activities/theFoolV1.ts` 现在也承载 The Fool v1 的前端 stage copy、runtime guide、room aliases、room scene roles、UI summary，以及 stage-specific skill/doc bindings 等 activity metadata
 - `src/data.ts` 不再维护 The Fool 静态 stage 数组，而是从 activity package 装配 activity-driven view model；当 authority/template 还没解出来时，前端会退回通用 pending shell，也不再在 pending copy 里默认借用 The Fool 口吻
-- `scripts/openclaw-orchestrator.ts` 不再直接把 The Fool 的十幕、schema 和 world seed 写死在主文件里，而是从 activity package 装配；bootstrap 语义也已改成“explicit reference activity”，支持 `OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID`
+- `scripts/openclaw-orchestrator.ts` 不再直接把 The Fool 的十幕、schema 和 world seed 写死在主文件里，而是从 activity package 装配；bootstrap 语义也已改成支持 `OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID` 的显式 reference activity，但 `snapshot.world` / `skills` 仍有直接读取活动包的路径，尚未完全做到 projection-only
 - `src/presentation.ts` 的 room narrative / live copy 已改成消费 activity metadata 里的 room scene roles，不再硬编码 `main-stage` / `team-room-*` / `quiet-orbit`
 - `src/openclaw/useGatewayOverview.ts` 与 `src/openclaw/overviewSharedState.ts` 在拿不到 `templateId` 时，已优先退回 authority world label / raw room id，而不是默认套用 The Fool room catalog
 - `src/openclaw/useGatewayOverview.ts` 与 `scripts/openclaw-orchestrator.ts` 读取 score annotations 时，旧 `favorite` / `mostAbsurd` 顶层字段兼容已下沉到 activity package 的 `scoreConfig.extractLegacyAnnotations`
-- `src/openclaw/control.ts` 的 room alias / room catalog 现在既能从 activity package 派生，也能从 authority `snapshot.world` 派生；`scripts/openclaw-control.ts` 的 `move` / `say` 会优先读取 authority snapshot 做 activity-scoped room resolution，不再静默回落到默认 reference activity 房间 catalog
+- `src/openclaw/control.ts` 的 room alias / room catalog 现在既能从 activity package 派生，也能从 authority `snapshot.world` 派生；`scripts/openclaw-control.ts` 的 `move` / `say` 在严格路径下会优先读取 authority snapshot 做 activity-scoped room resolution，但通用 helper 仍保留默认 activity package fallback，尚未完全拔干净
 - `src/openclaw/control.ts` 的 `submit` / `update_submission` / `submit_score` envelope builder 已收口成平台通用 payload，`scripts/openclaw-control.ts` 则改成通用 payload / annotations 输入 + The Fool 兼容别名
 
 当前 The Fool v1 在这个 worktree 里的 submission write loop 已收口为：
@@ -205,21 +205,43 @@
 
 ## 6. 当前 Known Gaps
 
-当前仍未完整暴露或未完全闭环的点：
+这一节把“已知差距”改写成可验收清单：每条 gap 都对应一条明确的 contract/约束，并给出完成标准。
 
-- 当前 local fixture 暴露出来的 team-room / entity placement mismatch 仍未被 backend 修正
-- `/show` 当前 room spotlight 仍会部分受 live session heat 影响；在 live session 很稀疏时，还没有完全收敛到更强的 act-level world cue
-- browser / CLI / orchestrator 侧仍保留一轮 The Fool 兼容层：
-  - 旧 `favorite` / `mostAbsurd` 顶层 score 字段仍被接受，但兼容解析已经下沉到 The Fool activity package，而不是继续散在平台通用层
-  - `scripts/openclaw-control.ts` 仍接受 `--favorite` / `--most-absurd` / `--weirdest` / `--absurd`，然后映射到通用 `annotations`
-- explicit reference activity bootstrap 仍保留一轮：
-  - browser app shell 已经不再默认退回 The Fool，但本地 orchestrator 仍会在无存量 projection 时，以 reference activity 的语义 bootstrap 第一条 run
-  - `scripts/openclaw-orchestrator.ts` 当前支持 `OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID`（并兼容旧 `OPENCLAW_ACTIVITY_TEMPLATE_ID`）覆盖 bootstrap 活动；未显式配置时，本地默认 reference activity 仍是 The Fool v1，方便参考实现直接起第一条 run
+| Gap | 违反/触及的 contract 约束（回链） | 完成标准（验收口径） |
+| --- | --- | --- |
+| local fixture 的 team-room / entity placement mismatch 未修正 | 平台：世界模型的权威状态应来自投影（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 `world_view` 约束） | backend 修正 fixture/projection：snapshot 中的 entity/team roomId 一致、可被 replay 重建；renderer 不需要“补救性推断” |
+| authority world 与 activity bootstrap seed 未完全分开 | 平台：authority world vs bootstrap seed 边界（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的 “Authority World 与 Bootstrap Seed”）与 snapshot world 来自投影（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 world_view 约束） | orchestrator/snapshot 构建不再读取活动包静态 world 充当运行时真相；活动 seed 只参与 bootstrap；运行时 world 只能来自 projection |
+| shared runtime 仍可能默认 fallback 到“首个已注册活动包” | 平台：Orchestrator 无隐式默认活动（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 “运行时真相约束”） | 当拿不到 `templateId`/activity package 时，明确返回 unavailable/pending，并在 `/control` 暴露诊断；不得静默 fallback |
+| `/show` room spotlight 仍会受 live heat 影响，可能带偏 stage-first | Scene：heat 只能做 tie-breaker，scene 选择只依赖 authority stage（[../../activities/the-fool-v1/scene-spec.md](../activities/the-fool-v1/scene-spec.md) 的 “Stage-first” 与实现 checklist） | `/show` 的 scene 选择只看 `currentStageId`；spotlight 只在当前幕候选集内使用 heat 作为 tie-breaker；不得用 heat 覆盖当前幕 |
+| browser/CLI/orchestrator 仍保留旧 score 字段与 flags 的兼容层 | 活动：活动专属字段应映射到平台通用扩展容器（[../../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md) 的 “平台能力映射索引” + AI 评分映射说明）与平台：通用 scoring 扩展点口径（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的“平台如何被活动扩展”） | 兼容层完全收口到活动包/活动适配层；平台通用 contract 只认识通用 score 结构（如 annotations/extras 容器），不出现活动字段名 |
+| reference activity bootstrap 仍作为默认路径存在 | 平台：无隐式默认活动（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 “运行时真相约束”）与 bootstrap 只在启动阶段生效（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的 seed 边界） | reference activity 仅作为本地开发的显式 bootstrap 配置；运行时路径/renderer/shared helpers 不得依赖它来补齐缺失数据；缺失时应 pending/unavailable |
 
-这几个兼容层这轮还保留的原因是：
+说明：其中部分“兼容/默认值”在参考实现早期是有意保留的开发便利，但一旦开始强调“平台通用化 + 活动可插拔”，就必须逐条拔掉隐式路径，让 authority/projection 成为唯一真相源。
 
-- 旧 score 顶层字段和 CLI flags 仍有现成操作习惯与历史 payload，需要给 The Fool operator 一轮缓冲；但它们已经不再占据平台通用 contract
-- local orchestrator 仍只有单 run / 单 reference activity 启动路径；在真正引入多活动 run bootstrap 前，保留一个显式 reference activity 默认值可以继续保证参考实现开箱即跑
+### 6.1 现在算真正分开了吗
+
+如果问题是“文档边界上有没有分开”，答案基本是：
+
+- 是
+- 平台 contract、活动规则、scene spec、参考实现现状已经分层落文档
+
+如果问题是“当前 reference implementation 运行时有没有彻底分开”，答案还不是：
+
+- 还没有完全
+- The Fool 已经从很多平台通用类型和前台默认文案里退出来了
+- 但 authority world、default activity fallback、reference activity bootstrap、CLI 兼容层这几块还没完全拔干净
+
+更准确地说，当前状态是：
+
+- 平台与活动已经“结构性分层”
+- 但还没有达到“运行时完全无隐式 The Fool 假设”
+
+要说已经真正分开，至少还需要继续收掉：
+
+- authority world 只从 projection 读取
+- shared runtime 不再默认回落到某个活动包
+- reference activity 只留在 bootstrap，不进入运行时默认路径
+- The Fool 兼容 flags / legacy 字段继续收口到活动适配层
 
 这里的含义是：
 

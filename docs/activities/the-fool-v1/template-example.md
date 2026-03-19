@@ -33,27 +33,26 @@ export const theFoolV1Template = {
 ## 2. 结构化模板示例
 
 ```ts
-export interface ActivityTemplate {
-  id: string;
-  name: string;
-  stages: StageTemplate[];
-  submissionSchemas: SubmissionSchema[];
-  scoringRules: ScoringRule[];
-  skillBindings: SkillBinding[];
-  rooms: string[];
-  attributes: string[];
-}
-
-export const theFoolV1: ActivityTemplate = {
+// 平台通用字段（ActivityTemplate / StageTemplate / SubmissionSchema / ScoringRule 等）
+// 以 `docs/openclaw-platform/requirements.md` 与 `docs/openclaw-platform/design.md` 的 contract 为准。
+//
+// 下面示例重点展示 The Fool v1 作为“活动包”需要提供的配置形状：
+// - platform contract 可承载的 stages / schemas / scoring rules
+// - 仅用于 bootstrap 的 worldSeed
+// - 活动启用的 attributes 列表
+// - 基础 skill bindings（按角色/阶段可继续扩展）
+export const theFoolV1 = {
   id: "the-fool-v1",
   name: "The Fool / Non-Human Hackathon",
-  rooms: [
-    "main-stage",
-    "team-room-1",
-    "team-room-2",
-    "team-room-3",
-    "quiet-orbit",
-  ],
+  worldSeed: {
+    rooms: [
+      { id: "main-stage", label: "Main Stage" },
+      { id: "team-room-1", label: "Team Room 1" },
+      { id: "team-room-2", label: "Team Room 2" },
+      { id: "team-room-3", label: "Team Room 3" },
+      { id: "quiet-orbit", label: "Quiet Orbit" },
+    ],
+  },
   attributes: [
     "mood",
     "confidence",
@@ -231,8 +230,12 @@ export const theFoolV1: ActivityTemplate = {
         { key: "submissionId", type: "text", required: true },
         { key: "score", type: "number", required: true, min: 1, max: 10 },
         { key: "reason", type: "text", required: true },
-        { key: "favorite", type: "text", required: true },
-        { key: "mostAbsurd", type: "text", required: true },
+        {
+          key: "annotations",
+          type: "json",
+          required: true,
+          requiredKeys: ["favorite", "mostAbsurd"],
+        },
       ],
     },
     {
@@ -258,10 +261,19 @@ export const theFoolV1: ActivityTemplate = {
 };
 ```
 
-### 2.1 AI Judge Score Schema 示例
+这里的 `worldSeed` 只表示活动启动时建议装配的初始空间种子。
+
+它不是运行时 authority world 真相来源。
+
+运行时：
+
+- 当前 `world` 仍应来自平台 projection / snapshot
+- 活动模板只负责提供 bootstrap seed，而不是在每次 snapshot 时重新提供当前世界状态
+
+### 2.1 AI Judge Score 活动语义示例
 
 ```ts
-export interface AiJudgeScorePayload {
+export interface AiJudgeScoreSemantics {
   submissionId: string;
   score: number; // 1..10
   reason: string;
@@ -270,14 +282,34 @@ export interface AiJudgeScorePayload {
 }
 ```
 
-这个模板示例对这块的约定可以先理解成：
+这个片段描述的是 The Fool v1 在活动层要求采集的语义字段，不是平台通用 command shape：
 
+- The Fool v1 的活动语义仍然要求 `favorite` / `mostAbsurd` 这两个 annotation key
 - 阶段语义动作仍记作 `score`
 - authoritative command 落成 `submit_score`
 - 成功后产生 `judge.score_submitted`
 - 只接受对 locked team-project submission 的评分
 - 同一个 judge 对同一个 submission 或解析到同一个 team 的重复评分默认 reject
-- 自动完成转场与当前参考实现现状，见 [`../../reference-implementations/molt-claw.md`](../../reference-implementations/molt-claw.md)
+- 是否启用 `scores_completed` 自动转场取决于具体实现；当前参考实现现状见 [`../../reference-implementations/molt-claw.md`](../../reference-implementations/molt-claw.md)
+
+如果要对齐平台通用 score contract，也可以把它归一化为：
+
+```ts
+export interface SubmitScorePayload {
+  submissionId: string;
+  score: number;
+  reason: string;
+  annotations: {
+    favorite: string;
+    mostAbsurd: string;
+  };
+}
+```
+
+也就是说：
+
+- `favorite` / `mostAbsurd` 继续属于 The Fool v1 的活动语义
+- 平台 authority command / score projection 仍可以保持通用 `annotations` 容器，而不把这两个字段提升成平台通用顶层字段
 
 ### 2.2 Team Project Submission 写入闭环
 

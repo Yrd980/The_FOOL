@@ -193,9 +193,30 @@ The Fool 应作为第一份 `ActivityTemplate` / `ActivityRun` 接入平台，�
 
 因此下一批最值得继续收口的是：
 
-- 把 `src/data.ts` 里的 stage/runtime guide 静态数组改成 activity-driven view model
-- 把 `src/openclaw/control.ts` 的 room aliases / default room catalog 从通用 helper 挪到活动包
-- 让 `/show` / `/control` 的 preview 与 operator workspace 进一步依赖 authority + activity meta，而不是 The Fool 静态前端数据
+- 拔掉 `src/openclaw/activityRuntime.ts` / `src/openclaw/control.ts` 里剩余的默认 activity package fallback，尤其是 room catalog 解析路径
+- 让 orchestrator snapshot 的 `world` / `skills` 真正来自 projection，而不是继续直接读活动包静态数据
+- 让 `/show` / `/control` 的 preview 与 operator workspace 进一步依赖 authority + activity meta，而不是历史遗留的 The Fool 假设
+
+### 当前平台/活动分离收口目标
+
+如果要把 The Fool 从“第一份参考活动”进一步收口成“真正可插拔的活动包”，接下来更具体的工作应是：
+
+- 去掉 renderer / shared runtime 的 implicit fallback
+  - 未解析到 `activityPackageId` / `templateId` 时，返回 pending / unavailable，而不是静默退回首个已注册活动包
+- 把活动包里的 `world` 语义明确收口为 bootstrap seed
+  - world seed 只用于启动时初始化 authority world
+  - 运行时 snapshot / query 里的 `world` 一律来自 projection
+- 把 orchestrator 里的 reference activity 语义限制在 bootstrap
+  - reference activity 只负责起第一条 run 或初始化 seed
+  - 不再参与 snapshot 构建、运行时 stage/team 查找或其他隐式默认路径
+- 给平台补默认 schema 校验
+  - 当某个活动没有自定义 submission normalizer 时，平台仍能按 `SubmissionSchema` 做基础校验
+- 把 The Fool 的兼容层继续下沉到活动适配层
+  - 旧 score 字段兼容
+  - CLI 兼容 flags
+  - submissionId -> teamId 的命名推断
+
+做到这一步时，The Fool 仍然是 reference activity，但不再是平台默认规则。
 
 ## 6. 风险信号
 
@@ -203,6 +224,8 @@ The Fool 应作为第一份 `ActivityTemplate` / `ActivityRun` 接入平台，�
 
 - 平台通用 type 里再次出现 `act-7-ai-judging`
 - 平台通用 score schema 里再次出现 `favorite` / `mostAbsurd`
+- shared runtime helper 在拿不到活动包时静默回退到某个默认包
+- snapshot 中的 `world` 重新直接读取活动模板静态 seed
 - renderer 通过本地 heat 或组件状态决定当前 stage
 - 活动改一条规则，就要改平台 command shape
 - 参考实现现状再次被写回 `docs/openclaw-platform/*`

@@ -29,6 +29,32 @@ The Fool v1 负责定义：
 - 如果播出层 scene spec 与 authority runtime state 冲突，应始终以 authority 为准
 - 当前 `molt-claw` worktree 对这些规则的实现现状，写在 [`../../reference-implementations/molt-claw.md`](../../reference-implementations/molt-claw.md)
 
+### 1.1 平台能力映射索引（本活动依赖什么平台能力）
+
+这份索引的目的，是把“本活动需要的平台能力”显式列出来，方便按平台 contract 验收；它**不**把活动专属字段写回平台文档。
+
+平台 contract 入口：
+
+- 平台 requirements：[`../../openclaw-platform/requirements.md`](../../openclaw-platform/requirements.md)
+- 平台 design：[`../../openclaw-platform/design.md`](../../openclaw-platform/design.md)
+
+本活动依赖的平台能力（按平台层语义分组）：
+
+- **活动编排（ActivityTemplate/Run、Stage、TransitionRule、Constraint）**：十幕流程必须由平台权威驱动（`activityRun.currentStageId` 等），renderer 不得自行决定当前幕。
+  对应平台：`requirements.md`（活动编排模型、约束），`design.md`（Activity Orchestrator、运行时只信 projection）
+- **时间与锁（Timer/Lock）**：每幕倒计时、窗口开关、自动/手动收口必须事件化并可回放。
+  对应平台：`requirements.md`（调度与时间系统、实时同步协议），`design.md`（Timer/Transition 的事件与投影）
+- **世界与空间（World/Room/Channel/Team/Presence）**：房间/队伍分配与移动必须是权威状态；活动的 world seed 只能用于 bootstrap。
+  对应平台：`requirements.md`（世界模型、authority world vs bootstrap seed），`design.md`（world_view、snapshot 的 world 来自投影）
+- **提交（SubmissionSchema/Submission/Version/Lock）**：Act V 的 submission window、版本历史、锁定与审计必须由平台提供；活动只定义 schema 字段与校验口径。
+  对应平台：`requirements.md`（提交物与作品模型、最小命令集），`design.md`（submission write loop、snapshot 暴露）
+- **评分与汇总（JudgeScore/Aggregation/Award）**：Act VII 的结构化评分必须落入平台 scoring 能力；活动专属评分字段应映射到通用扩展容器（如 `annotations` / `extras`）。
+  对应平台：`requirements.md`（投票与评分模型、审计与回放），`design.md`（score payload/event、scoreSummary）
+- **命令/事件/快照/回放/审计（CommandReceipt/Idempotency、Event sequence、Snapshot/Delta/Replay/Audit）**：整场活动所有关键状态变化必须能订阅、回放、审计与重算。
+  对应平台：`requirements.md`（实时同步协议、命令回执与幂等、审计与回放），`design.md`（命令执行流、事件包、同步协议）
+- **Skill 绑定与版本冻结（SkillBinding、freeze）**：活动开始后默认冻结文档版本；按角色/阶段发放。
+  对应平台：`requirements.md`（Skill 与平台文档绑定），`design.md`（Skill/Docs service、binding 对象）
+
 ## 2. 活动目标
 
 本活动要同时产生三类结果：
@@ -314,6 +340,7 @@ The Fool v1 需要启用以下公共属性：
 - 本幕的正式评分应映射到平台的结构化 scoring 能力，例如 `submit_score`
 - 只允许 `judge` 发起，`admin` 可作为 override
 - 默认只允许在 `act-7-ai-judging` 阶段提交
+- `favorite` / `mostAbsurd` 属于 The Fool v1 的活动语义字段；进入平台 authority command / projection 时，可被映射到通用 `annotations` 容器，而不要求平台快照直接暴露 The Fool 专属顶层字段
 - score target 绑定到 locked 的团队项目 submission，且该 submission 必须有真实结构化 payload
 - 同一个 judge 对同一个 submission 只能提交一份正式评分
 - snapshot / query 应至少可读到当前 `scores` 与 `scoreSummary`
@@ -442,6 +469,27 @@ interface AiJudgeScore {
   mostAbsurd: string;
 }
 ```
+
+这是 The Fool v1 的活动语义 payload。
+
+若映射到平台通用 command，可等价表达为：
+
+```ts
+interface SubmitScorePayload {
+  submissionId: string;
+  score: number;
+  reason: string;
+  annotations: {
+    favorite: string;
+    mostAbsurd: string;
+  };
+}
+```
+
+也就是说：
+
+- `favorite` / `mostAbsurd` 继续是 The Fool v1 的正式活动字段
+- 但平台 authority projection 可以继续使用通用 `annotations`，不需要把它们提升成平台通用顶层 score 字段
 
 ### 10.3 汇总结果
 
