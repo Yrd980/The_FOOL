@@ -46,7 +46,7 @@ import {
 } from "../src/openclaw/control";
 import {
   buildWorldRoomCatalog,
-  tryBuildActivityRoomCatalog,
+  tryBuildBootstrapRoomCatalog,
   tryResolveActivityPackageId,
   type ActivityRoomCatalog,
 } from "../src/openclaw/activityRuntime";
@@ -101,7 +101,8 @@ const USAGE = `Usage:
   bun run openclaw:control -- command <activity-run-id> <command-type> <payload-json>
 
 Room alias resolution for move/say:
-  - with OPENCLAW_ORCHESTRATOR_URL or --activity-package-id, aliases resolve against the current activity room catalog
+  - with OPENCLAW_ORCHESTRATOR_URL, aliases resolve against the authoritative snapshot.world catalog for the current activity
+  - with --activity-package-id, aliases resolve against that activity package's bootstrap/dev room catalog only
   - shorthand aliases are not resolved against an implicit default reference activity anymore
   - reference-activity examples: main | team1 | team2 | team3 | quiet
   - reference-activity room ids: main-stage | team-room-1 | team-room-2 | team-room-3 | quiet-orbit
@@ -1072,7 +1073,7 @@ const resolveAgentCommandActivityContext = async ({
 }): Promise<AgentCommandActivityContext> => {
   const normalizedExplicitActivityPackageId = explicitActivityPackageId?.trim();
   if (normalizedExplicitActivityPackageId) {
-    const roomCatalog = tryBuildActivityRoomCatalog(normalizedExplicitActivityPackageId);
+    const roomCatalog = tryBuildBootstrapRoomCatalog(normalizedExplicitActivityPackageId);
     if (!roomCatalog) {
       fail(
         `[openclaw-control] Unknown activity package ${normalizedExplicitActivityPackageId}.`,
@@ -1082,7 +1083,7 @@ const resolveAgentCommandActivityContext = async ({
     return {
       activityPackageId: normalizedExplicitActivityPackageId,
       roomCatalog,
-      note: `Room aliases resolved against activity package ${normalizedExplicitActivityPackageId}.`,
+      note: `Room aliases resolved against bootstrap seed for activity package ${normalizedExplicitActivityPackageId}.`,
     };
   }
 
@@ -1412,7 +1413,7 @@ if (normalizedCommand === "move" || normalizedCommand === "say") {
 
   if (!activityContext.roomCatalog) {
     fail(
-      "[openclaw-control] move/say room aliases are now activity-scoped. Configure OPENCLAW_ORCHESTRATOR_URL so the CLI can read snapshot.world, or pass --activity-package-id <id>.",
+      "[openclaw-control] move/say room aliases are now activity-scoped. Configure OPENCLAW_ORCHESTRATOR_URL so the CLI can read snapshot.world, or pass --activity-package-id <id> for an explicit bootstrap/dev alias fallback.",
     );
   }
 

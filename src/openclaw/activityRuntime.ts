@@ -135,21 +135,28 @@ export const resolveActivityPackageId = ({
   return tryResolveActivityPackageId({ templateId, previewStageId });
 };
 
+export const tryBuildBootstrapRoomCatalog = (
+  activityPackageId?: string | null,
+): ActivityRoomCatalog | null => {
+  const activityPackage = tryResolveActivityPackage(activityPackageId);
+  if (!activityPackage) {
+    return null;
+  }
+
+  return buildWorldRoomCatalog({
+    world: activityPackage.bootstrap.world,
+    activityPackageId: activityPackage.id,
+    fallbackRoomId: activityPackage.metadata?.rooms?.fallbackRoomId,
+  });
+};
+
 export const tryBuildActivityRoomCatalog = (
   activityPackageId?: string | null,
   authorityWorld?: WorldProjection | null,
 ): ActivityRoomCatalog | null => {
   const activityPackage = tryResolveActivityPackage(activityPackageId);
   if (!authorityWorld) {
-    if (!activityPackage) {
-      return null;
-    }
-
-    return buildWorldRoomCatalog({
-      world: activityPackage.world,
-      activityPackageId: activityPackage.id,
-      fallbackRoomId: activityPackage.metadata?.rooms?.fallbackRoomId,
-    });
+    return null;
   }
 
   return buildWorldRoomCatalog({

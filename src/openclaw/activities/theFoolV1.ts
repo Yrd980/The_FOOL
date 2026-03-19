@@ -796,7 +796,9 @@ export const theFoolV1ActivityPackage: ActivityPackage = registerActivityPackage
   stageTemplates: theFoolStageTemplates,
   submissionSchemas: theFoolSubmissionSchemas,
   skillBindings: theFoolSkillBindings,
-  world: theFoolWorld,
+  bootstrap: {
+    world: theFoolWorld,
+  },
   metadata: theFoolUiMetadata,
   normalizeSubmissionData: normalizeTheFoolSubmissionData,
   inferSubmissionTeamId: inferTheFoolSubmissionTeamId,

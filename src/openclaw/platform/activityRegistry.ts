@@ -17,13 +17,17 @@ export interface ActivityScoreConfig {
   normalizeAnnotations?: (annotations: ScoreAnnotations) => ScoreAnnotations;
 }
 
+export interface ActivityBootstrapSeed {
+  world: WorldProjection;
+}
+
 export interface ActivityPackage {
   id: string;
   initialStageId: string | null;
   stageTemplates: StageTemplate[];
   submissionSchemas: SubmissionSchema[];
   skillBindings: SkillBinding[];
-  world: WorldProjection;
+  bootstrap: ActivityBootstrapSeed;
   normalizeSubmissionData: (
     schemaId: string,
     rawData: SubmissionData,

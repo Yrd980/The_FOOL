@@ -15,7 +15,7 @@ Formal truth still belongs to `docs/*`; the local backend is an implementation o
 Current code boundaries inside `src/openclaw` are now split as:
 
 - `platform/*`: generic OpenClaw platform contracts and activity registration boundary
-- `activities/theFoolV1.ts`: The Fool v1 activity package, including stage/schema/world seed and activity-specific score rules
+- `activities/theFoolV1.ts`: The Fool v1 activity package, including stage/schema/bootstrap world seed and activity-specific score rules
 - `gateway/*`, `useGatewayOverview.ts`, `control.ts`: renderer/control adapters and shared consumers of authority state
 
 ## Documentation
@@ -209,6 +209,8 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
   - browser 不会从任意 live gateway websocket URL 反推 HTTP query path，以免把 local query path 和 live websocket probe/dispatch path 混在一起
 - `OPENCLAW_ORCHESTRATOR_URL` / `OPENCLAW_ORCHESTRATOR_TOKEN` 用于让 `openclaw:control` 直接调用 worktree 内的本地 authoritative backend
   - 一旦配置了 `OPENCLAW_ORCHESTRATOR_URL`，`stage` / `start-timer` / `open-submission` / `submit` / `update-submission` / `lock-submission` / `submit-score` / `grant-award` 以及 `snapshot/scores/events/replay/audit` 都会优先直连本地 backend，而不是走 live gateway 猜 dispatch method
+  - `move` / `say` 的 room alias 也会优先读取 authority `snapshot.world`
+  - 显式 `--activity-package-id <id>` 只保留为 bootstrap/dev alias fallback，不再伪装成当前 authority world
 - `openclaw:control` 的本机诊断命令在没有显式 env 时，也会回退读取 `~/.openclaw/openclaw.json -> gateway.auth.token`
   - 这只用于本机 operator 侧 probe / room control；浏览器前端本身仍需要显式 `VITE_OPENCLAW_TOKEN`
 - `openclaw:control` 当前在未显式配置 `OPENCLAW_COMMAND_ACTOR_ROLE` 时默认使用 `host`
@@ -510,7 +512,7 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
   - `unlock_submission` / `reopen_submission`
   - 独立的 submission versions query endpoint（当前通过 `snapshot` / `events` / `replay` / `audit` 追）
   - 显式的 activity lifecycle：`start` / `resume` / `finish` run，以及多活动实例 / 多活动运行并发
-  - projection-only 的 world service：authority world 与 bootstrap seed 彻底分离，以及 `Map` / `Zone` / `Channel` / `Presence` / `Membership` 等更完整 world model
+  - projection-only 的 world service：`Map` / `Zone` / `Channel` / `Presence` / `Membership` 等更完整 world model
   - 更细粒度的权限与锁模型：资源级 / 阶段级授权，stage / vote / talk lock，timer 的手动 pause / resume，以及 reminder / broadcast
   - audience & voting service：`vote` / `bet` / score dimensions/extras、自动 award derivation，以及更完整的 aggregation / tie-break 规则
   - message / presence / audience heat 等更完整的平台权威服务，而不是继续主要依赖 gateway session/chat 派生

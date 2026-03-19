@@ -291,7 +291,7 @@ const buildSeedProjection = (now = Date.now()): ProjectionState => ({
   },
   stageTemplates: cloneJsonValue(bootstrapReferenceActivityPackage.stageTemplates),
   submissionSchemas: cloneJsonValue(bootstrapReferenceActivityPackage.submissionSchemas),
-  world: cloneJsonValue(bootstrapReferenceActivityPackage.world),
+  world: cloneJsonValue(bootstrapReferenceActivityPackage.bootstrap.world),
   skills: cloneJsonValue(bootstrapReferenceActivityPackage.skillBindings),
   timers: [],
   submissions: [],

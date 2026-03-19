@@ -116,14 +116,14 @@
 - `src/openclaw/platform/contracts.ts` 收口平台通用 contract
 - `src/openclaw/platform/activityRegistry.ts` 提供活动包注册与加载边界
 - `src/openclaw/activities/index.ts` 现在作为显式 activity registration/bootstrap 入口，避免 browser 侧再依赖隐式 side effect
-- `src/openclaw/activities/theFoolV1.ts` 承载 The Fool v1 的 stage/schema/world seed/score config
+- `src/openclaw/activities/theFoolV1.ts` 承载 The Fool v1 的 stage/schema/bootstrap seed/score config
 - `src/openclaw/activities/theFoolV1.ts` 现在也承载 The Fool v1 的前端 stage copy、runtime guide、room aliases、room scene roles、UI summary，以及 stage-specific skill/doc bindings 等 activity metadata
 - `src/data.ts` 不再维护 The Fool 静态 stage 数组，而是从 activity package 装配 activity-driven view model；当 authority/template 还没解出来时，前端会退回通用 pending shell，也不再在 pending copy 里默认借用 The Fool 口吻
-- `scripts/openclaw-orchestrator.ts` 不再直接把 The Fool 的十幕、schema 和 world seed 写死在主文件里，而是从 activity package 装配；bootstrap 语义也已改成支持 `OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID` 的显式 reference activity，但 `snapshot.world` / `skills` 仍有直接读取活动包的路径，尚未完全做到 projection-only
+- `scripts/openclaw-orchestrator.ts` 不再直接把 The Fool 的十幕、schema 和 world seed 写死在主文件里，而是从 activity package 装配；bootstrap 语义也已改成支持 `OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID` 的显式 reference activity，activity package 里的 bootstrap world 只在初始化 projection 时使用，`snapshot.world` 之后只从 projection 读取
 - `src/presentation.ts` 的 room narrative / live copy 已改成消费 activity metadata 里的 room scene roles，不再硬编码 `main-stage` / `team-room-*` / `quiet-orbit`
 - `src/openclaw/useGatewayOverview.ts` 与 `src/openclaw/overviewSharedState.ts` 在拿不到 `templateId` 时，已优先退回 authority world label / raw room id，而不是默认套用 The Fool room catalog
 - `src/openclaw/useGatewayOverview.ts` 与 `scripts/openclaw-orchestrator.ts` 读取 score annotations 时，旧 `favorite` / `mostAbsurd` 顶层字段兼容已下沉到 activity package 的 `scoreConfig.extractLegacyAnnotations`
-- `src/openclaw/control.ts` 的 room alias / room catalog 现在既能从 activity package 派生，也能从 authority `snapshot.world` 派生；`scripts/openclaw-control.ts` 的 `move` / `say` 在严格路径下会优先读取 authority snapshot 做 activity-scoped room resolution，但显式 `--activity-package-id` 仍保留 package fallback，默认隐式 fallback 还没有完全拔干净
+- `src/openclaw/control.ts` 的 room alias / room catalog 现在优先从 authority `snapshot.world` 派生；`scripts/openclaw-control.ts` 的 `move` / `say` 在严格路径下会读取 authority snapshot 做 activity-scoped room resolution，而显式 `--activity-package-id` 只保留为 bootstrap/dev alias fallback，不再伪装成 authority world
 - `src/openclaw/control.ts` 的 `submit` / `update_submission` / `submit_score` envelope builder 已收口成平台通用 payload，`scripts/openclaw-control.ts` 则改成通用 payload / annotations 输入 + The Fool 兼容别名
 
 当前 The Fool v1 在这个 worktree 里的 submission write loop 已收口为：
@@ -265,8 +265,8 @@
 | --- | --- | --- |
 | local fixture 的 team-room / entity placement mismatch 未修正 | 平台：世界模型的权威状态应来自投影（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 `world_view` 约束） | backend 修正 fixture/projection：snapshot 中的 entity/team roomId 一致、可被 replay 重建；renderer 不需要“补救性推断” |
 | Act III 只有最小分队 command 闭环，仍缺少更高层约束与主持工作流 | 活动：平台必须记录正式队伍分配结果（[../../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md) 的 Act III 要求）与平台：模板不应在运行时重新充当 `ActivityRun` 真相（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的模板约束） | `team.assigned` / `entity.moved` 已能由运行时事件驱动；下一步是补齐批量分配、约束校验、冲突提示与更完整导演台工作流 |
-| authority world 与 activity bootstrap seed 未完全分开 | 平台：authority world vs bootstrap seed 边界（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的 “Authority World 与 Bootstrap Seed”）与 snapshot world 来自投影（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 world_view 约束） | orchestrator/snapshot 构建不再读取活动包静态 world 充当运行时真相；活动 seed 只参与 bootstrap；运行时 world 只能来自 projection |
-| shared runtime 仍可能默认 fallback 到“首个已注册活动包” | 平台：Orchestrator 无隐式默认活动（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 “运行时真相约束”） | 当拿不到 `templateId`/activity package 时，明确返回 unavailable/pending，并在 `/control` 暴露诊断；不得静默 fallback |
+| projection-only world service 仍未长成更完整的 `Map` / `Zone` / `Channel` / `Presence` / `Membership` 模型 | 平台：世界模型与 authority world / world_view 约束（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的世界模型与 Authority World 边界）以及 [../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 `world_view` / `presence_view` 设计 | 运行时 `world` 已只从 projection 读取；下一步完成标准是 `Map` / `Zone` / `Channel` / `Presence` / `Membership` 进入稳定 projection/query object，并减少 renderer 对 session/chat 的补位依赖 |
+| live message / presence / audience signal 仍未完全变成 authority snapshot / event 输入 | 平台：通信模型与 Presence 语义（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的通信模型 / 世界模型）以及 [../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 Messaging Service / World Service 设计 | `/show` / `/control` 的 room activity、presence、audience cue 优先读取 authoritative message/presence/signal projection；gateway session/chat 只剩 debug/backfill，不再承担主叙事输入 |
 | `TransitionRule` 目前只覆盖固定几类规则，`condition_satisfied` 等更通用 predicate 仍未 runtime 化 | 平台：阶段切换至少应支持 timer / 提交完成 / 评分完成等自动规则（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的 TransitionRule 要求）与平台设计：还预留了更通用的条件型规则（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 TransitionRule 设计） | 在现有 `timer_expired` / `all_required_submissions_locked` / `scores_completed` 之外，再支持可配置的 `condition_satisfied` / richer predicates，并提供稳定诊断口径 |
 | browser/CLI/orchestrator 仍保留旧 score 字段与 flags 的兼容层 | 活动：活动专属字段应映射到平台通用扩展容器（[../../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md) 的 “平台能力映射索引” + AI 评分映射说明）与平台：通用 scoring 扩展点口径（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的“平台如何被活动扩展”） | 兼容层完全收口到活动包/活动适配层；平台通用 contract 只认识通用 score 结构（如 annotations/extras 容器），不出现活动字段名 |
 | Act IX 只有最小 poem/draw authoritative 闭环，仍缺少持续画布状态与更高层共创语义 | 活动：Act IX 允许 `submit` / `draw`，且画布行为需可记录与回放（[../../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md) 的 Act IX 要求） | 当前已具备 poem auto-open + `draw.submitted` 最小审计链；下一步需要补齐 canvas projection、回放聚合、palette 约束与更完整的 co-creation result model |
@@ -281,12 +281,12 @@
 - 是
 - 平台 contract、活动规则、scene spec、参考实现现状已经分层落文档
 
-如果问题是“当前 reference implementation 运行时有没有彻底分开”，答案还不是：
+如果问题是“当前 reference implementation 运行时有没有彻底分开”，答案现在更接近：
 
-- 还没有完全
-- The Fool 已经从很多平台通用类型和前台默认文案里退出来了
-- 但 authority world、default activity fallback、reference activity bootstrap、CLI 兼容层这几块还没完全拔干净
-- `TransitionRule` 已落地到固定规则级别，Act III / Act IX 也已有最小 authority 闭环；`/show` 的 stage-first spotlight 与 `/control` 的 preview-safe confirmation/grading 已经补上，但真正欠的主要还是 richer rule system、richer team-assignment workflow 与 richer canvas semantics
+- authority world vs bootstrap seed 这条 runtime 边界已经在 activity package / orchestrator / shared helper 层收口
+- browser 对未知 activity 的默认 fallback 也已改成 pending shell
+- 但还没有达到“运行时完全无隐式 The Fool 假设”
+- 当前真正还欠的是 richer world service、reference activity bootstrap 默认值、CLI 兼容层，以及 live message / presence / audience signal 的 authority 化
 
 更准确地说，当前状态是：
 
@@ -295,15 +295,13 @@
 
 要说已经真正分开，至少还需要继续收掉：
 
-- authority world 只从 projection 读取
-- shared runtime 不再默认回落到某个活动包
-- reference activity 只留在 bootstrap，不进入运行时默认路径
+- richer world service 补到 `Map` / `Zone` / `Channel` / `Presence` / `Membership` projection/query
+- reference activity 只留在 bootstrap env/config，不进入隐式默认路径
 - The Fool 兼容 flags / legacy 字段继续收口到活动适配层
 - `TransitionRule` 从固定规则迈向更通用的 `condition_satisfied` / declarative predicates
 - Act III 从最小命令闭环继续补齐批量分队与约束校验
 - Act IX 从最小 poem/draw audit 链继续补齐持续 canvas projection 与共创语义
-- show/control 的 supporting cues 继续减少对 gateway session/chat heat 的依赖，进一步向 authority presence/message state 靠拢
-- `/show` 的 supporting cues 里，room narrative / live pulse 已完成一轮 authority-first 收口；下一步主要剩 live message / presence / audience signal 的 authority 化
+- live message / presence / audience signal 从 gateway session/chat 派生继续收口到 authoritative snapshot/event 输入
 
 ### 6.2 离通用平台还有多少
 
@@ -321,12 +319,11 @@
   - 现在有 `transition_stage` / `start_timer`
   - `timer_expired` / `all_required_submissions_locked` / `scores_completed` 已会自动切幕
   - 但 `condition_satisfied` / richer predicates 还没有
-- authority world 还没完全和 bootstrap seed 分开
-  - Act III 的正式分队结果还不是命令驱动的 authority 结果
-  - `world` 仍有 reference activity / bootstrap seed 的影子
+- world service 仍偏最小 projection
+  - runtime `world` 已只从 projection 读取，activity package 的 bootstrap seed 不再充当当前世界真相
+  - 但 `Map` / `Zone` / `Channel` / `Presence` / `Membership` 还没有成为稳定 projection/query object
 - activity package 边界还没完全拔干净
-  - 默认 reference activity
-  - room alias fallback
+  - reference activity bootstrap 默认值
   - The Fool 兼容 flags / legacy 字段
   这些路径还没全部收口
 - “第二类活动能力”虽然已经有最小闭环，但还没形成真正通用能力
@@ -348,8 +345,8 @@
 如果要把这段评估压成一个最短优先级列表，当前最值得先收掉的是：
 
 1. `TransitionRule` 从固定规则继续走向通用 predicate
-2. authority world 与 bootstrap seed 彻底分离
-3. activity package / reference fallback / legacy compat 全面拔干净
+2. world service 从最小 projection 走向 richer presence/message/signal model
+3. activity package / reference bootstrap default / legacy compat 全面拔干净
 4. Act IX 这类非 submission-only 流程从最小审计链走向真正的平台级 state model
 5. 给平台通用路径补最小自动化回归
 
