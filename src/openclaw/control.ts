@@ -3,6 +3,7 @@ import {
 } from "./activityRuntime";
 import type {
   ActorRole as PlatformActorRole,
+  CommandConfirmation,
   CommandEnvelope,
   ScoreAnnotations,
   SubmissionData,
@@ -74,6 +75,12 @@ export interface SubmitScorePayload {
   annotations?: ScoreAnnotations;
 }
 
+export interface DangerousCommandConfirmationRequirement {
+  commandType: string;
+  challenge: string;
+  reason: string;
+}
+
 interface ControlRoomResolutionOptions {
   roomCatalog?: ActivityRoomCatalog | null;
 }
@@ -98,6 +105,190 @@ const hasWrappingQuotes = (value: string): boolean =>
   value.length >= 2 &&
   ((value.startsWith('"') && value.endsWith('"')) ||
     (value.startsWith("'") && value.endsWith("'")));
+
+export const normalizeCommandConfirmationChallenge = (
+  value: string,
+): string => value.trim().replace(/\s+/g, " ");
+
+export const buildCommandConfirmation = (
+  challenge: string,
+  confirmedAt = Date.now(),
+): CommandConfirmation => {
+  const normalizedChallenge = normalizeCommandConfirmationChallenge(challenge);
+  if (!normalizedChallenge) {
+    throw new Error("Confirmation challenge is required.");
+  }
+
+  const normalizedConfirmedAt = Math.round(confirmedAt);
+  if (!Number.isFinite(normalizedConfirmedAt) || normalizedConfirmedAt <= 0) {
+    throw new Error("Confirmation timestamp must be a positive number.");
+  }
+
+  return {
+    challenge: normalizedChallenge,
+    confirmedAt: normalizedConfirmedAt,
+  };
+};
+
+export const buildTransitionStageConfirmationChallenge = (
+  targetStageId: string,
+): string => {
+  const normalizedStageId = targetStageId.trim();
+  if (!normalizedStageId) {
+    throw new Error("Target stage id is required.");
+  }
+
+  return normalizeCommandConfirmationChallenge(`PROMOTE ${normalizedStageId}`);
+};
+
+export const buildLockSubmissionConfirmationChallenge = (
+  submissionId: string,
+): string => {
+  const normalizedSubmissionId = submissionId.trim();
+  if (!normalizedSubmissionId) {
+    throw new Error("Submission id is required.");
+  }
+
+  return normalizeCommandConfirmationChallenge(`LOCK ${normalizedSubmissionId}`);
+};
+
+export const buildGrantAwardConfirmationChallenge = ({
+  awardId,
+  entityId,
+}: {
+  awardId: string;
+  entityId: string;
+}): string => {
+  const normalizedAwardId = awardId.trim();
+  const normalizedEntityId = entityId.trim();
+  if (!normalizedAwardId || !normalizedEntityId) {
+    throw new Error("Award id and entity id are required.");
+  }
+
+  return normalizeCommandConfirmationChallenge(
+    `AWARD ${normalizedAwardId} ${normalizedEntityId}`,
+  );
+};
+
+export const buildMoveEntityConfirmationChallenge = ({
+  entityId,
+  toRoomId,
+}: {
+  entityId: string;
+  toRoomId: string;
+}): string => {
+  const normalizedEntityId = entityId.trim();
+  const normalizedRoomId = toRoomId.trim();
+  if (!normalizedEntityId || !normalizedRoomId) {
+    throw new Error("Entity id and destination room id are required.");
+  }
+
+  return normalizeCommandConfirmationChallenge(
+    `MOVE ${normalizedEntityId} ${normalizedRoomId}`,
+  );
+};
+
+export const buildAssignTeamConfirmationChallenge = (
+  teamId: string,
+): string => {
+  const normalizedTeamId = teamId.trim();
+  if (!normalizedTeamId) {
+    throw new Error("Team id is required.");
+  }
+
+  return normalizeCommandConfirmationChallenge(`ASSIGN ${normalizedTeamId}`);
+};
+
+const readNonEmptyPayloadString = (
+  payload: Record<string, unknown>,
+  key: string,
+): string | null => {
+  const value = payload[key];
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+};
+
+export const resolveDangerousCommandConfirmationRequirement = (
+  command: Pick<CommandEnvelope, "type" | "payload">,
+): DangerousCommandConfirmationRequirement | null => {
+  if (command.type === "transition_stage") {
+    const targetStageId = readNonEmptyPayloadString(command.payload, "targetStageId");
+    return targetStageId
+      ? {
+          commandType: command.type,
+          challenge: buildTransitionStageConfirmationChallenge(targetStageId),
+          reason: "changing authority currentStageId",
+        }
+      : null;
+  }
+
+  if (command.type === "lock_submission") {
+    const submissionId = readNonEmptyPayloadString(command.payload, "submissionId");
+    return submissionId
+      ? {
+          commandType: command.type,
+          challenge: buildLockSubmissionConfirmationChallenge(submissionId),
+          reason: "locking the authoritative submission payload",
+        }
+      : null;
+  }
+
+  if (command.type === "grant_award") {
+    const awardId = readNonEmptyPayloadString(command.payload, "awardId");
+    const entityId = readNonEmptyPayloadString(command.payload, "entityId");
+    return awardId && entityId
+      ? {
+          commandType: command.type,
+          challenge: buildGrantAwardConfirmationChallenge({ awardId, entityId }),
+          reason: "granting an authoritative award",
+        }
+      : null;
+  }
+
+  if (command.type === "move_entity") {
+    const entityId = readNonEmptyPayloadString(command.payload, "entityId");
+    const toRoomId = readNonEmptyPayloadString(command.payload, "toRoomId");
+    return entityId && toRoomId
+      ? {
+          commandType: command.type,
+          challenge: buildMoveEntityConfirmationChallenge({ entityId, toRoomId }),
+          reason: "rewriting authority world entity placement",
+        }
+      : null;
+  }
+
+  if (command.type === "assign_team") {
+    const teamId = readNonEmptyPayloadString(command.payload, "teamId");
+    return teamId
+      ? {
+          commandType: command.type,
+          challenge: buildAssignTeamConfirmationChallenge(teamId),
+          reason: "rewriting authority world team membership/room state",
+        }
+      : null;
+  }
+
+  return null;
+};
+
+export const satisfiesDangerousCommandConfirmation = ({
+  command,
+  requirement,
+}: {
+  command: Pick<CommandEnvelope, "confirmation">;
+  requirement: DangerousCommandConfirmationRequirement;
+}): boolean => {
+  const confirmation = command.confirmation;
+  if (!confirmation || !Number.isFinite(confirmation.confirmedAt)) {
+    return false;
+  }
+
+  return (
+    normalizeCommandConfirmationChallenge(confirmation.challenge) ===
+    requirement.challenge
+  );
+};
 
 export const normalizeControlConfigValue = (
   value: string | undefined,
@@ -321,6 +512,7 @@ export const buildCommandEnvelope = <TPayload extends Record<string, unknown>>({
   type,
   payload,
   idempotencyKey,
+  confirmation,
   issuedAt = Date.now(),
 }: {
   actorId: string;
@@ -329,6 +521,7 @@ export const buildCommandEnvelope = <TPayload extends Record<string, unknown>>({
   type: string;
   payload: TPayload;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
   issuedAt?: number;
 }): CommandEnvelope<TPayload> => ({
   id: idempotencyKey ?? `${type}-${issuedAt}`,
@@ -339,6 +532,7 @@ export const buildCommandEnvelope = <TPayload extends Record<string, unknown>>({
   payload,
   issuedAt,
   idempotencyKey,
+  ...(confirmation ? { confirmation } : {}),
 });
 
 export const buildTransitionStageEnvelope = ({
@@ -346,11 +540,13 @@ export const buildTransitionStageEnvelope = ({
   activityRunId,
   targetStageId,
   idempotencyKey,
+  confirmation,
 }: {
   actorId: string;
   activityRunId: string;
   targetStageId: string;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }): CommandEnvelope<{ targetStageId: string }> =>
   buildCommandEnvelope({
     actorId,
@@ -359,6 +555,7 @@ export const buildTransitionStageEnvelope = ({
     type: "transition_stage",
     payload: { targetStageId: targetStageId.trim() },
     idempotencyKey,
+    confirmation,
   });
 
 export const buildStartTimerEnvelope = ({
@@ -367,12 +564,14 @@ export const buildStartTimerEnvelope = ({
   stageId,
   durationSec,
   idempotencyKey,
+  confirmation,
 }: {
   actorId: string;
   activityRunId: string;
   stageId: string;
   durationSec: number;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }): CommandEnvelope<{ stageId: string; durationSec: number; kind: "countdown" }> =>
   buildCommandEnvelope({
     actorId,
@@ -385,6 +584,7 @@ export const buildStartTimerEnvelope = ({
       kind: "countdown",
     },
     idempotencyKey,
+    confirmation,
   });
 
 export const buildLockSubmissionEnvelope = ({
@@ -392,11 +592,13 @@ export const buildLockSubmissionEnvelope = ({
   activityRunId,
   submissionId,
   idempotencyKey,
+  confirmation,
 }: {
   actorId: string;
   activityRunId: string;
   submissionId: string;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }): CommandEnvelope<{ submissionId: string }> =>
   buildCommandEnvelope({
     actorId,
@@ -405,6 +607,7 @@ export const buildLockSubmissionEnvelope = ({
     type: "lock_submission",
     payload: { submissionId: submissionId.trim() },
     idempotencyKey,
+    confirmation,
   });
 
 export const buildOpenSubmissionEnvelope = ({
@@ -412,11 +615,13 @@ export const buildOpenSubmissionEnvelope = ({
   activityRunId,
   submissionId,
   idempotencyKey,
+  confirmation,
 }: {
   actorId: string;
   activityRunId: string;
   submissionId: string;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }): CommandEnvelope<{ submissionId: string }> =>
   buildCommandEnvelope({
     actorId,
@@ -425,6 +630,7 @@ export const buildOpenSubmissionEnvelope = ({
     type: "open_submission",
     payload: { submissionId: submissionId.trim() },
     idempotencyKey,
+    confirmation,
   });
 
 const buildSubmissionCommandEnvelope = ({
@@ -434,6 +640,7 @@ const buildSubmissionCommandEnvelope = ({
   submissionId,
   data,
   idempotencyKey,
+  confirmation,
   type,
 }: {
   actorId: string;
@@ -442,6 +649,7 @@ const buildSubmissionCommandEnvelope = ({
   submissionId: string;
   data: SubmissionData;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
   type: "submit" | "update_submission";
 }): CommandEnvelope<SubmissionCommandPayload> => {
   const normalizedSubmissionId = submissionId.trim();
@@ -459,6 +667,7 @@ const buildSubmissionCommandEnvelope = ({
       data: structuredClone(data),
     },
     idempotencyKey,
+    confirmation,
   });
 };
 
@@ -469,6 +678,7 @@ export const buildSubmitEnvelope = ({
   submissionId,
   data,
   idempotencyKey,
+  confirmation,
 }: {
   actorId: string;
   actorRole?: ControlActorRole;
@@ -476,6 +686,7 @@ export const buildSubmitEnvelope = ({
   submissionId: string;
   data: SubmissionData;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }): CommandEnvelope<SubmissionCommandPayload> =>
   buildSubmissionCommandEnvelope({
     actorId,
@@ -484,6 +695,7 @@ export const buildSubmitEnvelope = ({
     submissionId,
     data,
     idempotencyKey,
+    confirmation,
     type: "submit",
   });
 
@@ -494,6 +706,7 @@ export const buildUpdateSubmissionEnvelope = ({
   submissionId,
   data,
   idempotencyKey,
+  confirmation,
 }: {
   actorId: string;
   actorRole?: ControlActorRole;
@@ -501,6 +714,7 @@ export const buildUpdateSubmissionEnvelope = ({
   submissionId: string;
   data: SubmissionData;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }): CommandEnvelope<SubmissionCommandPayload> =>
   buildSubmissionCommandEnvelope({
     actorId,
@@ -509,6 +723,7 @@ export const buildUpdateSubmissionEnvelope = ({
     submissionId,
     data,
     idempotencyKey,
+    confirmation,
     type: "update_submission",
   });
 
@@ -520,6 +735,7 @@ export const buildGrantAwardEnvelope = ({
   label,
   reason,
   idempotencyKey,
+  confirmation,
 }: {
   actorId: string;
   activityRunId: string;
@@ -528,6 +744,7 @@ export const buildGrantAwardEnvelope = ({
   label?: string;
   reason?: string;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }): CommandEnvelope<{
   awardId: string;
   entityId: string;
@@ -546,6 +763,7 @@ export const buildGrantAwardEnvelope = ({
       ...(reason?.trim() ? { reason: reason.trim() } : {}),
     },
     idempotencyKey,
+    confirmation,
   });
 
 export const buildMoveEntityEnvelope = ({
@@ -555,6 +773,7 @@ export const buildMoveEntityEnvelope = ({
   toRoomId,
   kind,
   idempotencyKey,
+  confirmation,
 }: {
   actorId: string;
   activityRunId: string;
@@ -562,6 +781,7 @@ export const buildMoveEntityEnvelope = ({
   toRoomId: string;
   kind?: string;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }): CommandEnvelope<{
   entityId: string;
   toRoomId: string;
@@ -578,6 +798,7 @@ export const buildMoveEntityEnvelope = ({
       ...(kind?.trim() ? { kind: kind.trim() } : {}),
     },
     idempotencyKey,
+    confirmation,
   });
 
 export const buildAssignTeamEnvelope = ({
@@ -587,6 +808,7 @@ export const buildAssignTeamEnvelope = ({
   memberIds,
   roomId,
   idempotencyKey,
+  confirmation,
 }: {
   actorId: string;
   activityRunId: string;
@@ -594,6 +816,7 @@ export const buildAssignTeamEnvelope = ({
   memberIds?: string[];
   roomId?: string;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }): CommandEnvelope<{
   teamId: string;
   memberIds?: string[];
@@ -610,6 +833,7 @@ export const buildAssignTeamEnvelope = ({
       ...(roomId?.trim() ? { roomId: roomId.trim() } : {}),
     },
     idempotencyKey,
+    confirmation,
   });
 
 export const buildSubmitScoreEnvelope = ({
@@ -620,6 +844,7 @@ export const buildSubmitScoreEnvelope = ({
   reason,
   annotations,
   idempotencyKey,
+  confirmation,
 }: {
   actorId: string;
   activityRunId: string;
@@ -628,6 +853,7 @@ export const buildSubmitScoreEnvelope = ({
   reason: string;
   annotations?: ScoreAnnotations;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }): CommandEnvelope<SubmitScorePayload> => {
   const normalizedScore = Math.round(score);
   if (!Number.isFinite(normalizedScore) || normalizedScore < 1 || normalizedScore > 10) {
@@ -671,6 +897,7 @@ export const buildSubmitScoreEnvelope = ({
       annotations: normalizedAnnotations,
     },
     idempotencyKey,
+    confirmation,
   });
 };
 

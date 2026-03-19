@@ -359,7 +359,9 @@ export function IntegrationRail({
           `move` / `say` 会直接打到 agent；`stage` / `start-timer` /
           `lock-submission` 会生成正式 command envelope。命令区现在按 risk
           分级：safe 可直接查看，caution 会提示 live 影响， danger
-          需要额外确认，preview stage 下的 live mutation 会被禁用或收起。
+          需要额外确认；解锁后的 CLI 会附带 `--confirm`，本地 orchestrator
+          也会拒绝缺少确认 proof 的危险 mutation。preview stage 下的 live
+          mutation 会被禁用或收起。
         </p>
         {gateway.orchestrationContractNote ? (
           <div
@@ -487,7 +489,7 @@ export function IntegrationRail({
                     )}
                     <div className="mt-3 rounded-[0.9rem] border border-dashed border-rose-200 bg-rose-50 px-3 py-3 text-sm leading-7 text-rose-800">
                       {isArmed
-                        ? "输入确认口令后，命令正文才会解锁显示。"
+                        ? "输入确认口令后，命令正文才会解锁显示，并带上 --confirm proof。"
                         : "这条命令在确认完成前保持隐藏，避免预演页误抄 live mutation。"}
                     </div>
                   </div>

@@ -14,6 +14,11 @@ import {
 } from "../src/openclaw/activities";
 import { normalizeActivityScoreAnnotations } from "../src/openclaw/activityRuntime";
 import {
+  buildCommandConfirmation,
+  resolveDangerousCommandConfirmationRequirement,
+  satisfiesDangerousCommandConfirmation,
+} from "../src/openclaw/control";
+import {
   getActivityPackage,
   tryGetActivityPackage,
   type ActivityPackage,
@@ -22,6 +27,7 @@ import type {
   ActivityRunState,
   ActorRole,
   AwardProjection,
+  CommandConfirmationStatus,
   CommandEnvelope,
   EventCommandContext,
   EventEnvelope,
@@ -61,6 +67,7 @@ interface CommandReceipt {
   snapshotId: string;
   lastSequence: number;
   note?: string;
+  confirmation?: CommandConfirmationStatus;
 }
 
 interface StableErrorBody {
@@ -75,6 +82,7 @@ interface StableErrorBody {
   handledAt: number;
   replayed?: boolean;
   replayedFromIdempotency?: string;
+  confirmation?: CommandConfirmationStatus;
 }
 
 interface ProjectionState {
@@ -112,6 +120,7 @@ interface AuditRecord {
     code: string;
     message: string;
     status?: number;
+    confirmation?: CommandConfirmationStatus;
   };
   emittedEventIds: string[];
   emittedSequences: number[];
@@ -1540,6 +1549,7 @@ const createCommandError = (
     handledAt,
     replayed: extra.replayed,
     replayedFromIdempotency: extra.replayedFromIdempotency,
+    confirmation: extra.confirmation,
   });
 
 const requireHostRole = (
@@ -1612,6 +1622,56 @@ const requireSubmissionRole = (
     "FORBIDDEN",
     `Command ${command.type} requires agent/host/admin role.`,
     403,
+  );
+};
+
+const buildDangerousCommandConfirmationStatus = ({
+  command,
+}: {
+  command: Pick<CommandEnvelope, "type" | "payload" | "confirmation">;
+}): CommandConfirmationStatus | null => {
+  const requirement = resolveDangerousCommandConfirmationRequirement(command);
+  if (!requirement) {
+    return null;
+  }
+
+  return {
+    required: true,
+    challenge: requirement.challenge,
+    confirmedAt: command.confirmation?.confirmedAt,
+    providedChallenge: command.confirmation?.challenge,
+  };
+};
+
+const requireDangerousCommandConfirmation = (
+  command: CommandEnvelope,
+  handledAt: number,
+): CommandConfirmationStatus | undefined => {
+  const status = buildDangerousCommandConfirmationStatus({ command });
+  if (!status) {
+    return undefined;
+  }
+
+  const requirement = resolveDangerousCommandConfirmationRequirement(command);
+  if (
+    requirement &&
+    satisfiesDangerousCommandConfirmation({
+      command,
+      requirement,
+    })
+  ) {
+    return status;
+  }
+
+  throw createCommandError(
+    command,
+    handledAt,
+    "CONFIRMATION_REQUIRED",
+    `Command ${command.type} requires confirmation ${JSON.stringify(status.challenge)} before it can mutate authoritative state.`,
+    409,
+    {
+      confirmation: status,
+    },
   );
 };
 
@@ -2419,7 +2479,39 @@ const parseCommandEnvelope = (value: unknown): CommandEnvelope | null => {
     return null;
   }
 
-  return value as CommandEnvelope;
+  const confirmation =
+    value.confirmation === undefined
+      ? undefined
+      : (() => {
+          if (!isRecord(value.confirmation)) {
+            return null;
+          }
+
+          if (
+            typeof value.confirmation.challenge !== "string" ||
+            typeof value.confirmation.confirmedAt !== "number"
+          ) {
+            return null;
+          }
+
+          try {
+            return buildCommandConfirmation(
+              value.confirmation.challenge,
+              value.confirmation.confirmedAt,
+            );
+          } catch {
+            return null;
+          }
+        })();
+
+  if (value.confirmation !== undefined && confirmation === null) {
+    return null;
+  }
+
+  return {
+    ...value,
+    ...(confirmation ? { confirmation } : {}),
+  } as CommandEnvelope;
 };
 
 const buildAuditRecord = ({
@@ -2466,6 +2558,7 @@ const buildAuditRecord = ({
           code: error.code,
           message: error.message,
           status: error.status,
+          confirmation: error.confirmation,
         }
       : undefined,
   emittedEventIds: receipt?.eventIds ?? [],
@@ -2483,6 +2576,7 @@ const buildAcceptedReceipt = (
   handledAt: number,
   events: EventEnvelope[],
   note?: string,
+  confirmation?: CommandConfirmationStatus,
 ): CommandReceipt => ({
   status: "accepted",
   accepted: true,
@@ -2499,6 +2593,7 @@ const buildAcceptedReceipt = (
   snapshotId: projection.snapshotId,
   lastSequence: projection.lastSequence,
   note,
+  confirmation,
 });
 
 const buildReplayReceipt = (
@@ -2548,6 +2643,7 @@ const executeFreshCommand = (
   }
 
   const events: EventEnvelope[] = [];
+  let receiptConfirmation: CommandConfirmationStatus | undefined;
   const queueEvent = createEventBuilder({
     commandId: command.id,
     idempotencyKey: command.idempotencyKey,
@@ -2587,6 +2683,11 @@ const executeFreshCommand = (
         `Stage already at ${targetStageId}.`,
       );
     }
+
+    receiptConfirmation = requireDangerousCommandConfirmation(
+      command,
+      handledAt,
+    );
 
     const activeTimers = projection.timers.filter(
       (timer) => timer.state === "running",
@@ -2921,6 +3022,11 @@ const executeFreshCommand = (
       action: "lock_submission",
     });
 
+    receiptConfirmation = requireDangerousCommandConfirmation(
+      command,
+      handledAt,
+    );
+
     events.push(
       queueEvent(
         "submission.locked",
@@ -2985,6 +3091,11 @@ const executeFreshCommand = (
       );
     }
 
+    receiptConfirmation = requireDangerousCommandConfirmation(
+      command,
+      handledAt,
+    );
+
     events.push(
       queueEvent(
         "award.granted",
@@ -3043,6 +3154,11 @@ const executeFreshCommand = (
       );
     }
 
+    receiptConfirmation = requireDangerousCommandConfirmation(
+      command,
+      handledAt,
+    );
+
     events.push(
       queueEvent(
         "entity.moved",
@@ -3079,6 +3195,11 @@ const executeFreshCommand = (
         "assign_team requires payload.teamId.",
       );
     }
+
+    receiptConfirmation = requireDangerousCommandConfirmation(
+      command,
+      handledAt,
+    );
 
     events.push(
       queueEvent(
@@ -3125,7 +3246,13 @@ const executeFreshCommand = (
 
   broadcastHealth();
 
-  return buildAcceptedReceipt(command, handledAt, events);
+  return buildAcceptedReceipt(
+    command,
+    handledAt,
+    events,
+    undefined,
+    receiptConfirmation,
+  );
 };
 
 const executeCommand = (command: CommandEnvelope): CommandReceipt => {

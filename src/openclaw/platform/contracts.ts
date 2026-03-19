@@ -160,6 +160,18 @@ export interface ScoreSummaryItem {
   lastSubmittedAt: number;
 }
 
+export interface CommandConfirmation {
+  challenge: string;
+  confirmedAt: number;
+}
+
+export interface CommandConfirmationStatus {
+  required: boolean;
+  challenge: string;
+  confirmedAt?: number;
+  providedChallenge?: string;
+}
+
 export interface CommandEnvelope<TPayload = Record<string, unknown>> {
   id: string;
   actorId: string;
@@ -169,6 +181,7 @@ export interface CommandEnvelope<TPayload = Record<string, unknown>> {
   payload: TPayload;
   issuedAt: number;
   idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
 }
 
 export interface EventEnvelope<TPayload = Record<string, unknown>> {
@@ -198,9 +211,11 @@ export interface CommandReceipt {
   emittedSequences: number[];
   replayed: boolean;
   replayedFromIdempotency?: string;
+  confirmation?: CommandConfirmationStatus;
 }
 
 export interface CommandError {
   code: string;
   message: string;
+  confirmation?: CommandConfirmationStatus;
 }

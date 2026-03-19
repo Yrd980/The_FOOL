@@ -99,6 +99,7 @@ skill/doc fallback、query freshness、audit receipt、backend health evidence �
 - `/show` 是唯一默认 public/live 入口。
 - `/show/:stageId` 如果 `stageId !== currentStageId`，页面应明确标记为 preview / forced scene。
 - `/control/stages/:stageId` 如果查看的不是当前 stage，应把 mutation controls 明确标成“准备态 / 仅预览 / 需二次确认”。
+- 对需要二次确认才展示的危险 CLI，renderer 可以在解锁后显示带 `--confirm "<challenge>"` 的命令串，但这仍只是 operator scene 行为，不构成 authority truth 本身。
 
 ## 4. 字段归属边界
 

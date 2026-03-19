@@ -10,6 +10,7 @@ import {
   GATEWAY_CONNECT_CLIENT_MODE,
   GATEWAY_OPERATOR_READ_SCOPE,
   buildCommandEnvelope,
+  buildCommandConfirmation,
   buildGrantAwardEnvelope,
   buildGatewayAgentCallArgs,
   buildGatewayDispatchCommandArgs,
@@ -34,6 +35,8 @@ import {
   normalizeControlGatewayUrl,
   normalizeOrchestratorBaseUrl,
   resolveControlRoomId,
+  resolveDangerousCommandConfirmationRequirement,
+  satisfiesDangerousCommandConfirmation,
   summarizeGatewayOrchestrationContract,
   type CommandEnvelope,
   type ControlActorRole,
@@ -109,7 +112,14 @@ Optional env for command dispatch:
   OPENCLAW_COMMAND_METHOD=<verified-live-method>
   OPENCLAW_COMMAND_PARAM_KEY=command
   OPENCLAW_COMMAND_ACTOR_ID=molt-claw
-  OPENCLAW_COMMAND_ACTOR_ROLE=host`;
+  OPENCLAW_COMMAND_ACTOR_ROLE=host
+
+Dangerous orchestrator mutations require --confirm <challenge> when they are actually dispatched:
+  stage -> --confirm "PROMOTE <target-stage-id>"
+  lock-submission -> --confirm "LOCK <submission-id>"
+  grant-award -> --confirm "AWARD <award-id> <entity-id>"
+  move-entity -> --confirm "MOVE <entity-id> <to-room-id>"
+  assign-team -> --confirm "ASSIGN <team-id>"`;
 
 interface GatewayHelloSummary {
   snapshotKeys: string[];
@@ -308,7 +318,14 @@ const formatOrchestratorError = (
   if (isRecord(payload.error)) {
     const code = readString(payload.error, "code");
     const message = readString(payload.error, "message") ?? fallback;
-    return code ? `[${code}] ${message}` : message;
+    const confirmation =
+      isRecord(payload.error.confirmation)
+        ? readString(payload.error.confirmation, "challenge")
+        : null;
+    const detail = confirmation
+      ? `${message} Use --confirm ${JSON.stringify(confirmation)}.`
+      : message;
+    return code ? `[${code}] ${detail}` : detail;
   }
 
   return fallback;
@@ -846,6 +863,29 @@ const dispatchOrPreview = async ({
   console.log(`[openclaw-control] ${summary}`);
   console.log(JSON.stringify(envelope, null, 2));
 
+  const confirmationRequirement =
+    resolveDangerousCommandConfirmationRequirement(envelope);
+  const hasDispatchTarget = hasLocalOrchestratorUrl || Boolean(dispatchMethod);
+  if (
+    confirmationRequirement &&
+    !satisfiesDangerousCommandConfirmation({
+      command: envelope,
+      requirement: confirmationRequirement,
+    })
+  ) {
+    const message =
+      `[openclaw-control] Dangerous ${confirmationRequirement.commandType} command (${confirmationRequirement.reason}) requires --confirm ${JSON.stringify(confirmationRequirement.challenge)} before live dispatch.`;
+    if (hasDispatchTarget) {
+      fail(message);
+    }
+
+    console.log(`${message} Envelope preview only.`);
+  } else if (confirmationRequirement && envelope.confirmation) {
+    console.log(
+      `[openclaw-control] confirmation verified: ${confirmationRequirement.challenge}`,
+    );
+  }
+
   if (hasLocalOrchestratorUrl) {
     const { token } = resolveLocalOrchestratorAuth();
     const responseBody = await requestLocalOrchestrator({
@@ -980,6 +1020,13 @@ const parseLongOptions = (
   }
 
   return { positional, options };
+};
+
+const readCommandConfirmationOption = (
+  options: Record<string, string>,
+) => {
+  const challenge = normalizeControlConfigValue(options.confirm);
+  return challenge ? buildCommandConfirmation(challenge) : undefined;
 };
 
 const readOptionInteger = (
@@ -1422,7 +1469,8 @@ if (normalizedCommand === "move" || normalizedCommand === "say") {
 }
 
 if (normalizedCommand === "stage") {
-  const [activityRunId, targetStageId] = args;
+  const { positional, options } = parseLongOptions(args);
+  const [activityRunId, targetStageId] = positional;
   if (!activityRunId || !targetStageId) {
     fail(USAGE);
   }
@@ -1433,6 +1481,7 @@ if (normalizedCommand === "stage") {
       activityRunId,
       targetStageId,
       idempotencyKey: `stage-${activityRunId}-${targetStageId}-${Date.now()}`,
+      confirmation: readCommandConfirmationOption(options),
     }),
     summary: `transition_stage ${activityRunId} -> ${targetStageId}`,
   });
@@ -1515,7 +1564,8 @@ if (normalizedCommand === "update-submission") {
 }
 
 if (normalizedCommand === "lock-submission") {
-  const [activityRunId, submissionId] = args;
+  const { positional, options } = parseLongOptions(args);
+  const [activityRunId, submissionId] = positional;
   if (!activityRunId || !submissionId) {
     fail(USAGE);
   }
@@ -1526,6 +1576,7 @@ if (normalizedCommand === "lock-submission") {
       activityRunId,
       submissionId,
       idempotencyKey: `lock-${activityRunId}-${submissionId}-${Date.now()}`,
+      confirmation: readCommandConfirmationOption(options),
     }),
     summary: `lock_submission ${activityRunId} / ${submissionId}`,
   });
@@ -1548,7 +1599,8 @@ if (normalizedCommand === "submit-score") {
 }
 
 if (normalizedCommand === "grant-award") {
-  const [activityRunId, awardId, entityId, label, ...reasonParts] = args;
+  const { positional, options } = parseLongOptions(args);
+  const [activityRunId, awardId, entityId, label, ...reasonParts] = positional;
   if (!activityRunId || !awardId || !entityId) {
     fail(USAGE);
   }
@@ -1563,6 +1615,7 @@ if (normalizedCommand === "grant-award") {
       label,
       reason,
       idempotencyKey: `award-${activityRunId}-${awardId}-${Date.now()}`,
+      confirmation: readCommandConfirmationOption(options),
     }),
     summary: `grant_award ${activityRunId} / ${awardId} -> ${entityId}`,
   });
@@ -1589,7 +1642,8 @@ if (normalizedCommand === "draw") {
 }
 
 if (normalizedCommand === "move-entity") {
-  const [activityRunId, entityId, toRoomId, kind] = args;
+  const { positional, options } = parseLongOptions(args);
+  const [activityRunId, entityId, toRoomId, kind] = positional;
   if (!activityRunId || !entityId || !toRoomId) {
     fail(USAGE);
   }
@@ -1602,6 +1656,7 @@ if (normalizedCommand === "move-entity") {
       toRoomId,
       kind: kind || undefined,
       idempotencyKey: `move-entity-${activityRunId}-${entityId}-${Date.now()}`,
+      confirmation: readCommandConfirmationOption(options),
     }),
     summary: `move_entity ${activityRunId} / ${entityId} -> ${toRoomId}`,
   });
@@ -1626,6 +1681,7 @@ if (normalizedCommand === "assign-team") {
       memberIds,
       roomId: roomId || undefined,
       idempotencyKey: `assign-team-${activityRunId}-${teamId}-${Date.now()}`,
+      confirmation: readCommandConfirmationOption(options),
     }),
     summary: `assign_team ${activityRunId} / ${teamId}${memberIds ? ` (${memberIds.length} members)` : ""}`,
   });
@@ -1697,7 +1753,8 @@ if (normalizedCommand === "audit") {
 }
 
 if (normalizedCommand === "command") {
-  const [activityRunId, commandType, payloadJson] = args;
+  const { positional, options } = parseLongOptions(args);
+  const [activityRunId, commandType, payloadJson] = positional;
   if (!activityRunId || !commandType || !payloadJson) {
     fail(USAGE);
   }
@@ -1710,6 +1767,7 @@ if (normalizedCommand === "command") {
       type: commandType,
       payload: parsePayloadJson(payloadJson),
       idempotencyKey: `cmd-${commandType}-${Date.now()}`,
+      confirmation: readCommandConfirmationOption(options),
     }),
     summary: `${commandType} ${activityRunId}`,
   });

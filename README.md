@@ -50,15 +50,15 @@ bun run preview
 bun run openclaw:orchestrator
 bun run openclaw:control -- probe
 bun run openclaw:control -- move contestant-01 main-stage
-bun run openclaw:control -- stage activity-run-01 act-5-submission
+bun run openclaw:control -- stage activity-run-01 act-5-submission --confirm "PROMOTE act-5-submission"
 bun run openclaw:control -- start-timer activity-run-01 act-5-submission 420
 bun run openclaw:control -- open-submission activity-run-01 submission-01
 bun run openclaw:control -- submit activity-run-01 submission-01 '{"posterOrDeck":"https://example.com/poster.pdf","elevatorPitch":"AI lobster co-pilot for absurd product teams","highlights":["Live room orchestration","Structured submission history","Replayable scoring"],"risk":"Audience onboarding still depends on live host guidance"}'
 bun run openclaw:control -- update-submission activity-run-01 submission-01 '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"World and team overlays still need richer renderer views"}'
-bun run openclaw:control -- lock-submission activity-run-01 submission-01
-bun run openclaw:control -- stage activity-run-01 act-7-ai-judging
+bun run openclaw:control -- lock-submission activity-run-01 submission-01 --confirm "LOCK submission-01"
+bun run openclaw:control -- stage activity-run-01 act-7-ai-judging --confirm "PROMOTE act-7-ai-judging"
 bun run openclaw:control -- submit-score activity-run-01 submission-01 9 --reason "Strong systems thinking and crisp delivery" --favorite "Cohesive audience framing" --most-absurd "Treating crustacean drama as a product moat"
-bun run openclaw:control -- grant-award activity-run-01 champion team-1 Champion "Best overall team"
+bun run openclaw:control -- grant-award activity-run-01 champion team-1 Champion "Best overall team" --confirm "AWARD champion team-1"
 bun run openclaw:control -- snapshot activity-run-01
 bun run openclaw:control -- scores activity-run-01 --after-sequence 7 --limit 10
 bun run openclaw:control -- events activity-run-01 --after-sequence 7 --limit 10
@@ -161,7 +161,7 @@ renderer 侧现状：
   - `/show` 当前虽然已经把 submission / score / world / skill 重新编排成节目叙事，但还没有形成一套真正 activity-agnostic 的播出模板
   - `/control/stages/:stageId` 在非当前幕时已经进入 Preview Safe Mode；命令区现在会把 live mutation 分成 `read-only` / `disabled` / `confirm`，并要求对“切换到此幕”这类危险命令做真正的二次确认后才显示 CLI
   - `/control` 的命令区现在已经不再把所有脚本平铺展示：`probe` 这类诊断命令保持 `ready`，`start-timer` 之类 live mutation 会被标成 `caution`，`stage` / `lock-submission` 这类真正会改写 authority 的动作会进入 `danger + confirm`
-  - 对需要确认的命令，导演台会先显示确认卡，再要求输入 stage id / submission id / `PROMOTE <stageId>` 这类 challenge text；在确认完成前不会直接露出可复制的 CLI
+  - 对需要确认的命令，导演台会先显示确认卡，再要求输入 `PROMOTE <stageId>` / `LOCK <submissionId>` 这类 challenge text；确认完成后露出的 CLI 会附带 `--confirm` proof，`openclaw:control` / orchestrator 也会在 API 层校验
   - 当前 skill/doc 虽然已有 stage-specific seed bindings，但仍主要停留在 activity package 静态装配，尚未进入 activity-instance / room / team 级别的动态绑定与冻结策略
   - 当前 room spotlight、heat 和 recent activity 的排序已优先转向 authority world / event，但 live gateway session/chat 仍承担部分 presence/message 补位；message / presence / audience signal 还不是完整的平台权威服务
 
@@ -306,7 +306,7 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
 
 ```bash
 # 1. 进入 Act V submission stage
-bun run openclaw:control -- stage activity-run-01 act-5-submission
+bun run openclaw:control -- stage activity-run-01 act-5-submission --confirm "PROMOTE act-5-submission"
 
 # 2. 打开 submission shell
 bun run openclaw:control -- open-submission activity-run-01 submission-01
@@ -320,7 +320,7 @@ bun run openclaw:control -- update-submission activity-run-01 submission-01 \
   '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"World and team overlays still need richer renderer views"}'
 
 # 5. 锁定 submission
-bun run openclaw:control -- lock-submission activity-run-01 submission-01
+bun run openclaw:control -- lock-submission activity-run-01 submission-01 --confirm "LOCK submission-01"
 
 # 6. 再次 update，预期收到 SUBMISSION_LOCKED
 bun run openclaw:control -- update-submission activity-run-01 submission-01 \
@@ -333,7 +333,7 @@ bun run openclaw:control -- replay activity-run-01 --limit 20
 bun run openclaw:control -- audit activity-run-01 --limit 20
 
 # 8. 进入 Act VII 并提交评分
-bun run openclaw:control -- stage activity-run-01 act-7-ai-judging
+bun run openclaw:control -- stage activity-run-01 act-7-ai-judging --confirm "PROMOTE act-7-ai-judging"
 bun run openclaw:control -- submit-score activity-run-01 submission-01 9 \
   --reason "Strong systems thinking and crisp delivery" \
   --favorite "Cohesive audience framing" \
@@ -439,7 +439,7 @@ bun run openclaw:control -- move contestant-01 team-room-1
 bun run openclaw:control -- say contestant-01 main-stage "用一句话介绍你的目标"
 
 # Dispatch directly to the local authoritative backend when OPENCLAW_ORCHESTRATOR_URL is set
-bun run openclaw:control -- stage activity-run-01 act-5-submission
+bun run openclaw:control -- stage activity-run-01 act-5-submission --confirm "PROMOTE act-5-submission"
 
 # Dispatch a countdown command to the local backend or emit a gateway envelope preview
 bun run openclaw:control -- start-timer activity-run-01 act-5-submission 420
@@ -456,10 +456,10 @@ bun run openclaw:control -- update-submission activity-run-01 submission-01 \
   '{"posterOrDeck":"https://example.com/poster-v2.pdf","elevatorPitch":"AI lobster co-pilot for showtime product teams","highlights":["Authoritative backend loop","Typed control commands","Replay + audit provenance"],"risk":"World and team overlays still need richer renderer views"}'
 
 # Generate or dispatch a submission lock command
-bun run openclaw:control -- lock-submission activity-run-01 submission-01
+bun run openclaw:control -- lock-submission activity-run-01 submission-01 --confirm "LOCK submission-01"
 
 # Move to the judging stage before scoring
-bun run openclaw:control -- stage activity-run-01 act-7-ai-judging
+bun run openclaw:control -- stage activity-run-01 act-7-ai-judging --confirm "PROMOTE act-7-ai-judging"
 
 # Submit one structured AI judge score against a locked team-project submission
 bun run openclaw:control -- submit-score activity-run-01 submission-01 9 \
@@ -468,7 +468,7 @@ bun run openclaw:control -- submit-score activity-run-01 submission-01 9 \
   --most-absurd "Treating crustacean drama as a product moat"
 
 # Grant an award on the local backend or emit a gateway envelope preview
-bun run openclaw:control -- grant-award activity-run-01 champion team-1 Champion "Best overall team"
+bun run openclaw:control -- grant-award activity-run-01 champion team-1 Champion "Best overall team" --confirm "AWARD champion team-1"
 
 # Read the current authoritative projection from the local backend
 bun run openclaw:control -- snapshot activity-run-01
@@ -484,7 +484,7 @@ bun run openclaw:control -- replay activity-run-01 --from-sequence 7 --limit 10
 bun run openclaw:control -- audit activity-run-01 --limit 20
 
 # Send an arbitrary command envelope when the backend contract is known
-bun run openclaw:control -- command activity-run-01 transition_stage '{"targetStageId":"act-4-discussion"}'
+bun run openclaw:control -- command activity-run-01 transition_stage '{"targetStageId":"act-4-discussion"}' --confirm "PROMOTE act-4-discussion"
 ```
 
 ## Authority Boundary
@@ -518,8 +518,8 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
   - 更通用的 `condition_satisfied` transition rules 与更丰富的 canvas projection / co-creation state
 - 当前 renderer/client 还没有补齐：
   - `/show` 已经补上 stage-first 的 show-specific composition，room narrative / live pulse 也已转向 authority-first，但 audience narrative 仍会受 fixture 完整度和 live session 稀疏度影响
-  - `/control/stages/:stageId` 的 UI 命令区已经补上 preview safe mode、二次确认和更细的危险命令分级；但底层 `openclaw:control` / orchestrator 路径还没有 API 级二次确认
-  - `/control/stages/:stageId` 的二次确认目前还是 renderer-side guard，而不是 command envelope / API 层协议；也就是说，CLI 本身并没有新增后端确认握手
+  - `/control/stages/:stageId` 的危险命令门禁已经下沉到 command envelope / API：导演台解锁出的 CLI 会附带 `--confirm`，`openclaw:control` 与 orchestrator 会共同拒绝缺少 challenge proof 的 live mutation
+  - 当前这套底层确认仍是静态 challenge proof，不是时效性 token / 多人审批 / signed nonce；更细粒度的危险命令 policy 还可以继续收紧
   - live message / presence / audience signal 仍有一部分来自 gateway session/chat 侧推导，而不是平台 authority snapshot / event
   - 当前 show layout 仍更像 The Fool reference activity 的节目包装，尚未完全验证成可复用的 activity-agnostic renderer shell
 - 平台通用路径的自动化回归基线几乎还没有：当前主要依赖 build / lint + 手工跑 orchestrator/control

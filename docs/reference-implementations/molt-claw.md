@@ -246,7 +246,7 @@
 - authority/template 还不可用时，browser app shell 会显示通用 pending activity shell，不再默认退回首个 reference activity package；shared header / show fallback copy 也开始去掉固定 `Molt Claw` / `龙虾` / `contestant` 前台默认文案
 - `/control/stages/:stageId` 当前已经支持 preview 某一幕的 workspace；当 `stageId !== currentStageId` 时，命令区会进入 `Preview Safe Mode`，把 live mutation 分成 `read-only` / `disabled` / `confirm`，并要求对“切换到此幕”这类危险命令完成二次确认后才显示 CLI
 - `/control` 的命令卡现在会显式区分 `diagnostic` / `agent-direct` / `orchestrator` scope，并附带 `info` / `safe` / `caution` / `danger` risk 标签；高风险命令不再和普通 `move` / `say` 建议混排
-- 需要确认的 stage / submission 命令当前会先显示确认卡，再要求输入 challenge text 后才露出可复制的 CLI；这一层 guard 目前仍在 renderer UI，不在 orchestrator API
+- 需要确认的 stage / submission 命令当前会先显示确认卡，再要求输入 `PROMOTE <stageId>` / `LOCK <submissionId>` challenge text；确认完成后露出的 CLI 会附带 `--confirm`，`openclaw:control` / orchestrator 也会在 API 层校验 proof
 
 `/show` 侧当前已经在同一层 shared state 之上补出 show-specific composition，而不是继续直接复用 control-first 分组：
 
@@ -334,7 +334,7 @@
   - 但还缺持续 canvas projection / 聚合结果 / 约束规则，平台对 submission / score / award 之外的玩法承载还不够稳
 - `/show` 与 `/control` 还差最后一层平台语义约束
   - `/show` 的 primary spotlight、room narrative 与 live pulse 已经收成 authority-first，但 live message / presence / audience signal 仍未完全变成平台 authority 输入
-  - `/control/stages/:stageId` 的 UI 命令区已经补上 preview safe mode、二次确认与危险命令分级；但底层 `openclaw:control` / orchestrator 路径还没有 API 级二次确认
+  - `/control/stages/:stageId` 的危险命令门禁已经下沉到 command envelope / API；当前剩下的是把静态 challenge proof 进一步演进成更强的 policy / token / 审批机制
 - 自动化回归网几乎还没有
   - 当前 build / lint 可以过
   - 但还缺少保证“换活动也不坏”的测试基线

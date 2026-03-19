@@ -4,6 +4,10 @@ import type {
   ActivityStageSpotlightSource,
 } from "./openclaw/activityMetadata";
 import { tryResolveActivityPackage } from "./openclaw/activityRuntime";
+import {
+  buildLockSubmissionConfirmationChallenge,
+  buildTransitionStageConfirmationChallenge,
+} from "./openclaw/control";
 import type {
   ActivityViewModel,
   GatewayOverview,
@@ -277,6 +281,9 @@ const buildConfirmation = ({
   expectedText,
 });
 
+const appendConfirmFlag = (command: string, challenge: string): string =>
+  `${command} --confirm ${JSON.stringify(challenge)}`;
+
 const classifyActivityCommand = (
   command: OperatorCommand,
 ): Pick<OperatorCommand, "risk" | "scope"> => {
@@ -510,7 +517,10 @@ export const buildOperatorCommands = ({
       }),
       buildOperatorCommand({
         label: "切换到此幕（危险）",
-        command: `bun run openclaw:control -- stage ${activityRunId} ${stage.id}`,
+        command: appendConfirmFlag(
+          `bun run openclaw:control -- stage ${activityRunId} ${stage.id}`,
+          buildTransitionStageConfirmationChallenge(stage.id),
+        ),
         note: `显式把权威 stage 从 ${gateway.activityRun?.currentStageId} 推到 ${stage.id}。只有确定要把 preview 升格成 live 时才执行。`,
         risk: "danger",
         availability: "confirm",
@@ -520,7 +530,7 @@ export const buildOperatorCommands = ({
           description:
             "这是一个真正会改写 authority currentStageId 的动作。只有确认要把当前预演幕升格成 live 时，才解锁命令。",
           challengeLabel: "输入确认口令",
-          expectedText: `PROMOTE ${stage.id}`,
+          expectedText: buildTransitionStageConfirmationChallenge(stage.id),
         }),
       }),
       ...previewDisabledCommands,
@@ -538,7 +548,12 @@ export const buildOperatorCommands = ({
     }),
     buildOperatorCommand({
       label: "切到下一幕",
-      command: `bun run openclaw:control -- stage ${activityRunId} ${nextStage?.id ?? "<next-stage-id>"}`,
+      command: appendConfirmFlag(
+        `bun run openclaw:control -- stage ${activityRunId} ${nextStage?.id ?? "<next-stage-id>"}`,
+        buildTransitionStageConfirmationChallenge(
+          nextStage?.id ?? "<next-stage-id>",
+        ),
+      ),
       note: nextStage
         ? `生成并发送 transition_stage envelope，把权威 stage 从 ${authorityStageId} 推到 ${nextStage.id}。若未配置 OPENCLAW_COMMAND_METHOD，则退化为 envelope 预览。`
         : "当前已经是最后一幕；若仍需切幕，可改成目标 stage id 后再发送。",
@@ -554,7 +569,7 @@ export const buildOperatorCommands = ({
             description:
               "切幕会立即改变 authority currentStageId，并影响 /show 与 /control 的 live 路由。",
             challengeLabel: "输入下一幕 stage id",
-            expectedText: nextStage.id,
+            expectedText: buildTransitionStageConfirmationChallenge(nextStage.id),
           })
         : undefined,
     }),
@@ -572,7 +587,10 @@ export const buildOperatorCommands = ({
     orchestrationCommands.push(
       buildOperatorCommand({
         label: "锁定当前提交物",
-        command: `bun run openclaw:control -- lock-submission ${activityRunId} ${openSubmission.id}`,
+        command: appendConfirmFlag(
+          `bun run openclaw:control -- lock-submission ${activityRunId} ${openSubmission.id}`,
+          buildLockSubmissionConfirmationChallenge(openSubmission.id),
+        ),
         note: `锁定 ${openSubmission.id} (${openSubmission.schemaId})，让 submission window 真正回到平台权威状态。`,
         risk: "danger",
         availability: "confirm",
@@ -582,7 +600,7 @@ export const buildOperatorCommands = ({
           description:
             "锁定 submission 之后，当前版本会被当作正式 authoritative payload 使用，后续更新窗口会立刻收紧。",
           challengeLabel: "输入 submission id",
-          expectedText: openSubmission.id,
+          expectedText: buildLockSubmissionConfirmationChallenge(openSubmission.id),
         }),
       }),
     );
