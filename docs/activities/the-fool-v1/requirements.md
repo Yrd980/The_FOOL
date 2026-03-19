@@ -292,6 +292,8 @@ The Fool v1 需要启用以下公共属性：
 - `lock_submission` 只能锁定已开启的 submission
 - 已锁定的 submission 不可再次更新
 - snapshot / replay / audit 至少应支持追踪当前 `data`、当前 `version` 与 `versions`
+- `all_required_submissions_locked` 的自动切幕口径必须基于“所有必需队伍都已收口”，不能因为“当前已有 submission 恰好都 locked”就提前切幕
+- 对未提交的队伍，主持可通过显式打开并锁定该队伍的 submission shell 进行收口；这类 locked shell 也计入“已收口”
 
 ### 8.6 Act VI 人类观赛点评
 
@@ -320,6 +322,7 @@ The Fool v1 需要启用以下公共属性：
 允许动作：
 
 - `score`
+- `submit_score`
 - `talk`
 - `query`
 
@@ -345,6 +348,7 @@ The Fool v1 需要启用以下公共属性：
 - 同一个 judge 对同一个 submission 只能提交一份正式评分
 - snapshot / query 应至少可读到当前 `scores` 与 `scoreSummary`
 - score command 的 receipt / audit / replay 继续复用平台统一 contract
+- `scores_completed` 的自动切幕口径必须基于“每个可评分的 locked submission 都拿到足额评委评分”，不能只看当前幕出现过多少个 judge
 
 ### 8.8 Act VIII 颁奖
 
@@ -383,6 +387,7 @@ The Fool v1 需要启用以下公共属性：
 允许动作：
 
 - `submit`
+- `open_submission`
 - `draw`
 - `talk`
 
@@ -395,6 +400,12 @@ The Fool v1 需要启用以下公共属性：
 
 - 情绪属性影响调色盘范围
 - 画布行为要可记录与回放
+
+活动要求补充：
+
+- 个人诗歌的首个 `submit` 可以由 runtime 自动创建 submission shell，不要求必须先显式 `open_submission`
+- `open_submission` 仍可保留为主持/导演台的显式开窗路径
+- `draw` 只有在当前 stage 明确允许 `draw` 时才可被 authoritative runtime 接受
 
 ### 8.10 Act X 人类观众感想点评
 
@@ -588,8 +599,7 @@ The Fool v1 至少需要以下事件类型：
 若首版资源有限，以下能力可先降级，但必须明确写出来：
 
 - 复杂押注赔率系统
-- `scores_completed` 自动切阶段
-- 多评委 panel cardinality / completion rule
+- 复杂的多评委 panel cardinality / completion policy（超出“固定 expectedJudgeCount + 所有可评分 locked submissions 完成”的口径）
 - 基于 score 自动推导 award
 - 多地图切换
 - 高级视觉特效规则

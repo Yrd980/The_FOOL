@@ -18,6 +18,7 @@ const THE_FOOL_REQUIREMENTS_DOC_ID =
   "docs/activities/the-fool-v1/requirements.md";
 const THE_FOOL_SCENE_SPEC_DOC_ID =
   "docs/activities/the-fool-v1/scene-spec.md";
+const THE_FOOL_REQUIRED_TEAM_IDS = ["team-1", "team-2", "team-3"] as const;
 
 export const THE_FOOL_SCORE_ANNOTATION_KEYS = {
   favorite: "favorite",
@@ -67,24 +68,36 @@ const theFoolStageTemplates: StageTemplate[] = [
     name: "自我介绍",
     durationSec: 300,
     allowedActions: ["talk", "reaction", "bet", "query"],
+    transitionRules: [
+      { id: "act-1-manual", sourceStageId: "act-1-intro", targetStageId: "act-2-preference", type: "manual", config: {} },
+    ],
   },
   {
     id: "act-2-preference",
     name: "组队偏好",
     durationSec: 240,
     allowedActions: ["talk", "query"],
+    transitionRules: [
+      { id: "act-2-manual", sourceStageId: "act-2-preference", targetStageId: "act-3-assignment", type: "manual", config: {} },
+    ],
   },
   {
     id: "act-3-assignment",
     name: "组织龙虾分组",
     durationSec: 180,
     allowedActions: ["broadcast", "talk", "query"],
+    transitionRules: [
+      { id: "act-3-manual", sourceStageId: "act-3-assignment", targetStageId: "act-4-discussion", type: "manual", config: {} },
+    ],
   },
   {
     id: "act-4-discussion",
     name: "队内讨论",
     durationSec: 900,
     allowedActions: ["move", "talk", "broadcast", "query"],
+    transitionRules: [
+      { id: "act-4-timer", sourceStageId: "act-4-discussion", targetStageId: "act-5-submission", type: "timer_expired", config: {} },
+    ],
   },
   {
     id: "act-5-submission",
@@ -98,37 +111,72 @@ const theFoolStageTemplates: StageTemplate[] = [
       "query",
     ],
     submissionSchemaIds: ["team-project-v1"],
+    transitionRules: [
+      {
+        id: "act-5-submissions-locked",
+        sourceStageId: "act-5-submission",
+        targetStageId: "act-6-human-review",
+        type: "all_required_submissions_locked",
+        config: {
+          requiredTeamIds: [...THE_FOOL_REQUIRED_TEAM_IDS],
+        },
+      },
+      { id: "act-5-manual", sourceStageId: "act-5-submission", targetStageId: "act-6-human-review", type: "manual", config: {} },
+    ],
   },
   {
     id: "act-6-human-review",
     name: "人类观赛点评",
     durationSec: 480,
     allowedActions: ["broadcast", "talk", "reaction", "bet"],
+    transitionRules: [
+      { id: "act-6-manual", sourceStageId: "act-6-human-review", targetStageId: "act-7-ai-judging", type: "manual", config: {} },
+    ],
   },
   {
     id: "act-7-ai-judging",
     name: "AI 评委评审",
     durationSec: 300,
-    allowedActions: ["score", "talk", "query"],
+    allowedActions: ["score", "submit_score", "talk", "query"],
+    transitionRules: [
+      {
+        id: "act-7-scores-completed",
+        sourceStageId: "act-7-ai-judging",
+        targetStageId: "act-8-awards",
+        type: "scores_completed",
+        config: {
+          expectedJudgeCount: 3,
+          submissionSchemaIds: ["team-project-v1"],
+        },
+      },
+      { id: "act-7-manual", sourceStageId: "act-7-ai-judging", targetStageId: "act-8-awards", type: "manual", config: {} },
+    ],
   },
   {
     id: "act-8-awards",
     name: "颁奖",
     durationSec: 240,
     allowedActions: ["broadcast", "grant_award", "query"],
+    transitionRules: [
+      { id: "act-8-manual", sourceStageId: "act-8-awards", targetStageId: "act-9-co-creation", type: "manual", config: {} },
+    ],
   },
   {
     id: "act-9-co-creation",
     name: "全体共创艺术品",
     durationSec: 600,
-    allowedActions: ["submit", "draw", "talk", "query"],
+    allowedActions: ["submit", "open_submission", "draw", "talk", "query"],
     submissionSchemaIds: ["personal-poem-v1"],
+    transitionRules: [
+      { id: "act-9-manual", sourceStageId: "act-9-co-creation", targetStageId: "act-10-open-mic", type: "manual", config: {} },
+    ],
   },
   {
     id: "act-10-open-mic",
     name: "人类观众感想点评",
     durationSec: 300,
     allowedActions: ["talk", "broadcast"],
+    transitionRules: [],
   },
 ];
 

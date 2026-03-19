@@ -10,10 +10,14 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  DEFAULT_REFERENCE_ACTIVITY_TEMPLATE_ID,
+  BOOTSTRAP_REFERENCE_ACTIVITY_TEMPLATE_ID,
 } from "../src/openclaw/activities";
 import { normalizeActivityScoreAnnotations } from "../src/openclaw/activityRuntime";
-import { getActivityPackage } from "../src/openclaw/platform/activityRegistry";
+import {
+  getActivityPackage,
+  tryGetActivityPackage,
+  type ActivityPackage,
+} from "../src/openclaw/platform/activityRegistry";
 import type {
   ActivityRunState,
   ActorRole,
@@ -203,12 +207,16 @@ const authToken =
 const bootstrapReferenceActivityTemplateId =
   process.env.OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID?.trim() ||
   process.env.OPENCLAW_ACTIVITY_TEMPLATE_ID?.trim() ||
-  DEFAULT_REFERENCE_ACTIVITY_TEMPLATE_ID;
+  BOOTSTRAP_REFERENCE_ACTIVITY_TEMPLATE_ID;
 
-const resolveActivityPackageByTemplateId = (templateId?: string | null) =>
-  getActivityPackage(templateId ?? bootstrapReferenceActivityTemplateId);
+const bootstrapReferenceActivityPackage = getActivityPackage(
+  bootstrapReferenceActivityTemplateId,
+);
 
-const bootstrapReferenceActivityPackage = resolveActivityPackageByTemplateId();
+const tryResolveActivityPackageByTemplateId = (
+  templateId?: string | null,
+): ActivityPackage | undefined =>
+  templateId ? tryGetActivityPackage(templateId) : undefined;
 
 const supportedRpcMethods = [
   "connect",
@@ -233,6 +241,7 @@ const supportedEvents = [
   "award.granted",
   "entity.moved",
   "team.assigned",
+  "draw.submitted",
 ];
 
 const timerHandles = new Map<string, ReturnType<typeof setTimeout>>();
@@ -446,10 +455,13 @@ const readSubmissionVersionRecords = (
 
 const readScoreAnnotations = (
   value: unknown,
-  templateId = bootstrapReferenceActivityPackage.id,
+  templateId?: string | null,
 ): ScoreAnnotations => {
   const rawScore = isRecord(value) ? value : {};
-  return normalizeActivityScoreAnnotations(rawScore, templateId);
+  return normalizeActivityScoreAnnotations(
+    rawScore,
+    templateId ?? projection.activityRun.templateId,
+  );
 };
 
 const buildScoreSummary = (
@@ -949,7 +961,8 @@ let projection = loadProjection();
 
 const resolveActivityPackage = (
   templateId = projection.activityRun.templateId,
-) => resolveActivityPackageByTemplateId(templateId);
+): ActivityPackage | undefined =>
+  tryResolveActivityPackageByTemplateId(templateId);
 
 const rebuildCommandJournal = (records: AuditRecord[]): Map<string, CommandJournalEntry> => {
   const journal = new Map<string, CommandJournalEntry>();
@@ -1274,6 +1287,15 @@ const scheduleTimerEnd = (timer: TimerProjection): void => {
     commitEvents([timerEndedEvent]);
     clearTimerHandle(latestTimer.id);
     broadcastEvent(timerEndedEvent);
+
+    const autoEvents = applyTransitionRuleAfterEvent("timer.ended");
+    if (autoEvents.length > 0) {
+      commitEvents(autoEvents);
+      syncTimerSchedules();
+      for (const autoEvent of autoEvents) {
+        broadcastEvent(autoEvent);
+      }
+    }
   }, delay);
 
   timerHandles.set(timer.id, handle);
@@ -1290,6 +1312,213 @@ const syncTimerSchedules = (): void => {
 };
 
 syncTimerSchedules();
+
+const findTransitionRulesForStage = (
+  stageId: string | null,
+): import("../src/openclaw/platform/contracts").TransitionRule[] => {
+  if (!stageId) return [];
+  const stage = findStage(stageId);
+  return stage?.transitionRules ?? [];
+};
+
+const readRuleStringList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const deduped = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+
+    const normalized = entry.trim();
+    if (normalized) {
+      deduped.add(normalized);
+    }
+  }
+
+  return [...deduped];
+};
+
+const listStageSubmissions = ({
+  stageId,
+  schemaIds,
+}: {
+  stageId: string;
+  schemaIds: string[];
+}): SubmissionProjection[] => {
+  const schemaIdSet = new Set(schemaIds);
+  return projection.submissions.filter(
+    (submission) =>
+      submission.stageId === stageId &&
+      (schemaIdSet.size === 0 || schemaIdSet.has(submission.schemaId)),
+  );
+};
+
+const allRequiredSubmissionsLocked = (config: Record<string, unknown>): boolean => {
+  const currentStageId = projection.activityRun.currentStageId;
+  if (!currentStageId) return false;
+  const stage = findStage(currentStageId);
+  if (!stage) return false;
+  const schemaIds = stage.submissionSchemaIds ?? [];
+  if (schemaIds.length === 0) return false;
+  const stageSubmissions = listStageSubmissions({
+    stageId: currentStageId,
+    schemaIds,
+  });
+  if (stageSubmissions.length === 0) {
+    return false;
+  }
+
+  if (!stageSubmissions.every((submission) => submission.locked)) {
+    return false;
+  }
+
+  const requiredTeamIds = readRuleStringList(config.requiredTeamIds);
+  if (requiredTeamIds.length === 0) {
+    return true;
+  }
+
+  return requiredTeamIds.every((teamId) =>
+    stageSubmissions.some((submission) => submission.teamId === teamId),
+  );
+};
+
+const allScoresCompleted = (config: Record<string, unknown>): boolean => {
+  const expectedJudgeCount =
+    typeof config.expectedJudgeCount === "number"
+      ? config.expectedJudgeCount
+      : 0;
+  if (expectedJudgeCount <= 0) return false;
+  const currentStageId = projection.activityRun.currentStageId;
+  if (!currentStageId) return false;
+
+  const submissionSchemaIds = readRuleStringList(config.submissionSchemaIds);
+  const requiredTeamIds = readRuleStringList(config.requiredTeamIds);
+  const scoreableLockedSubmissions = projection.submissions.filter((submission) => {
+    if (!submission.locked || !isSubmissionReadyForScoring(submission)) {
+      return false;
+    }
+
+    if (
+      submissionSchemaIds.length > 0 &&
+      !submissionSchemaIds.includes(submission.schemaId)
+    ) {
+      return false;
+    }
+
+    if (
+      requiredTeamIds.length > 0 &&
+      (!submission.teamId || !requiredTeamIds.includes(submission.teamId))
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+  if (scoreableLockedSubmissions.length === 0) {
+    return false;
+  }
+
+  const judgesBySubmissionId = new Map<string, Set<string>>();
+  for (const score of projection.scores) {
+    if (score.stageId !== currentStageId || !score.submissionId) {
+      continue;
+    }
+
+    const judges = judgesBySubmissionId.get(score.submissionId) ?? new Set<string>();
+    judges.add(score.judgeId);
+    judgesBySubmissionId.set(score.submissionId, judges);
+  }
+
+  return scoreableLockedSubmissions.every(
+    (submission) =>
+      (judgesBySubmissionId.get(submission.id)?.size ?? 0) >= expectedJudgeCount,
+  );
+};
+
+const evaluateTransitionRules = (
+  triggerEventType: string,
+): EventEnvelope | null => {
+  const currentStageId = projection.activityRun.currentStageId;
+  const rules = findTransitionRulesForStage(currentStageId);
+  if (rules.length === 0) return null;
+
+  for (const rule of rules) {
+    let shouldTransition = false;
+
+    if (
+      rule.type === "timer_expired" &&
+      triggerEventType === "timer.ended"
+    ) {
+      shouldTransition = true;
+    }
+
+    if (
+      rule.type === "all_required_submissions_locked" &&
+      triggerEventType === "submission.locked"
+    ) {
+      shouldTransition = allRequiredSubmissionsLocked(rule.config);
+    }
+
+    if (
+      rule.type === "scores_completed" &&
+      triggerEventType === "judge.score_submitted"
+    ) {
+      shouldTransition = allScoresCompleted(rule.config);
+    }
+
+    if (shouldTransition && rule.targetStageId && findStage(rule.targetStageId)) {
+      const now = Date.now();
+      const stageChangedEvent = makeEvent(
+        "stage.changed",
+        {
+          activityRunId: projection.activityRun.id,
+          fromStageId: currentStageId,
+          toStageId: rule.targetStageId,
+          stageId: rule.targetStageId,
+          changedBy: "transition-rule-evaluator",
+          transitionRuleId: rule.id,
+          transitionRuleType: rule.type,
+        },
+        now,
+      );
+      return stageChangedEvent;
+    }
+  }
+
+  return null;
+};
+
+const applyTransitionRuleAfterEvent = (
+  triggerEventType: string,
+): EventEnvelope[] => {
+  const autoTransitionEvent = evaluateTransitionRules(triggerEventType);
+  if (!autoTransitionEvent) return [];
+
+  const pauseEvents: EventEnvelope[] = [];
+  const activeTimers = projection.timers.filter((t) => t.state === "running");
+  for (const timer of activeTimers) {
+    const pauseEvent = makeEvent(
+      "timer.paused",
+      {
+        stageId: timer.stageId,
+        reason: "auto_stage_transition",
+        timer: {
+          ...timer,
+          remainingMs: computeRemainingMs(timer, Date.now()),
+          state: "paused",
+          pausedAt: Date.now(),
+        },
+      },
+      Date.now(),
+    );
+    pauseEvents.push(pauseEvent);
+  }
+
+  return [...pauseEvents, autoTransitionEvent];
+};
 
 const createCommandError = (
   command: CommandEnvelope,
@@ -1362,7 +1591,7 @@ const inferSubmissionSchemaId = (stageId: string | null): string | null => {
 };
 
 const inferSubmissionTeamId = (submissionId: string): string | undefined => {
-  return resolveActivityPackage().inferSubmissionTeamId?.(submissionId);
+  return resolveActivityPackage()?.inferSubmissionTeamId?.(submissionId);
 };
 
 const requireSubmissionRole = (
@@ -1384,6 +1613,38 @@ const requireSubmissionRole = (
     `Command ${command.type} requires agent/host/admin role.`,
     403,
   );
+};
+
+const requireStageActionAllowed = ({
+  command,
+  handledAt,
+  action,
+}: {
+  command: CommandEnvelope;
+  handledAt: number;
+  action: string;
+}): void => {
+  const currentStageId = projection.activityRun.currentStageId;
+  if (!currentStageId) {
+    throw createCommandError(
+      command,
+      handledAt,
+      "STAGE_ACTION_NOT_ALLOWED",
+      `${action} requires an active stage.`,
+      409,
+    );
+  }
+
+  const stage = findStage(currentStageId);
+  if (!stage || !stage.allowedActions.includes(action)) {
+    throw createCommandError(
+      command,
+      handledAt,
+      "STAGE_ACTION_NOT_ALLOWED",
+      `Stage ${currentStageId} does not allow ${action}.`,
+      409,
+    );
+  }
 };
 
 const findSubmissionSchema = (schemaId: string) =>
@@ -1440,20 +1701,38 @@ const normalizeSubmissionDataForSchema = (
   schemaId: string,
   rawData: SubmissionData,
 ): SubmissionData => {
-  try {
-    return resolveActivityPackage().normalizeSubmissionData(schemaId, rawData);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    const isUnknownSchema =
-      message.includes("Unknown submission schema") ||
-      message.includes("unknown schema");
-    if (!isUnknownSchema) {
-      throw error;
+  const activityPackage = resolveActivityPackage();
+  if (activityPackage) {
+    try {
+      return activityPackage.normalizeSubmissionData(schemaId, rawData);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const isUnknownSchema =
+        message.includes("Unknown submission schema") ||
+        message.includes("unknown schema");
+      if (!isUnknownSchema) {
+        throw error;
+      }
     }
   }
 
   return validateSubmissionDataByPlatformSchema(schemaId, rawData);
 };
+
+function isSubmissionReadyForScoring(
+  submission: SubmissionProjection,
+): boolean {
+  if (submission.version < 1 || submission.versions.length === 0) {
+    return false;
+  }
+
+  try {
+    normalizeSubmissionDataForSchema(submission.schemaId, submission.data);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const validateSubmissionDataForCommand = (
   command: CommandEnvelope,
@@ -1579,15 +1858,17 @@ const assertSubmissionReadyForScoring = (
 const buildSubmissionProjection = (
   submissionId: string,
   now: number,
+  options: { requiredAction?: string } = {},
 ): SubmissionProjection => {
   const currentStageId = projection.activityRun.currentStageId;
   const stage = currentStageId ? findStage(currentStageId) : undefined;
   const schemaId = inferSubmissionSchemaId(currentStageId);
-  if (!stage || !schemaId || !stage.allowedActions.includes("open_submission")) {
+  const requiredAction = options.requiredAction ?? "open_submission";
+  if (!stage || !schemaId || !stage.allowedActions.includes(requiredAction)) {
     throw new OrchestratorError({
       code: "SUBMISSION_STAGE_REQUIRED",
       message:
-        "open_submission requires the current stage to expose a submission schema and allow open_submission.",
+        `${requiredAction} requires the current stage to expose a submission schema and allow ${requiredAction}.`,
       status: 409,
       handledAt: now,
     });
@@ -1639,7 +1920,7 @@ const buildScoreProjection = (
   handledAt: number,
 ): ScoreProjection => {
   const currentStageId = projection.activityRun.currentStageId;
-  const scoreConfig = resolveActivityPackage().scoreConfig;
+  const scoreConfig = resolveActivityPackage()?.scoreConfig;
   const allowedStageIds = scoreConfig?.allowedStageIds ?? [];
 
   if (
@@ -2258,7 +2539,7 @@ const executeFreshCommand = (
   const resolvedActivityRunId = resolveRequestedActivityRunId(
     command.activityRunId,
   );
-  if (command.type === "submit" || command.type === "update_submission") {
+  if (command.type === "submit" || command.type === "update_submission" || command.type === "draw") {
     requireSubmissionRole(command, handledAt);
   } else if (command.type === "submit_score") {
     requireScoreRole(command, handledAt);
@@ -2484,9 +2765,32 @@ const executeFreshCommand = (
       );
     }
 
-    const existingSubmission = projection.submissions.find(
+    let existingSubmission = projection.submissions.find(
       (submission) => submission.id === submissionId,
     );
+
+    if (!existingSubmission && command.type === "submit") {
+      const currentStageId = projection.activityRun.currentStageId;
+      const stage = currentStageId ? findStage(currentStageId) : undefined;
+      if (stage && stage.allowedActions.includes("submit")) {
+        const autoOpened = buildSubmissionProjection(submissionId, handledAt, { requiredAction: "submit" });
+        const openEvent = queueEvent(
+          "submission.opened",
+          {
+            stageId: autoOpened.stageId,
+            submission: autoOpened,
+            autoOpened: true,
+          },
+          handledAt,
+        );
+        events.push(openEvent);
+        commitEvents([openEvent]);
+        existingSubmission = projection.submissions.find(
+          (s) => s.id === submissionId,
+        );
+      }
+    }
+
     if (!existingSubmission) {
       throw createCommandError(
         command,
@@ -2696,6 +3000,99 @@ const executeFreshCommand = (
         handledAt,
       ),
     );
+  } else if (command.type === "draw") {
+    requireStageActionAllowed({
+      command,
+      handledAt,
+      action: "draw",
+    });
+
+    const payload = command.payload;
+    const entityId =
+      typeof payload.entityId === "string"
+        ? payload.entityId.trim()
+        : command.actorId;
+    const drawData = isRecord(payload.data) ? payload.data : {};
+
+    events.push(
+      queueEvent(
+        "draw.submitted",
+        {
+          stageId: projection.activityRun.currentStageId,
+          entityId,
+          data: cloneJsonValue(drawData),
+        },
+        handledAt,
+      ),
+    );
+  } else if (command.type === "move_entity") {
+    const payload = command.payload;
+    const entityId =
+      typeof payload.entityId === "string" ? payload.entityId.trim() : "";
+    const toRoomId =
+      typeof payload.toRoomId === "string" ? payload.toRoomId.trim() : "";
+    const kind =
+      typeof payload.kind === "string" ? payload.kind.trim() : "agent";
+
+    if (!entityId || !toRoomId) {
+      throw createCommandError(
+        command,
+        handledAt,
+        "INVALID_COMMAND",
+        "move_entity requires payload.entityId and payload.toRoomId.",
+      );
+    }
+
+    events.push(
+      queueEvent(
+        "entity.moved",
+        {
+          entityId,
+          toRoomId,
+          kind,
+          fromRoomId:
+            projection.world.entities.find((e) => e.id === entityId)?.roomId ??
+            null,
+        },
+        handledAt,
+      ),
+    );
+  } else if (command.type === "assign_team") {
+    const payload = command.payload;
+    const teamId =
+      typeof payload.teamId === "string" ? payload.teamId.trim() : "";
+    const memberIds = Array.isArray(payload.memberIds)
+      ? payload.memberIds.filter(
+          (m): m is string => typeof m === "string" && m.trim().length > 0,
+        )
+      : [];
+    const roomId =
+      typeof payload.roomId === "string" && payload.roomId.trim().length > 0
+        ? payload.roomId.trim()
+        : undefined;
+
+    if (!teamId) {
+      throw createCommandError(
+        command,
+        handledAt,
+        "INVALID_COMMAND",
+        "assign_team requires payload.teamId.",
+      );
+    }
+
+    events.push(
+      queueEvent(
+        "team.assigned",
+        {
+          team: {
+            id: teamId,
+            memberIds,
+            roomId,
+          },
+        },
+        handledAt,
+      ),
+    );
   } else {
     throw createCommandError(
       command,
@@ -2711,6 +3108,21 @@ const executeFreshCommand = (
   for (const event of events) {
     broadcastEvent(event);
   }
+
+  const transitionTriggerTypes = new Set(["submission.locked", "judge.score_submitted"]);
+  const triggerEvent = events.find((e) => transitionTriggerTypes.has(e.type));
+  if (triggerEvent) {
+    const autoEvents = applyTransitionRuleAfterEvent(triggerEvent.type);
+    if (autoEvents.length > 0) {
+      commitEvents(autoEvents);
+      syncTimerSchedules();
+      for (const autoEvent of autoEvents) {
+        broadcastEvent(autoEvent);
+      }
+      events.push(...autoEvents);
+    }
+  }
+
   broadcastHealth();
 
   return buildAcceptedReceipt(command, handledAt, events);

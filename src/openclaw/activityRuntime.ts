@@ -63,15 +63,13 @@ export const buildWorldRoomCatalog = ({
   fallbackRoomId?: string | null;
 }): ActivityRoomCatalog => {
   const activityPackage = tryGetActivityPackage(activityPackageId);
-  const fallbackRoomCatalogWorld =
-    world.rooms.length > 0 ? world : activityPackage?.world ?? world;
   const resolvedFallbackRoomId =
     fallbackRoomId?.trim() ||
     activityPackage?.metadata?.rooms?.fallbackRoomId?.trim() ||
-    fallbackRoomCatalogWorld.rooms.at(-1)?.id ||
+    world.rooms.at(-1)?.id ||
     "room";
-  const roomIds = fallbackRoomCatalogWorld.rooms.map((room) => room.id);
-  const labels = fallbackRoomCatalogWorld.rooms.reduce<Record<string, string>>((result, room) => {
+  const roomIds = world.rooms.map((room) => room.id);
+  const labels = world.rooms.reduce<Record<string, string>>((result, room) => {
     result[room.id] = room.label?.trim() || room.id;
     return result;
   }, {});
@@ -91,21 +89,6 @@ export const buildWorldRoomCatalog = ({
     labels,
   };
 };
-
-const buildActivityRoomCatalogFromPackage = (
-  activityPackage: ActivityPackage,
-): ActivityRoomCatalog => {
-  return buildWorldRoomCatalog({
-    world: activityPackage.world,
-    activityPackageId: activityPackage.id,
-    fallbackRoomId: activityPackage.metadata?.rooms?.fallbackRoomId,
-  });
-};
-
-export const resolveActivityPackage = (
-  activityPackageId?: string | null,
-): ActivityPackage | undefined =>
-  tryGetActivityPackage(activityPackageId);
 
 export const tryResolveActivityPackage = (
   activityPackageId?: string | null,
@@ -152,18 +135,28 @@ export const resolveActivityPackageId = ({
   return tryResolveActivityPackageId({ templateId, previewStageId });
 };
 
-export const buildActivityRoomCatalog = (
-  activityPackageId?: string | null,
-): ActivityRoomCatalog | null => {
-  const activityPackage = resolveActivityPackage(activityPackageId);
-  return activityPackage ? buildActivityRoomCatalogFromPackage(activityPackage) : null;
-};
-
 export const tryBuildActivityRoomCatalog = (
   activityPackageId?: string | null,
+  authorityWorld?: WorldProjection | null,
 ): ActivityRoomCatalog | null => {
   const activityPackage = tryResolveActivityPackage(activityPackageId);
-  return activityPackage ? buildActivityRoomCatalogFromPackage(activityPackage) : null;
+  if (!authorityWorld) {
+    if (!activityPackage) {
+      return null;
+    }
+
+    return buildWorldRoomCatalog({
+      world: activityPackage.world,
+      activityPackageId: activityPackage.id,
+      fallbackRoomId: activityPackage.metadata?.rooms?.fallbackRoomId,
+    });
+  }
+
+  return buildWorldRoomCatalog({
+    world: authorityWorld,
+    activityPackageId: activityPackage?.id ?? activityPackageId,
+    fallbackRoomId: activityPackage?.metadata?.rooms?.fallbackRoomId,
+  });
 };
 
 export const getActivityScoreAnnotationKeys = (
@@ -199,7 +192,7 @@ export const getActivityStageTemplate = ({
   activityPackageId?: string | null;
   stageId: string;
 }) =>
-  resolveActivityPackage(activityPackageId)?.stageTemplates.find(
+  tryResolveActivityPackage(activityPackageId)?.stageTemplates.find(
     (stageTemplate) => stageTemplate.id === stageId,
   );
 

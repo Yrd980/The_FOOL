@@ -98,6 +98,9 @@ bun run openclaw:control -- audit activity-run-01 --limit 20
 - `submission.locked`
 - `judge.score_submitted`
 - `award.granted`
+- `draw.submitted`
+- `entity.moved`
+- `team.assigned`
 - `transition_stage`
 - `start_timer`
 - `open_submission`
@@ -106,6 +109,9 @@ bun run openclaw:control -- audit activity-run-01 --limit 20
 - `lock_submission`
 - `submit_score`
 - `grant_award`
+- `draw`
+- `move_entity`
+- `assign_team`
 
 这一轮平台化收口后，当前代码边界还额外具备：
 
@@ -231,7 +237,7 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
   - `actorId`
   - `actorRole`
 - 当前 submission write loop 额外稳定为：
-  - commands: `open_submission` -> `submit` -> `update_submission` -> `lock_submission`
+  - Act V team-project commands: `open_submission` -> `submit` -> `update_submission` -> `lock_submission`
   - `submit` / `update_submission` payload: `payload.submissionId` + `payload.data`
   - `submit` / `update_submission` 语义是写入完整 payload snapshot，不是 partial patch
   - `team-project-v1` 当前至少校验：
@@ -252,13 +258,14 @@ OPENCLAW_COMMAND_ACTOR_ROLE=host
     - `data`
   - `update_submission` 只允许在已 opened 且未 locked 时执行
   - locked 后再次 `update_submission` 直接 reject
+  - Act IX personal-poem 的首个 `submit` 在缺 shell 时会自动补出 `submission.opened`
 - 当前本地 scoring cut 额外稳定为：
   - command: `submit_score`
   - event: `judge.score_submitted`
   - stage restriction: `act-7-ai-judging`
   - permission: `judge`, `admin` override
   - target: locked team-project submission with a real structured payload
-  - payload fields: `submissionId` / `score` / `reason` / `favorite` / `mostAbsurd`
+  - payload fields: `submissionId` / `score` / `reason` / `annotations.favorite` / `annotations.mostAbsurd`
   - duplicate semantics: 同一个 judge 对同一个 submission 或解析到同一个 team 的重复评分首版直接 reject
 - 当前查询接口：
   - `GET /api/orchestrator/snapshot`
@@ -496,10 +503,10 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
 - 当前 local backend 还没有补齐：
   - `unlock_submission` / `reopen_submission`
   - 独立的 submission versions query endpoint（当前通过 `snapshot` / `events` / `replay` / `audit` 追）
-  - score completion rule / `scores_completed` auto-transition
   - vote / bet / audience heat / world/presence/message 等更完整的平台服务
   - 自动由 score 推导 award 与更细粒度的权限模型
   - 多活动实例 / 多活动运行并发
+  - 更通用的 `condition_satisfied` transition rules 与更丰富的 canvas projection / co-creation state
 - 当前 renderer/client 还没有补齐：
   - `/show` 已经补上 show-specific composition，但当前 audience narrative 仍会受 fixture/live session 稀疏度影响，room spotlight 与 stage-level world cue 还可以继续收紧
   - stage-specific skill bindings 仍未在 seed data 内提供，所以 `/show` 当前只能把 backstage context 叙述成“沿用全局说明”

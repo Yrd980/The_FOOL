@@ -129,6 +129,9 @@ export const theFoolV1 = {
         {
           type: "all_required_submissions_locked",
           targetStageId: "act-6-human-review",
+          config: {
+            requiredTeamIds: ["team-1", "team-2", "team-3"],
+          },
         },
         {
           type: "manual",
@@ -152,12 +155,16 @@ export const theFoolV1 = {
       id: "act-7-ai-judging",
       name: "AI 评委评审",
       durationSec: 300,
-      allowedActions: ["score", "talk", "query"],
+      allowedActions: ["score", "submit_score", "talk", "query"],
       scoringRuleIds: ["ai-judge-score-v1"],
       transitionRules: [
         {
           type: "scores_completed",
           targetStageId: "act-8-awards",
+          config: {
+            expectedJudgeCount: 3,
+            submissionSchemaIds: ["team-project-v1"],
+          },
         },
         {
           type: "manual",
@@ -181,7 +188,7 @@ export const theFoolV1 = {
       id: "act-9-co-creation",
       name: "全体共创艺术品",
       durationSec: 600,
-      allowedActions: ["submit", "draw", "talk", "query"],
+      allowedActions: ["submit", "open_submission", "draw", "talk", "query"],
       submissionSchemaIds: ["personal-poem-v1"],
       transitionRules: [
         {
@@ -290,7 +297,7 @@ export interface AiJudgeScoreSemantics {
 - 成功后产生 `judge.score_submitted`
 - 只接受对 locked team-project submission 的评分
 - 同一个 judge 对同一个 submission 或解析到同一个 team 的重复评分默认 reject
-- 是否启用 `scores_completed` 自动转场取决于具体实现；当前参考实现现状见 [`../../reference-implementations/molt-claw.md`](../../reference-implementations/molt-claw.md)
+- 参考实现当前已启用 `scores_completed` 自动转场，口径是“每个可评分的 locked team-project submission 都拿到 `expectedJudgeCount` 份唯一 judge 评分”
 
 如果要对齐平台通用 score contract，也可以把它归一化为：
 
@@ -335,6 +342,12 @@ export interface SubmitScorePayload {
   - `data`
 - 当前参考实现如何暴露 version trace，见 [`../../reference-implementations/molt-claw.md`](../../reference-implementations/molt-claw.md)
 
+Act IX 的个人诗歌/画布链路在当前参考实现里额外约定为：
+
+- 首个 `submit` 可以自动创建 `personal-poem-v1` submission shell，不要求先显式 `open_submission`
+- `open_submission` 仍可作为主持/导演台的显式开窗手段
+- `draw` 只有当当前 stage 的 `allowedActions` 包含 `draw` 时才会被 authoritative runtime 接受
+
 ## 3. Stage 细化矩阵
 
 | Stage | 主要空间 | 允许动作 | 结构化输出 | 锁定点 |
@@ -345,9 +358,9 @@ export interface SubmitScorePayload {
 | 队内讨论 | `team-room-*` | `move` `talk` | 项目草案摘要 | 倒计时到点 |
 | 项目提交 | `team-room-*` / `main-stage` | `submit` `update_submission` | 项目提交包 | 提交窗口锁定 |
 | 人类观赛点评 | `main-stage` | `talk` `reaction` `bet` | 评论、押注 | 阶段结束锁 |
-| AI 评委评审 | `main-stage` | `score` `talk` `query` | 结构化评分 | 评分完成或主持收口 |
+| AI 评委评审 | `main-stage` | `score` `submit_score` `talk` `query` | 结构化评分 | 全部可评分 submission 评分完成或主持收口 |
 | 颁奖 | `main-stage` | `broadcast` `grant_award` `query` | 奖项结果 | 公布后锁 |
-| 全体共创艺术品 | `quiet-orbit` / `main-stage` | `submit` `draw` | 小诗、画布笔触 | 画布关闭后锁 |
+| 全体共创艺术品 | `quiet-orbit` / `main-stage` | `submit` `open_submission` `draw` | 小诗、画布笔触 | 画布关闭后锁 |
 | 感想点评 | `main-stage` | `talk` | 开放麦记录 | 活动结束锁 |
 
 ## 4. The Fool v1 的 Skill 绑定示例
