@@ -84,6 +84,13 @@
   - `eventIds`
   - stable `code + message`
 
+尚未进入这个最小 support matrix 的能力也需要明确写出来，避免把活动 contract 误读成“已经实现”：
+
+- 尚未落成通用 `TransitionRule` evaluator；`timer_expired` / `all_required_submissions_locked` / `scores_completed` 这些自动切幕规则还没有真正执行
+- 尚未提供正式的 Act III 分队 command；`team.assigned` / `entity.moved` 目前只存在事件/projection apply 路径，还没有对外命令闭环
+- 尚未提供 Act IX 的 `draw` authoritative command / replay 语义
+- Act IX 的 `personal-poem-v1` 虽然已经注册 schema，但当前提交链路仍依赖 `open_submission`
+
 当前代码结构上的平台 / 活动边界也已经开始落地：
 
 - `src/openclaw/platform/contracts.ts` 收口平台通用 contract
@@ -127,6 +134,7 @@
 - `lock_submission` 只能锁定已 `opened` 的 submission
 - 同一个 submission 若已 locked，再次 `lock_submission` 应被 reject
 - locked 后再次 `update_submission` 应被 reject
+- 当前还没有实现 `all_required_submissions_locked` 自动切阶段；Act V -> Act VI 仍由主持手动收口
 
 ### 4.2 Act VII AI Judging
 
@@ -172,6 +180,26 @@
 - awards projection 必须真实更新，而不是只停留在静态模板
 - 同一个 `awardId` 重复 grant 当前直接 reject
 
+### 4.4 调度与自动切幕
+
+- authoritative stage 当前仍主要依赖 `transition_stage`
+- `start_timer` 会产生 `timer.started`
+- running timer 在切幕时会先产生 `timer.paused`
+- timer 自然到点时会产生 `timer.ended`
+- 当前还没有通用 `TransitionRule` 执行器：
+  - `timer_expired` 不会自动推进到下一幕
+  - `all_required_submissions_locked` 不会自动推进到下一幕
+  - `scores_completed` 不会自动推进到下一幕
+- 换句话说，当前 `TransitionRule` 仍主要停留在活动模板/文档层，尚未真正进入 authoritative runtime
+
+### 4.5 Act IX Co-Creation
+
+- `personal-poem-v1` schema 已注册，payload 归一化也已接入 activity package
+- 但当前 submission write loop 仍要求先 `open_submission`
+- 而 Act IX stage template 当前未开放 `open_submission`，所以“直接提交个人诗歌”的链路还没真正跑通
+- `draw` authoritative command / event / replay 目前仍未实现
+- 文档里“情绪影响调色盘范围”“画布行为可记录与回放”目前仍属于活动目标，不是已完成能力
+
 ## 5. Browser Consumer 与 `/show`
 
 这里描述的是当前 `molt-claw` browser consumer 已经暴露到界面的能力，不等于平台总 contract。
@@ -194,6 +222,7 @@
 - `src/presentation.ts` 的 stage desk / submission / score narrative 已改成消费 stage capabilities + activity metadata，不再依赖 `stageId.includes("submission" | "judging" | "award")`
 - `src/presentation.ts` 的 room stage-fit / heat / activity headline 已改成消费 activity metadata 的 room scene roles，不再在 shared presentation 层解析 The Fool room id 命名
 - authority/template 还不可用时，browser app shell 会显示通用 pending activity shell，不再默认退回首个 reference activity package；shared header / show fallback copy 也开始去掉固定 `Molt Claw` / `龙虾` / `contestant` 前台默认文案
+- `/control/stages/:stageId` 当前已经支持 preview 某一幕的 workspace，但非当前幕时仍未把命令区显式降级成“准备态 / 需确认”；右侧命令提示仍可能按 preview stage 生成下一幕建议
 
 `/show` 侧当前已经在同一层 shared state 之上补出 show-specific composition，而不是继续直接复用 control-first 分组：
 
@@ -210,10 +239,14 @@
 | Gap | 违反/触及的 contract 约束（回链） | 完成标准（验收口径） |
 | --- | --- | --- |
 | local fixture 的 team-room / entity placement mismatch 未修正 | 平台：世界模型的权威状态应来自投影（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 `world_view` 约束） | backend 修正 fixture/projection：snapshot 中的 entity/team roomId 一致、可被 replay 重建；renderer 不需要“补救性推断” |
+| Act III 的正式分队结果仍主要停留在 bootstrap seed，而非命令驱动的 authority 结果 | 活动：平台必须记录正式队伍分配结果（[../../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md) 的 Act III 要求）与平台：模板不应在运行时重新充当 `ActivityRun` 真相（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的模板约束） | 提供正式分队 command / event 闭环；`team.assigned` / `entity.moved` 由运行时事件驱动，而不是靠静态 seed 假定 |
 | authority world 与 activity bootstrap seed 未完全分开 | 平台：authority world vs bootstrap seed 边界（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的 “Authority World 与 Bootstrap Seed”）与 snapshot world 来自投影（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 world_view 约束） | orchestrator/snapshot 构建不再读取活动包静态 world 充当运行时真相；活动 seed 只参与 bootstrap；运行时 world 只能来自 projection |
 | shared runtime 仍可能默认 fallback 到“首个已注册活动包” | 平台：Orchestrator 无隐式默认活动（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 “运行时真相约束”） | 当拿不到 `templateId`/activity package 时，明确返回 unavailable/pending，并在 `/control` 暴露诊断；不得静默 fallback |
+| `TransitionRule` 仍未真正进入 authoritative runtime | 平台：阶段切换至少应支持 timer / 提交完成 / 评分完成等自动规则（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的 TransitionRule 要求）与活动：Act V / VII 的自动收口条件（[../../activities/the-fool-v1/template-example.md](../activities/the-fool-v1/template-example.md) 的 transition rules） | runtime 引入通用 `TransitionRule` evaluator；`timer_expired` / `all_required_submissions_locked` / `scores_completed` 能真实触发切幕 |
 | `/show` room spotlight 仍会受 live heat 影响，可能带偏 stage-first | Scene：heat 只能做 tie-breaker，scene 选择只依赖 authority stage（[../../activities/the-fool-v1/scene-spec.md](../activities/the-fool-v1/scene-spec.md) 的 “Stage-first” 与实现 checklist） | `/show` 的 scene 选择只看 `currentStageId`；spotlight 只在当前幕候选集内使用 heat 作为 tie-breaker；不得用 heat 覆盖当前幕 |
+| `/control/stages/:stageId` 的 preview 仍未完全做成“安全预演态” | Scene：非当前 stage 的 control workspace 应进入准备态 / 需确认（[../../activities/the-fool-v1/scene-spec.md](../activities/the-fool-v1/scene-spec.md) 的路由职责与 checklist） | 当 `stageId !== currentStageId` 时，命令区显式标记 preview/需确认/禁用，避免按 preview stage 静默生成 live mutation 建议 |
 | browser/CLI/orchestrator 仍保留旧 score 字段与 flags 的兼容层 | 活动：活动专属字段应映射到平台通用扩展容器（[../../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md) 的 “平台能力映射索引” + AI 评分映射说明）与平台：通用 scoring 扩展点口径（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的“平台如何被活动扩展”） | 兼容层完全收口到活动包/活动适配层；平台通用 contract 只认识通用 score 结构（如 annotations/extras 容器），不出现活动字段名 |
+| Act IX 的诗歌/画布闭环尚未真正跑通 | 活动：Act IX 允许 `submit` / `draw`，且画布行为需可记录与回放（[../../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md) 的 Act IX 要求） | 个人诗歌提交不再被 `open_submission` 前置条件卡住；`draw` 落成 command / event / replay 闭环；共创画布具备最小可审计记录 |
 | reference activity bootstrap 仍作为默认路径存在 | 平台：无隐式默认活动（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 “运行时真相约束”）与 bootstrap 只在启动阶段生效（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的 seed 边界） | reference activity 仅作为本地开发的显式 bootstrap 配置；运行时路径/renderer/shared helpers 不得依赖它来补齐缺失数据；缺失时应 pending/unavailable |
 
 说明：其中部分“兼容/默认值”在参考实现早期是有意保留的开发便利，但一旦开始强调“平台通用化 + 活动可插拔”，就必须逐条拔掉隐式路径，让 authority/projection 成为唯一真相源。
@@ -230,6 +263,7 @@
 - 还没有完全
 - The Fool 已经从很多平台通用类型和前台默认文案里退出来了
 - 但 authority world、default activity fallback、reference activity bootstrap、CLI 兼容层这几块还没完全拔干净
+- 自动切幕、Act III 正式分队、Act IX 共创闭环、control preview 安全态 这几块也还没有真正落地
 
 更准确地说，当前状态是：
 
@@ -242,6 +276,10 @@
 - shared runtime 不再默认回落到某个活动包
 - reference activity 只留在 bootstrap，不进入运行时默认路径
 - The Fool 兼容 flags / legacy 字段继续收口到活动适配层
+- `TransitionRule` 进入 runtime，而不是只留在文档/模板里
+- Act III 分队结果通过正式命令与事件沉淀
+- Act IX 的诗歌提交与画布事件真正进入 authoritative replay 链
+- `/control/stages/:stageId` 在非当前幕时变成明确的安全预演态
 
 这里的含义是：
 
