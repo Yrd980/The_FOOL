@@ -682,6 +682,15 @@ const summarizePayload = (payload: Record<string, unknown>): string => {
   return "平台已推送新的编排事件。";
 };
 
+const readEventRoomId = (
+  event: GatewayEventEnvelope,
+  payload: Record<string, unknown>,
+): string | null =>
+  readString(payload, "toRoomId", "roomId") ??
+  (typeof event.roomId === "string" && event.roomId.trim().length > 0
+    ? event.roomId
+    : null);
+
 const buildDomainEventSummary = (
   event: GatewayEventEnvelope,
 ): GatewayDomainEventSummary => {
@@ -689,6 +698,7 @@ const buildDomainEventSummary = (
   const stageId = stageIdFromPayload(payload);
   const timestampLabel = formatClockLabel(event.timestamp);
   const provenance = buildEventProvenance(event);
+  const baseRoomId = readEventRoomId(event, payload);
 
   if (event.type === "stage.changed") {
     const nextStageId = readString(payload, "toStageId", "currentStageId", "stageId");
@@ -703,6 +713,10 @@ const buildDomainEventSummary = (
       timestamp: event.timestamp,
       timestampLabel,
       stageId: nextStageId ?? stageId,
+      roomId: null,
+      teamId: null,
+      submissionId: null,
+      entityId: null,
       tone: "critical",
       provenance,
     };
@@ -726,6 +740,10 @@ const buildDomainEventSummary = (
       timestamp: event.timestamp,
       timestampLabel,
       stageId: timer?.stageId ?? stageId,
+      roomId: baseRoomId,
+      teamId: null,
+      submissionId: null,
+      entityId: null,
       tone: event.type === "timer.ended" ? "active" : "warm",
       provenance,
     };
@@ -749,6 +767,10 @@ const buildDomainEventSummary = (
       timestamp: event.timestamp,
       timestampLabel,
       stageId: submission?.stageId ?? stageId,
+      roomId: baseRoomId,
+      teamId: submission?.teamId ?? null,
+      submissionId: submission?.id ?? null,
+      entityId: null,
       tone: event.type === "submission.locked" ? "active" : "warm",
       provenance,
     };
@@ -773,6 +795,10 @@ const buildDomainEventSummary = (
       timestamp: event.timestamp,
       timestampLabel,
       stageId,
+      roomId: baseRoomId,
+      teamId: readString(judgeScore, "teamId") ?? readString(payload, "teamId"),
+      submissionId,
+      entityId: null,
       tone: "warm",
       provenance,
     };
@@ -791,7 +817,82 @@ const buildDomainEventSummary = (
       timestamp: event.timestamp,
       timestampLabel,
       stageId,
+      roomId: baseRoomId,
+      teamId: null,
+      submissionId: null,
+      entityId: award?.entityId ?? null,
       tone: "critical",
+      provenance,
+    };
+  }
+
+  if (event.type === "draw.submitted") {
+    const entityId = readString(payload, "entityId") ?? event.entityId ?? null;
+    return {
+      id: event.id,
+      sequence: event.sequence ?? null,
+      type: event.type,
+      title: "Draw Submitted",
+      detail: entityId
+        ? `${entityId} 刚把新的共创笔触写进平台事件流。`
+        : summarizePayload(payload),
+      timestamp: event.timestamp,
+      timestampLabel,
+      stageId,
+      roomId: baseRoomId,
+      teamId: null,
+      submissionId: null,
+      entityId,
+      tone: "warm",
+      provenance,
+    };
+  }
+
+  if (event.type === "entity.moved") {
+    const entityId = readString(payload, "entityId") ?? event.entityId ?? null;
+    const toRoomId = readString(payload, "toRoomId", "roomId");
+    return {
+      id: event.id,
+      sequence: event.sequence ?? null,
+      type: event.type,
+      title: "Entity Moved",
+      detail:
+        entityId && toRoomId
+          ? `${entityId} 已被 authoritative runtime 移动到 ${toRoomId}。`
+          : summarizePayload(payload),
+      timestamp: event.timestamp,
+      timestampLabel,
+      stageId,
+      roomId: toRoomId ?? baseRoomId,
+      teamId: null,
+      submissionId: null,
+      entityId,
+      tone: "active",
+      provenance,
+    };
+  }
+
+  if (event.type === "team.assigned") {
+    const rawTeam = isRecord(payload.team) ? payload.team : payload;
+    const teamId = readString(rawTeam, "id", "teamId");
+    const roomId = readString(rawTeam, "roomId") ?? baseRoomId;
+    return {
+      id: event.id,
+      sequence: event.sequence ?? null,
+      type: event.type,
+      title: "Team Assigned",
+      detail:
+        teamId && roomId
+          ? `${teamId} 的权威分组与房间映射刚落到 ${roomId}。`
+          : summarizePayload(payload),
+      timestamp: event.timestamp,
+      timestampLabel,
+      stageId,
+      roomId,
+      teamId,
+      submissionId: null,
+      entityId: null,
+      tone: "active",
       provenance,
     };
   }
@@ -807,6 +908,10 @@ const buildDomainEventSummary = (
       timestamp: event.timestamp,
       timestampLabel,
       stageId,
+      roomId: baseRoomId,
+      teamId: null,
+      submissionId: null,
+      entityId: null,
       tone: "critical",
       provenance,
     };
@@ -821,6 +926,10 @@ const buildDomainEventSummary = (
     timestamp: event.timestamp,
     timestampLabel,
     stageId,
+    roomId: baseRoomId,
+    teamId: null,
+    submissionId: null,
+    entityId: event.entityId ?? null,
     tone: "idle",
     provenance,
   };

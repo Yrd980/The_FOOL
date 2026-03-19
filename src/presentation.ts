@@ -36,7 +36,11 @@ export interface RoomHeatSummary {
   label: string;
   count: number;
   roomRole: ActivityRoomSceneRole | null;
-  activityCount: number;
+  liveActivityCount: number;
+  authoritySignalCount: number;
+  authorityScore: number;
+  liveTieBreakerScore: number;
+  latestAuthorityHeadline: string | null;
   heatScore: number;
   heatLabel: string;
   heatTone: UiTone;
@@ -311,70 +315,331 @@ export const buildShowStateCopy = (
   };
 };
 
+interface AuthorityRoomSignal {
+  id: string;
+  roomId: string;
+  headline: string;
+  detail: string;
+  tone: UiTone;
+  timestamp: number;
+  weight: number;
+}
+
+const authoritySignalWeight = {
+  "stage.changed": 8,
+  "timer.started": 7,
+  "timer.paused": 6,
+  "timer.ended": 8,
+  "submission.opened": 10,
+  "submission.updated": 12,
+  "submission.locked": 14,
+  "judge.score_submitted": 16,
+  "award.granted": 18,
+  "draw.submitted": 12,
+  "entity.moved": 10,
+  "team.assigned": 12,
+} as const;
+
+const authorityToneWeight = {
+  critical: 4,
+  active: 3,
+  warm: 2,
+  idle: 1,
+} as const;
+
+const resolveDomainEventRoomId = ({
+  event,
+  gateway,
+  runtimeGuide,
+}: {
+  event: GatewayOverview["domainEvents"][number];
+  gateway: GatewayOverview;
+  runtimeGuide: StageRuntimeGuide;
+}): string | null => {
+  if (event.roomId) {
+    return event.roomId;
+  }
+
+  if (event.teamId) {
+    return (
+      gateway.world.teams.find((team) => team.teamId === event.teamId)?.roomId ?? null
+    );
+  }
+
+  if (event.submissionId) {
+    const submission = gateway.submissions.find(
+      (candidate) => candidate.id === event.submissionId,
+    );
+    if (submission?.teamId) {
+      return (
+        gateway.world.teams.find((team) => team.teamId === submission.teamId)?.roomId ??
+        null
+      );
+    }
+  }
+
+  if (event.entityId) {
+    const matchingTeam = gateway.world.teams.find(
+      (team) => team.teamId === event.entityId,
+    );
+    if (matchingTeam?.roomId) {
+      return matchingTeam.roomId;
+    }
+
+    const matchingEntity = gateway.world.entities.find(
+      (entity) => entity.entityId === event.entityId,
+    );
+    if (matchingEntity?.roomId) {
+      return matchingEntity.roomId;
+    }
+
+    if (matchingEntity?.teamId) {
+      return (
+        gateway.world.teams.find((team) => team.teamId === matchingEntity.teamId)?.roomId ??
+        null
+      );
+    }
+  }
+
+  if (event.stageId && runtimeGuide.preferredRoomIds.length === 1) {
+    return runtimeGuide.preferredRoomIds[0] ?? null;
+  }
+
+  return null;
+};
+
+const buildAuthorityRoomSignals = (
+  gateway: GatewayOverview,
+  runtimeGuide: StageRuntimeGuide,
+): Map<string, AuthorityRoomSignal[]> => {
+  const signalsByRoom = new Map<string, AuthorityRoomSignal[]>();
+
+  const pushSignal = (signal: AuthorityRoomSignal): void => {
+    const existing = signalsByRoom.get(signal.roomId) ?? [];
+    existing.push(signal);
+    existing.sort((left, right) => right.timestamp - left.timestamp);
+    signalsByRoom.set(signal.roomId, existing.slice(0, 6));
+  };
+
+  for (const event of gateway.domainEvents) {
+    const roomId = resolveDomainEventRoomId({ event, gateway, runtimeGuide });
+    if (!roomId) {
+      continue;
+    }
+
+    pushSignal({
+      id: event.id,
+      roomId,
+      headline: event.title,
+      detail: event.detail,
+      tone: event.tone,
+      timestamp: event.timestamp,
+      weight:
+        (authoritySignalWeight[
+          event.type as keyof typeof authoritySignalWeight
+        ] ?? 6) + authorityToneWeight[event.tone],
+    });
+  }
+
+  const currentSubmission = gateway.currentSubmission;
+  if (currentSubmission?.teamId) {
+    const roomId =
+      gateway.world.teams.find((team) => team.teamId === currentSubmission.teamId)?.roomId ??
+      null;
+    if (roomId) {
+      pushSignal({
+        id: `submission:${currentSubmission.id}`,
+        roomId,
+        headline: currentSubmission.locked
+          ? "Current Submission Locked"
+          : "Current Submission In Flight",
+        detail: currentSubmission.locked
+          ? `${currentSubmission.id} 已经锁进 authority projection。`
+          : `${currentSubmission.id} 仍在 authority submission window 内更新。`,
+        tone: currentSubmission.locked ? "critical" : "active",
+        timestamp:
+          currentSubmission.lockedAt ??
+          currentSubmission.updatedAt ??
+          currentSubmission.openedAt ??
+          0,
+        weight: currentSubmission.locked ? 16 : 12,
+      });
+    }
+  }
+
+  const latestScore = gateway.scores[0] ?? null;
+  if (latestScore?.teamId) {
+    const roomId =
+      gateway.world.teams.find((team) => team.teamId === latestScore.teamId)?.roomId ??
+      null;
+    if (roomId) {
+      pushSignal({
+        id: `score:${latestScore.id}`,
+        roomId,
+        headline: "Latest Score Registered",
+        detail: `${latestScore.judgeId ?? "judge"} 对 ${latestScore.teamId} 的评分已经进入 authority score projection。`,
+        tone: "critical",
+        timestamp: latestScore.submittedAt,
+        weight: 17,
+      });
+    }
+  }
+
+  const latestAward = gateway.awards[0] ?? null;
+  if (latestAward) {
+    const awardRoomId =
+      gateway.world.teams.find((team) => team.teamId === latestAward.entityId)?.roomId ??
+      gateway.world.entities.find((entity) => entity.entityId === latestAward.entityId)
+        ?.roomId ??
+      null;
+    if (awardRoomId) {
+      pushSignal({
+        id: `award:${latestAward.id}`,
+        roomId: awardRoomId,
+        headline: "Latest Award Granted",
+        detail: `${latestAward.entityId} 刚被正式写进 ${latestAward.label}。`,
+        tone: "critical",
+        timestamp: latestAward.grantedAt,
+        weight: 19,
+      });
+    }
+  }
+
+  return signalsByRoom;
+};
+
 export const buildRoomHeatSummaries = (
   gateway: GatewayOverview,
   runtimeGuide: StageRuntimeGuide,
 ): RoomHeatSummary[] => {
   const focusRoomIds = new Set(runtimeGuide.preferredRoomIds);
-  const activityCountByRoom = gateway.activities.reduce<Record<string, number>>((acc, activity) => {
-    acc[activity.roomId] = (acc[activity.roomId] ?? 0) + 1;
-    return acc;
-  }, {});
+  const activityCountByRoom = gateway.activities.reduce<Record<string, number>>(
+    (acc, activity) => {
+      acc[activity.roomId] = (acc[activity.roomId] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
+  const worldRoomById = new Map(
+    gateway.world.rooms.map((room) => [room.roomId, room]),
+  );
+  const worldTeamById = new Map(
+    gateway.world.teams.map((team) => [team.teamId, team]),
+  );
+  const authoritySignalsByRoom = buildAuthorityRoomSignals(gateway, runtimeGuide);
 
   return gateway.roomRosters
     .map((room) => {
       const roomRole = resolveRoomRole(room.roomId, runtimeGuide);
-      const activityCount = activityCountByRoom[room.roomId] ?? 0;
+      const liveActivityCount = activityCountByRoom[room.roomId] ?? 0;
+      const authoritySignals = authoritySignalsByRoom.get(room.roomId) ?? [];
+      const latestAuthoritySignal = authoritySignals[0] ?? null;
+      const worldRoom = worldRoomById.get(room.roomId) ?? null;
+      const authoritySignalCount = authoritySignals.length;
+      const authorityScore =
+        authoritySignals.reduce(
+          (sum, signal, index) => sum + Math.max(4, signal.weight - index * 2),
+          0,
+        ) +
+        (worldRoom?.teamCount ?? 0) * 10 +
+        (worldRoom?.memberCount ?? 0) * 4 +
+        (worldRoom?.occupantCount ?? 0) * 2;
       const stateScore = room.sessions.reduce((sum, session) => sum + heatWeight[session.state], 0);
+      const liveTieBreakerScore = runtimeGuide.scene.heatAsTieBreaker
+        ? room.sessions.length * 4 + liveActivityCount * 5 + stateScore
+        : 0;
       const heatScore =
-        room.sessions.length * 10 +
-        activityCount * 14 +
-        stateScore;
+        authorityScore +
+        liveTieBreakerScore +
+        (focusRoomIds.has(room.roomId) ? 24 : 0);
 
       let heatLabel: string;
       let heatTone: UiTone;
-      if (heatScore >= 70) {
-        heatLabel = "炸场中";
-        heatTone = "critical";
-      } else if (heatScore >= 42) {
-        heatLabel = "火苗越烧越高";
-        heatTone = "active";
-      } else if (heatScore >= 18) {
-        heatLabel = "开始有戏";
+      if (latestAuthoritySignal && focusRoomIds.has(room.roomId)) {
+        heatLabel = "权威主机位";
+        heatTone =
+          latestAuthoritySignal.tone === "idle"
+            ? "active"
+            : latestAuthoritySignal.tone;
+      } else if (latestAuthoritySignal) {
+        heatLabel = "权威信号已点亮";
+        heatTone = latestAuthoritySignal.tone;
+      } else if (focusRoomIds.has(room.roomId)) {
+        heatLabel = "本幕主房间";
         heatTone = "warm";
+      } else if (worldRoom && (worldRoom.teamCount > 0 || worldRoom.occupantCount > 0)) {
+        heatLabel = roomRole === "holding" ? "权威缓冲区" : "权威落位已就位";
+        heatTone = roomRole === "holding" ? "idle" : "warm";
       } else {
-        heatLabel = roomRole === "holding" ? "幕后缓冲" : "低火蓄势";
-        heatTone = "idle";
+        heatLabel =
+          runtimeGuide.scene.heatAsTieBreaker && room.sessions.length > 0
+            ? "同幕 tie-breaker"
+            : roomRole === "holding"
+              ? "幕后缓冲"
+              : "待权威信号";
+        heatTone =
+          runtimeGuide.scene.heatAsTieBreaker && room.sessions.length > 0
+            ? "active"
+            : "idle";
       }
 
-      let story = "镜头还没扫到这里，但不代表这里没在酝酿。";
-      if (activityCount > 0 && focusRoomIds.has(room.roomId)) {
-        story = "本幕主镜头正盯着这里，下一句高光随时可能直接冲上大屏。";
-      } else if (activityCount > 0) {
-        story = `刚刚有 ${activityCount} 条新剧情从这里冒出来，像是在后台偷跑正片。`;
-      } else if (room.sessions.length > 0) {
-        story = `${room.sessions.length} 位参与者在这里压着气氛，离真正炸开只差一根火柴。`;
+      let story = "镜头暂时还没拿到足够的权威房间线索，先保持低火观察。";
+      if (latestAuthoritySignal) {
+        story = `${latestAuthoritySignal.detail} ${
+          runtimeGuide.scene.heatAsTieBreaker && liveActivityCount > 0
+            ? `Live 侧的 ${liveActivityCount} 条房间台词只负责同幕内细排，不再主导这幕去哪。`
+            : "当前排序优先跟这条权威信号走。"
+        }`;
+      } else if (focusRoomIds.has(room.roomId) && worldRoom) {
+        story = `${worldRoom.teamCount} 支队伍映射到这里，${worldRoom.occupantCount} 位实体当前在场。当前幕还没出现更强的房间级事件前，镜头先跟 authority room placement 走。`;
+      } else if (worldRoom && (worldRoom.teamCount > 0 || worldRoom.occupantCount > 0)) {
+        story = `${worldRoom.teamCount} 支队伍映射到这里，${worldRoom.occupantCount} 位实体当前在场。这里的叙事先由 authority world 支撑，而不是单靠聊天热度抬起来。`;
+      } else if (runtimeGuide.scene.heatAsTieBreaker && room.sessions.length > 0) {
+        story = `${room.sessions.length} 个 live session 和 ${liveActivityCount} 条房间台词目前只作为并列时的辅助排序依据。`;
       } else if (roomRole === "holding") {
         story = "情绪、停顿和下一轮反扑都先在这里喘一口气。";
       }
+
+      const headliners = [
+        ...room.sessions.map((session) => session.agentId),
+        ...(worldRoom?.occupantIds ?? []),
+        ...((worldRoom?.teamIds ?? []).flatMap(
+          (teamId) => worldTeamById.get(teamId)?.members.map((member) => member.entityId) ?? [],
+        )),
+      ]
+        .filter((value, index, array) => array.indexOf(value) === index)
+        .slice(0, 3);
 
       return {
         roomId: room.roomId,
         label: room.label,
         count: room.sessions.length,
         roomRole,
-        activityCount,
+        liveActivityCount,
+        authoritySignalCount,
+        authorityScore,
+        liveTieBreakerScore,
+        latestAuthorityHeadline: latestAuthoritySignal?.headline ?? null,
         heatScore,
         heatLabel,
         heatTone,
         story,
-        headliners: room.sessions.slice(0, 3).map((session) => session.agentId),
+        headliners,
         isFocusRoom: focusRoomIds.has(room.roomId),
       };
     })
     .sort((left, right) => {
       if (left.isFocusRoom !== right.isFocusRoom) {
         return left.isFocusRoom ? -1 : 1;
+      }
+      if (left.authorityScore !== right.authorityScore) {
+        return right.authorityScore - left.authorityScore;
+      }
+      if (
+        runtimeGuide.scene.heatAsTieBreaker &&
+        left.liveTieBreakerScore !== right.liveTieBreakerScore
+      ) {
+        return right.liveTieBreakerScore - left.liveTieBreakerScore;
       }
       if (left.heatScore !== right.heatScore) {
         return right.heatScore - left.heatScore;
@@ -672,9 +937,13 @@ const buildRoomNarratives = (
     const worldDetail = worldRoom
       ? `${worldRoom.teamCount} 支队伍映射到这里，${worldRoom.occupantCount} 位实体当前在场。`
       : `${room.count} 个 live session 正在这个房间里冒头。`;
-    const headline = room.isFocusRoom
-      ? `${room.label} 是本幕主镜头房间`
-      : `${room.label} 正在抬高侧线热度`;
+    const headline = room.latestAuthorityHeadline
+      ? room.isFocusRoom
+        ? `${room.label} 刚被本幕权威事件点亮`
+        : `${room.label} 收到新的权威房间信号`
+      : room.isFocusRoom
+        ? `${room.label} 是本幕主镜头房间`
+        : `${room.label} 正在等待下一条权威 cue`;
 
     return {
       roomId: room.roomId,
@@ -988,7 +1257,7 @@ const buildPrimarySpeakerSpotlight = ({
       .join(" "),
     line:
       contestant.recentActivity?.content ??
-      gateway.activities[0]?.content ??
+      gateway.domainEvents[0]?.detail ??
       primaryTeamSpotlight?.headline ??
       primaryFallback?.body ??
       emptyState.body,
@@ -1206,13 +1475,13 @@ const buildPrimaryCoCreationSpotlight = ({
   emptyState: ShowEmptyState;
 }): ShowPrimarySpotlight => {
   const currentSubmission = gateway.currentSubmission;
-  const latestActivity = gateway.activities[0] ?? null;
+  const latestAuthorityCue = gateway.domainEvents[0] ?? null;
   const leadLine =
     pickSubmissionLeadLine(currentSubmission?.data) ??
-    latestActivity?.content ??
+    latestAuthorityCue?.detail ??
     submission.headline;
 
-  if (!currentSubmission && !latestActivity) {
+  if (!currentSubmission && !latestAuthorityCue) {
     return buildFallbackPrimarySpotlight({
       primaryTeamSpotlight,
       primaryRoomNarrative,
@@ -1225,7 +1494,7 @@ const buildPrimaryCoCreationSpotlight = ({
     title:
       currentSubmission?.teamId ??
       currentSubmission?.id ??
-      latestActivity?.agentId ??
+      latestAuthorityCue?.entityId ??
       stage.title,
     eyebrow: `${stage.title} · poem / canvas orbit`,
     body: [submission.detail, primaryRoomNarrative?.detail]

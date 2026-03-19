@@ -73,10 +73,32 @@ export interface IntegrationDoc {
   accent: string;
 }
 
+export type OperatorCommandRisk = "info" | "safe" | "caution" | "danger";
+
+export type OperatorCommandAvailability =
+  | "read-only"
+  | "ready"
+  | "confirm"
+  | "disabled";
+
+export type OperatorCommandScope = "diagnostic" | "agent" | "orchestrator";
+
+export interface OperatorCommandConfirmation {
+  title: string;
+  description: string;
+  challengeLabel: string;
+  expectedText: string;
+}
+
 export interface OperatorCommand {
   label: string;
   command: string;
   note: string;
+  risk?: OperatorCommandRisk;
+  availability?: OperatorCommandAvailability;
+  scope?: OperatorCommandScope;
+  blockingReason?: string;
+  confirmation?: OperatorCommandConfirmation;
 }
 
 export interface GatewayRoomCount {
@@ -190,6 +212,10 @@ export interface GatewayDomainEventSummary {
   timestamp: number;
   timestampLabel: string;
   stageId: string | null;
+  roomId: string | null;
+  teamId: string | null;
+  submissionId: string | null;
+  entityId: string | null;
   tone: "critical" | "active" | "warm" | "idle";
   provenance: GatewayEventProvenanceSummary;
 }
@@ -266,7 +292,10 @@ export interface GatewayAuthoritativeQueryStatus {
   status: "available" | "degraded" | "syncing" | "unavailable" | "disabled";
   statusLabel: string;
   baseUrl: string | null;
-  source: "explicit-orchestrator-url" | "derived-local-orchestrator-url" | "unavailable";
+  source:
+    | "explicit-orchestrator-url"
+    | "derived-local-orchestrator-url"
+    | "unavailable";
   note: string | null;
   reason: string | null;
   error: string | null;

@@ -54,11 +54,23 @@ export function ShowMode({
   const primaryRoomNarrative = audience.roomNarratives[0] ?? null;
   const primaryFallback = audience.softFallbacks[0] ?? null;
   const stageIndex = stages.findIndex((item) => item.id === stage.id);
+  const stageAuthorityEventCount = gateway.domainEvents.filter((event) =>
+    gateway.authorityStageId ? event.stageId === gateway.authorityStageId : true,
+  ).length;
   const livePulse = Math.min(
     99,
-    (hottestRoom?.heatScore ?? 0) +
-      gateway.activities.length * 3 +
-      gateway.totalActiveSessions * 2,
+    18 +
+      Math.min(
+        34,
+        (hottestRoom?.authoritySignalCount ?? 0) * 9 +
+          Math.round((hottestRoom?.authorityScore ?? 0) / 6),
+      ) +
+      Math.min(20, stageAuthorityEventCount * 5) +
+      (gateway.activeTimer ? 8 : 0) +
+      Math.min(12, gateway.totalActiveSessions * 2) +
+      (runtimeGuide.scene.heatAsTieBreaker
+        ? Math.min(7, Math.round((hottestRoom?.liveTieBreakerScore ?? 0) / 18))
+        : 0),
   );
   const isScoreStage = stage.presentation.deskMode === "score";
   const stageDeskLabel = isScoreStage ? "Judge Board" : "Submission Desk";
@@ -173,7 +185,7 @@ export function ShowMode({
                 {liveLabel}
               </span>
               <span className="rounded-full border border-white/10 bg-white/6 px-3 py-1 font-mono text-[0.72rem] uppercase tracking-[0.2em] text-slate-200">
-                Hype {String(livePulse).padStart(2, "0")}
+                Pulse {String(livePulse).padStart(2, "0")}
               </span>
               <span className="rounded-full border border-white/10 bg-white/6 px-3 py-1 font-mono text-[0.72rem] uppercase tracking-[0.2em] text-slate-200">
                 Act {stageIndex + 1}/{stages.length}
@@ -572,8 +584,13 @@ export function ShowMode({
                         </span>
                       ) : null}
                       <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-100">
-                        {heat?.activityCount ?? 0} fresh lines
+                        {heat?.authoritySignalCount ?? 0} authority beats
                       </span>
+                      {runtimeGuide.scene.heatAsTieBreaker ? (
+                        <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[0.63rem] uppercase tracking-[0.16em] text-slate-100">
+                          {heat?.liveActivityCount ?? 0} live lines
+                        </span>
+                      ) : null}
                       {(heat?.headliners ?? []).filter((agentId) =>
                         worldAgentIds.size === 0 || worldAgentIds.has(agentId),
                       ).map((agentId, index) => (

@@ -147,6 +147,7 @@ renderer 侧现状：
 - `/show` 现在继续复用同一份 authoritative state，但已经额外补了 audience-facing composition，而不是继续照搬导演台的数据分组
 - `src/data.ts` / `src/openclaw/activities/theFoolV1.ts` 现在会把每一幕的 `layoutPreset` / `spotlightSource` / `heatAsTieBreaker` scene cue 一起装进 stage model
 - `/show` 的 hero spotlight 现在先按当前幕的 scene cue 选 `speaker` / `team` / `room` / `submission` / `score` / `award` / `co-creation`，而不是默认先追最活跃选手或最热房间
+- `/show` 的 room narrative / room radar / live pulse 现在也优先吃 authority `world` + `domainEvents`，live session/chat heat 只在同幕内做 tie-breaker，不再主导房间排序
 - `/show` 当前至少会把下列 shared state 重新编排成节目叙事：
   - stage-first 的 primary spotlight
   - current stage 下的 team / room spotlight
@@ -156,11 +157,13 @@ renderer 侧现状：
   - state unavailable 时的 soft fallback，而不是后台报错语气
 - 当前 browser consumer 还没完全闭环的部分：
   - 当前 local world fixture 仍会真实暴露 team-room mapping 与 entity placement 的 mismatch
-  - `/show` 的主 spotlight 已经收成 stage-first，但 room narrative / live pulse 仍会混合 live session heat；message / presence / audience signal 还没完全变成平台权威输入
+  - `/show` 的主 spotlight、room narrative 和 live pulse 已进一步收成 authority-first，但 live message / presence / audience signal 还没完全变成平台权威输入
   - `/show` 当前虽然已经把 submission / score / world / skill 重新编排成节目叙事，但还没有形成一套真正 activity-agnostic 的播出模板
-  - `/control/stages/:stageId` 在非当前幕时已经进入 Preview Safe Mode，并把“切换到此幕”单独标成危险操作；但还没有真正的二次确认或更细的 per-command 禁用策略
+  - `/control/stages/:stageId` 在非当前幕时已经进入 Preview Safe Mode；命令区现在会把 live mutation 分成 `read-only` / `disabled` / `confirm`，并要求对“切换到此幕”这类危险命令做真正的二次确认后才显示 CLI
+  - `/control` 的命令区现在已经不再把所有脚本平铺展示：`probe` 这类诊断命令保持 `ready`，`start-timer` 之类 live mutation 会被标成 `caution`，`stage` / `lock-submission` 这类真正会改写 authority 的动作会进入 `danger + confirm`
+  - 对需要确认的命令，导演台会先显示确认卡，再要求输入 stage id / submission id / `PROMOTE <stageId>` 这类 challenge text；在确认完成前不会直接露出可复制的 CLI
   - 当前 skill/doc 虽然已有 stage-specific seed bindings，但仍主要停留在 activity package 静态装配，尚未进入 activity-instance / room / team 级别的动态绑定与冻结策略
-  - 当前 room spotlight、heat 和 recent activity 仍会混合 live gateway session/chat 派生信号；message / presence / audience signal 还不是平台权威服务
+  - 当前 room spotlight、heat 和 recent activity 的排序已优先转向 authority world / event，但 live gateway session/chat 仍承担部分 presence/message 补位；message / presence / audience signal 还不是完整的平台权威服务
 
 这意味着当前 worktree 的主线，已经从“静态十幕页面”推进到了“消费 orchestrator 快照和事件的双界面客户端”。
 
@@ -514,8 +517,9 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
   - skill/docs service 的动态生效：activity-instance / room / team 级绑定，freeze / update / revoke 策略与审计
   - 更通用的 `condition_satisfied` transition rules 与更丰富的 canvas projection / co-creation state
 - 当前 renderer/client 还没有补齐：
-  - `/show` 已经补上 stage-first 的 show-specific composition，但 audience narrative 里的 room heat / recent activity 仍会受 fixture 和 live session 稀疏度影响
-  - `/control/stages/:stageId` 在非当前幕时已经进入安全预演态，但还缺真正的二次确认和更细的危险命令分级
+  - `/show` 已经补上 stage-first 的 show-specific composition，room narrative / live pulse 也已转向 authority-first，但 audience narrative 仍会受 fixture 完整度和 live session 稀疏度影响
+  - `/control/stages/:stageId` 的 UI 命令区已经补上 preview safe mode、二次确认和更细的危险命令分级；但底层 `openclaw:control` / orchestrator 路径还没有 API 级二次确认
+  - `/control/stages/:stageId` 的二次确认目前还是 renderer-side guard，而不是 command envelope / API 层协议；也就是说，CLI 本身并没有新增后端确认握手
   - live message / presence / audience signal 仍有一部分来自 gateway session/chat 侧推导，而不是平台 authority snapshot / event
   - 当前 show layout 仍更像 The Fool reference activity 的节目包装，尚未完全验证成可复用的 activity-agnostic renderer shell
 - 平台通用路径的自动化回归基线几乎还没有：当前主要依赖 build / lint + 手工跑 orchestrator/control

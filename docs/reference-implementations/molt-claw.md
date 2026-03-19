@@ -242,8 +242,11 @@
 - `src/presentation.ts` 的 room stage-fit / heat / activity headline 已改成消费 activity metadata 的 room scene roles，不再在 shared presentation 层解析 The Fool room id 命名
 - `src/data.ts` 与 `src/openclaw/activities/theFoolV1.ts` 现在也把 stage-specific `layoutPreset` / `spotlightSource` / `heatAsTieBreaker` 装进 runtime guide，让 scene cue 真正随活动包下发
 - `/show` 的 primary spotlight 现在会先按当前幕的 `spotlightSource` 选 `speaker` / `team` / `room` / `submission` / `score` / `award` / `co-creation`，而不是默认回到 focus contestant + hottest room
+- `/show` 的 room narrative / room radar / pulse 现在也优先消费 authority `world` + `domainEvents`，并把 room/team/submission/entity 关联先解出来；live session/chat heat 只在同幕内做 tie-breaker
 - authority/template 还不可用时，browser app shell 会显示通用 pending activity shell，不再默认退回首个 reference activity package；shared header / show fallback copy 也开始去掉固定 `Molt Claw` / `龙虾` / `contestant` 前台默认文案
-- `/control/stages/:stageId` 当前已经支持 preview 某一幕的 workspace；当 `stageId !== currentStageId` 时，命令区会进入 `Preview Safe Mode`，并把“切换到此幕”单独标成危险操作
+- `/control/stages/:stageId` 当前已经支持 preview 某一幕的 workspace；当 `stageId !== currentStageId` 时，命令区会进入 `Preview Safe Mode`，把 live mutation 分成 `read-only` / `disabled` / `confirm`，并要求对“切换到此幕”这类危险命令完成二次确认后才显示 CLI
+- `/control` 的命令卡现在会显式区分 `diagnostic` / `agent-direct` / `orchestrator` scope，并附带 `info` / `safe` / `caution` / `danger` risk 标签；高风险命令不再和普通 `move` / `say` 建议混排
+- 需要确认的 stage / submission 命令当前会先显示确认卡，再要求输入 challenge text 后才露出可复制的 CLI；这一层 guard 目前仍在 renderer UI，不在 orchestrator API
 
 `/show` 侧当前已经在同一层 shared state 之上补出 show-specific composition，而不是继续直接复用 control-first 分组：
 
@@ -283,7 +286,7 @@
 - 还没有完全
 - The Fool 已经从很多平台通用类型和前台默认文案里退出来了
 - 但 authority world、default activity fallback、reference activity bootstrap、CLI 兼容层这几块还没完全拔干净
-- `TransitionRule` 已落地到固定规则级别，Act III / Act IX 也已有最小 authority 闭环；`/show` 的 stage-first spotlight 和 `/control` 的 preview safe mode 已经补上，但真正欠的主要还是 richer rule system、richer team-assignment workflow 与 richer canvas semantics
+- `TransitionRule` 已落地到固定规则级别，Act III / Act IX 也已有最小 authority 闭环；`/show` 的 stage-first spotlight 与 `/control` 的 preview-safe confirmation/grading 已经补上，但真正欠的主要还是 richer rule system、richer team-assignment workflow 与 richer canvas semantics
 
 更准确地说，当前状态是：
 
@@ -300,6 +303,7 @@
 - Act III 从最小命令闭环继续补齐批量分队与约束校验
 - Act IX 从最小 poem/draw audit 链继续补齐持续 canvas projection 与共创语义
 - show/control 的 supporting cues 继续减少对 gateway session/chat heat 的依赖，进一步向 authority presence/message state 靠拢
+- `/show` 的 supporting cues 里，room narrative / live pulse 已完成一轮 authority-first 收口；下一步主要剩 live message / presence / audience signal 的 authority 化
 
 ### 6.2 离通用平台还有多少
 
@@ -329,8 +333,8 @@
   - Act IX 的诗歌提交和 `draw` 已进入 authoritative command / event / replay 链
   - 但还缺持续 canvas projection / 聚合结果 / 约束规则，平台对 submission / score / award 之外的玩法承载还不够稳
 - `/show` 与 `/control` 还差最后一层平台语义约束
-  - `/show` 的 primary spotlight 已经 stage-first，但 room narrative / live pulse 仍混合 gateway session/chat 派生 heat
-  - `/control/stages/:stageId` 已进入 preview safe mode，但还没有真正的二次确认与更细的危险命令分级
+  - `/show` 的 primary spotlight、room narrative 与 live pulse 已经收成 authority-first，但 live message / presence / audience signal 仍未完全变成平台 authority 输入
+  - `/control/stages/:stageId` 的 UI 命令区已经补上 preview safe mode、二次确认与危险命令分级；但底层 `openclaw:control` / orchestrator 路径还没有 API 级二次确认
 - 自动化回归网几乎还没有
   - 当前 build / lint 可以过
   - 但还缺少保证“换活动也不坏”的测试基线
@@ -361,7 +365,7 @@
 
 - world service 仍未完整
   - contract 里要求的 `Map` / `Zone` / `Channel` / `Presence` / `Membership` 还没有成为稳定 projection / query object
-  - 当前 renderer 对 room heat / recent activity 仍会部分依赖 gateway session/chat 派生信号，而不是只读平台 authority presence/message state
+  - 当前 renderer 的 room heat / recent activity 已部分转向 authority world / event，但 presence/message/audience signal 仍未完全落成平台 authority state
 - permissions / lock / reminder 仍偏最小实现
   - 当前主要还是 `host` / `judge` / `agent` 的 role gate
   - 资源级 / 活动范围 / 阶段范围授权，以及 stage / vote / talk lock、timer 手动 pause / resume、reminder broadcast 还没独立成正式平台能力
