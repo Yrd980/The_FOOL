@@ -1,4 +1,12 @@
 export type ActivityStageDeskMode = "submission" | "score";
+export type ActivityStageSpotlightSource =
+  | "speaker"
+  | "team"
+  | "room"
+  | "submission"
+  | "score"
+  | "award"
+  | "co-creation";
 
 export interface ActivitySummaryStatMeta {
   label: string;
@@ -48,6 +56,9 @@ export interface ActivityStageMetadata {
   preferredRoomIds?: string[];
   scene?: {
     deskMode?: ActivityStageDeskMode;
+    layoutPreset?: string;
+    spotlightSource?: ActivityStageSpotlightSource;
+    heatAsTieBreaker?: boolean;
   };
 }
 

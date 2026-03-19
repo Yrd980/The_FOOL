@@ -18,12 +18,12 @@ Current code boundaries inside `src/openclaw` are now split as:
 - `activities/theFoolV1.ts`: The Fool v1 activity package, including stage/schema/world seed and activity-specific score rules
 - `gateway/*`, `useGatewayOverview.ts`, `control.ts`: renderer/control adapters and shared consumers of authority state
 
-Formal requirements now live under `docs/`:
+## Documentation
 
-- `docs/openclaw-platform/requirements.md`
-- `docs/openclaw-platform/design.md`
-- `docs/activities/the-fool-v1/requirements.md`
-- `docs/activities/the-fool-v1/template-example.md`
+文档现在统一从一个入口进入：
+
+- [docs/README.md](./docs/README.md): 全仓库文档总入口，负责告诉你“先读哪份”
+- 当前这份 `README.md`: 当前 worktree 的运行方式、脚本和实现现状
 
 The public markdown files remain as operational docs:
 
@@ -145,7 +145,10 @@ renderer 侧现状：
 - shared typed state 现在会把 `snapshot.health`、`audit`、query `status/source/freshness/error` 归并成稳定 operator evidence，而不是让 `/control` 组件直接手搓原始 payload
 - shared typed state 现在也会把 `snapshot.world` / `snapshot.skills` 归并成稳定的 world/team/skill summaries，而不是让组件直接解析 `rooms` / `teams` / `entities` / `skills` 原始 payload
 - `/show` 现在继续复用同一份 authoritative state，但已经额外补了 audience-facing composition，而不是继续照搬导演台的数据分组
+- `src/data.ts` / `src/openclaw/activities/theFoolV1.ts` 现在会把每一幕的 `layoutPreset` / `spotlightSource` / `heatAsTieBreaker` scene cue 一起装进 stage model
+- `/show` 的 hero spotlight 现在先按当前幕的 scene cue 选 `speaker` / `team` / `room` / `submission` / `score` / `award` / `co-creation`，而不是默认先追最活跃选手或最热房间
 - `/show` 当前至少会把下列 shared state 重新编排成节目叙事：
+  - stage-first 的 primary spotlight
   - current stage 下的 team / room spotlight
   - world/team/member 的 audience-facing room narrative
   - submission / score / platform cue 的舞台侧编排
@@ -153,11 +156,11 @@ renderer 侧现状：
   - state unavailable 时的 soft fallback，而不是后台报错语气
 - 当前 browser consumer 还没完全闭环的部分：
   - 当前 local world fixture 仍会真实暴露 team-room mapping 与 entity placement 的 mismatch
-  - 当前 seed skill bindings 仍只有 global docs，没有 stage-specific bindings
-  - `/show` 当前 room spotlight 仍会部分受 live session heat 影响；在 fixture 只有极少 live session 时，节目镜头仍可能偏向 heat 更高的 room，而不是更强的 act-level world cue
-  - `/show` 当前虽然已经把 submission / score / world / skill 重新编排成节目叙事，但还没有形成独立于现有 show layout 的更完整编排模板
-  - `src/data.ts` 里的 The Fool stage list / runtime guide / operator 文案仍是静态前端数据，还没有完全 activity-driven
-  - `src/openclaw/control.ts` 里的 room alias 和默认 room catalog 仍偏 The Fool 当前世界模型，还没有进一步收回活动包
+  - `/show` 的主 spotlight 已经收成 stage-first，但 room narrative / live pulse 仍会混合 live session heat；message / presence / audience signal 还没完全变成平台权威输入
+  - `/show` 当前虽然已经把 submission / score / world / skill 重新编排成节目叙事，但还没有形成一套真正 activity-agnostic 的播出模板
+  - `/control/stages/:stageId` 在非当前幕时已经进入 Preview Safe Mode，并把“切换到此幕”单独标成危险操作；但还没有真正的二次确认或更细的 per-command 禁用策略
+  - 当前 skill/doc 虽然已有 stage-specific seed bindings，但仍主要停留在 activity package 静态装配，尚未进入 activity-instance / room / team 级别的动态绑定与冻结策略
+  - 当前 room spotlight、heat 和 recent activity 仍会混合 live gateway session/chat 派生信号；message / presence / audience signal 还不是平台权威服务
 
 这意味着当前 worktree 的主线，已经从“静态十幕页面”推进到了“消费 orchestrator 快照和事件的双界面客户端”。
 
@@ -503,18 +506,24 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
 - 当前 local backend 还没有补齐：
   - `unlock_submission` / `reopen_submission`
   - 独立的 submission versions query endpoint（当前通过 `snapshot` / `events` / `replay` / `audit` 追）
-  - vote / bet / audience heat / world/presence/message 等更完整的平台服务
-  - 自动由 score 推导 award 与更细粒度的权限模型
-  - 多活动实例 / 多活动运行并发
+  - 显式的 activity lifecycle：`start` / `resume` / `finish` run，以及多活动实例 / 多活动运行并发
+  - projection-only 的 world service：authority world 与 bootstrap seed 彻底分离，以及 `Map` / `Zone` / `Channel` / `Presence` / `Membership` 等更完整 world model
+  - 更细粒度的权限与锁模型：资源级 / 阶段级授权，stage / vote / talk lock，timer 的手动 pause / resume，以及 reminder / broadcast
+  - audience & voting service：`vote` / `bet` / score dimensions/extras、自动 award derivation，以及更完整的 aggregation / tie-break 规则
+  - message / presence / audience heat 等更完整的平台权威服务，而不是继续主要依赖 gateway session/chat 派生
+  - skill/docs service 的动态生效：activity-instance / room / team 级绑定，freeze / update / revoke 策略与审计
   - 更通用的 `condition_satisfied` transition rules 与更丰富的 canvas projection / co-creation state
 - 当前 renderer/client 还没有补齐：
-  - `/show` 已经补上 show-specific composition，但当前 audience narrative 仍会受 fixture/live session 稀疏度影响，room spotlight 与 stage-level world cue 还可以继续收紧
-  - stage-specific skill bindings 仍未在 seed data 内提供，所以 `/show` 当前只能把 backstage context 叙述成“沿用全局说明”
+  - `/show` 已经补上 stage-first 的 show-specific composition，但 audience narrative 里的 room heat / recent activity 仍会受 fixture 和 live session 稀疏度影响
+  - `/control/stages/:stageId` 在非当前幕时已经进入安全预演态，但还缺真正的二次确认和更细的危险命令分级
+  - live message / presence / audience signal 仍有一部分来自 gateway session/chat 侧推导，而不是平台 authority snapshot / event
+  - 当前 show layout 仍更像 The Fool reference activity 的节目包装，尚未完全验证成可复用的 activity-agnostic renderer shell
+- 平台通用路径的自动化回归基线几乎还没有：当前主要依赖 build / lint + 手工跑 orchestrator/control
 
 ## Structure
 
-- `src/data.ts`: typed stage, operator, and agent-doc copy used by the UI
-- `src/presentation.ts`: shared selector layer that translates gateway data for both show and control views
+- `src/data.ts`: typed stage, scene cue, operator, and agent-doc copy used by the UI
+- `src/presentation.ts`: stage-first selector layer that translates gateway data for both show and control views
 - `src/components/ShowMode.tsx`: audience-facing live broadcast surface
 - `src/components/ControlMode.tsx`: operator-facing director deck shell
 - `src/components/*`: shared control header, stage workspace, stage sidebar, integration rail

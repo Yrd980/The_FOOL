@@ -545,9 +545,27 @@ export interface ShowSoftFallbackNarrative {
   body: string;
 }
 
+export interface ShowPrimarySpotlight {
+  title: string;
+  eyebrow: string;
+  body: string;
+  line: string;
+  tone: UiTone;
+  source:
+    | "speaker"
+    | "team"
+    | "room"
+    | "submission"
+    | "score"
+    | "award"
+    | "co-creation"
+    | "fallback";
+}
+
 export interface ShowAudienceComposition {
   authorityStageId: string | null;
   stageHeadline: string;
+  primarySpotlight: ShowPrimarySpotlight;
   teamRoomSpotlights: ShowTeamRoomSpotlight[];
   roomNarratives: ShowRoomNarrative[];
   submission: ShowSubmissionNarrative;
@@ -833,14 +851,501 @@ const buildSoftFallbacks = (
   return fallbacks;
 };
 
-export const buildShowAudienceComposition = ({
+const buildFallbackPrimarySpotlight = ({
+  primaryTeamSpotlight,
+  primaryRoomNarrative,
+  primaryFallback,
+  emptyState,
+}: {
+  primaryTeamSpotlight: ShowTeamRoomSpotlight | null;
+  primaryRoomNarrative: ShowRoomNarrative | null;
+  primaryFallback: ShowSoftFallbackNarrative | null;
+  emptyState: ShowEmptyState;
+}): ShowPrimarySpotlight => ({
+  title:
+    primaryTeamSpotlight?.teamLabel ??
+    primaryRoomNarrative?.roomLabel ??
+    primaryFallback?.title ??
+    emptyState.title,
+  eyebrow:
+    primaryTeamSpotlight?.headline ??
+    primaryRoomNarrative?.headline ??
+    primaryFallback?.title ??
+    emptyState.eyebrow,
+  body:
+    primaryTeamSpotlight?.detail ??
+    primaryRoomNarrative?.detail ??
+    primaryFallback?.body ??
+    emptyState.body,
+  line:
+    primaryTeamSpotlight?.headline ??
+    primaryRoomNarrative?.headline ??
+    primaryFallback?.body ??
+    emptyState.body,
+  tone: primaryTeamSpotlight?.tone ?? primaryRoomNarrative?.tone ?? "idle",
+  source: "fallback",
+});
+
+const pickSubmissionLeadLine = (
+  data: Record<string, unknown> | null | undefined,
+): string | null => {
+  if (!data) {
+    return null;
+  }
+
+  const poem =
+    typeof data.poem === "string" && data.poem.trim().length > 0
+      ? data.poem.trim()
+      : null;
+  if (poem) {
+    return poem;
+  }
+
+  const elevatorPitch =
+    typeof data.elevatorPitch === "string" && data.elevatorPitch.trim().length > 0
+      ? data.elevatorPitch.trim()
+      : null;
+  if (elevatorPitch) {
+    return elevatorPitch;
+  }
+
+  const highlights = Array.isArray(data.highlights)
+    ? data.highlights.find(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.trim().length > 0,
+      ) ?? null
+    : null;
+  if (highlights) {
+    return highlights.trim();
+  }
+
+  const risk =
+    typeof data.risk === "string" && data.risk.trim().length > 0
+      ? data.risk.trim()
+      : null;
+  if (risk) {
+    return risk;
+  }
+
+  const posterOrDeck =
+    typeof data.posterOrDeck === "string" && data.posterOrDeck.trim().length > 0
+      ? data.posterOrDeck.trim()
+      : null;
+
+  return posterOrDeck;
+};
+
+const summarizeScoreAnnotations = (
+  annotations: Record<string, string> | undefined,
+): string | null => {
+  if (!annotations) {
+    return null;
+  }
+
+  const favorite = annotations.favorite?.trim();
+  const mostAbsurd = annotations.mostAbsurd?.trim();
+  const pieces = [
+    favorite ? `favorite: ${favorite}` : null,
+    mostAbsurd ? `mostAbsurd: ${mostAbsurd}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return pieces.length > 0 ? pieces.join(" · ") : null;
+};
+
+const buildPrimarySpeakerSpotlight = ({
+  contestant,
+  stage,
+  runtimeGuide,
+  primaryTeamSpotlight,
+  primaryFallback,
+  emptyState,
+  gateway,
+}: {
+  contestant: RankedContestant | null;
+  stage: StageDefinition;
+  runtimeGuide: StageRuntimeGuide;
+  primaryTeamSpotlight: ShowTeamRoomSpotlight | null;
+  primaryFallback: ShowSoftFallbackNarrative | null;
+  emptyState: ShowEmptyState;
+  gateway: GatewayOverview;
+}): ShowPrimarySpotlight => {
+  if (!contestant) {
+    return buildFallbackPrimarySpotlight({
+      primaryTeamSpotlight,
+      primaryRoomNarrative: null,
+      primaryFallback,
+      emptyState,
+    });
+  }
+
+  const showState = buildShowStateCopy(contestant, stage, runtimeGuide);
+
+  return {
+    title: contestant.agentId,
+    eyebrow: `${showState.label} · ${showState.action}`,
+    body: [showState.note, primaryTeamSpotlight?.detail]
+      .filter((value): value is string => Boolean(value))
+      .join(" "),
+    line:
+      contestant.recentActivity?.content ??
+      gateway.activities[0]?.content ??
+      primaryTeamSpotlight?.headline ??
+      primaryFallback?.body ??
+      emptyState.body,
+    tone: showState.tone,
+    source: "speaker",
+  };
+};
+
+const buildPrimaryTeamSpotlight = ({
+  primaryTeamSpotlight,
+  primaryRoomNarrative,
+  primaryFallback,
+  emptyState,
+}: {
+  primaryTeamSpotlight: ShowTeamRoomSpotlight | null;
+  primaryRoomNarrative: ShowRoomNarrative | null;
+  primaryFallback: ShowSoftFallbackNarrative | null;
+  emptyState: ShowEmptyState;
+}): ShowPrimarySpotlight => {
+  if (!primaryTeamSpotlight) {
+    return buildFallbackPrimarySpotlight({
+      primaryTeamSpotlight,
+      primaryRoomNarrative,
+      primaryFallback,
+      emptyState,
+    });
+  }
+
+  return {
+    title: primaryTeamSpotlight.teamLabel,
+    eyebrow: `Team Reveal · ${primaryTeamSpotlight.headline}`,
+    body: primaryTeamSpotlight.detail,
+    line:
+      primaryTeamSpotlight.memberIds.length > 0
+        ? primaryTeamSpotlight.memberIds.join(" / ")
+        : primaryTeamSpotlight.headline,
+    tone: primaryTeamSpotlight.tone,
+    source: "team",
+  };
+};
+
+const buildPrimaryRoomSpotlight = ({
+  primaryTeamSpotlight,
+  primaryRoomNarrative,
+  primaryFallback,
+  emptyState,
+}: {
+  primaryTeamSpotlight: ShowTeamRoomSpotlight | null;
+  primaryRoomNarrative: ShowRoomNarrative | null;
+  primaryFallback: ShowSoftFallbackNarrative | null;
+  emptyState: ShowEmptyState;
+}): ShowPrimarySpotlight => {
+  if (!primaryRoomNarrative) {
+    return buildFallbackPrimarySpotlight({
+      primaryTeamSpotlight,
+      primaryRoomNarrative,
+      primaryFallback,
+      emptyState,
+    });
+  }
+
+  return {
+    title: primaryRoomNarrative.roomLabel,
+    eyebrow: `Room Spotlight · ${primaryRoomNarrative.headline}`,
+    body: primaryRoomNarrative.detail,
+    line: primaryRoomNarrative.headline,
+    tone: primaryRoomNarrative.tone,
+    source: "room",
+  };
+};
+
+const buildPrimarySubmissionSpotlight = ({
+  gateway,
+  stage,
+  submission,
+  primaryTeamSpotlight,
+  primaryRoomNarrative,
+  primaryFallback,
+  emptyState,
+}: {
+  gateway: GatewayOverview;
+  stage: StageDefinition;
+  submission: ShowSubmissionNarrative;
+  primaryTeamSpotlight: ShowTeamRoomSpotlight | null;
+  primaryRoomNarrative: ShowRoomNarrative | null;
+  primaryFallback: ShowSoftFallbackNarrative | null;
+  emptyState: ShowEmptyState;
+}): ShowPrimarySpotlight => {
+  const currentSubmission = gateway.currentSubmission;
+  if (!currentSubmission) {
+    return buildFallbackPrimarySpotlight({
+      primaryTeamSpotlight,
+      primaryRoomNarrative,
+      primaryFallback,
+      emptyState,
+    });
+  }
+
+  const title =
+    currentSubmission.teamId ?? currentSubmission.id;
+  const leadLine =
+    pickSubmissionLeadLine(currentSubmission.data) ??
+    submission.headline;
+
+  return {
+    title,
+    eyebrow: currentSubmission.locked
+      ? `${stage.title} · locked submission`
+      : `${stage.title} · submission in flight`,
+    body: [submission.detail, primaryTeamSpotlight?.detail]
+      .filter((value): value is string => Boolean(value))
+      .join(" "),
+    line: leadLine,
+    tone: submission.tone,
+    source: "submission",
+  };
+};
+
+const buildPrimaryScoreSpotlight = ({
+  gateway,
+  stage,
+  score,
+  primaryTeamSpotlight,
+  primaryRoomNarrative,
+  primaryFallback,
+  emptyState,
+}: {
+  gateway: GatewayOverview;
+  stage: StageDefinition;
+  score: ShowScoreNarrative;
+  primaryTeamSpotlight: ShowTeamRoomSpotlight | null;
+  primaryRoomNarrative: ShowRoomNarrative | null;
+  primaryFallback: ShowSoftFallbackNarrative | null;
+  emptyState: ShowEmptyState;
+}): ShowPrimarySpotlight => {
+  const latestScore = gateway.scores[0] ?? null;
+  if (!latestScore) {
+    return buildFallbackPrimarySpotlight({
+      primaryTeamSpotlight,
+      primaryRoomNarrative,
+      primaryFallback,
+      emptyState,
+    });
+  }
+
+  const annotationLine = summarizeScoreAnnotations(latestScore.annotations);
+
+  return {
+    title:
+      latestScore.submissionId ??
+      latestScore.teamId ??
+      latestScore.targetId,
+    eyebrow: `${stage.title} · ${latestScore.judgeId ?? "judge"} ${latestScore.score}/10`,
+    body: [latestScore.reason, annotationLine, score.detail]
+      .filter((value): value is string => Boolean(value))
+      .join(" "),
+    line:
+      annotationLine ??
+      `${latestScore.score}/10 · ${latestScore.reason}`,
+    tone: "critical",
+    source: "score",
+  };
+};
+
+const buildPrimaryAwardSpotlight = ({
+  gateway,
+  primaryTeamSpotlight,
+  primaryRoomNarrative,
+  primaryFallback,
+  emptyState,
+}: {
+  gateway: GatewayOverview;
+  primaryTeamSpotlight: ShowTeamRoomSpotlight | null;
+  primaryRoomNarrative: ShowRoomNarrative | null;
+  primaryFallback: ShowSoftFallbackNarrative | null;
+  emptyState: ShowEmptyState;
+}): ShowPrimarySpotlight => {
+  const latestAward = gateway.awards[0] ?? null;
+  if (!latestAward) {
+    return buildFallbackPrimarySpotlight({
+      primaryTeamSpotlight,
+      primaryRoomNarrative,
+      primaryFallback,
+      emptyState,
+    });
+  }
+
+  return {
+    title: latestAward.label,
+    eyebrow: `Award Reveal · ${latestAward.entityId}`,
+    body: latestAward.reason
+      ? `${latestAward.entityId} 刚刚被正式写入权威 award projection。理由：${latestAward.reason}`
+      : `${latestAward.entityId} 刚刚被正式写入权威 award projection。`,
+    line: latestAward.reason ?? latestAward.label,
+    tone: "critical",
+    source: "award",
+  };
+};
+
+const buildPrimaryCoCreationSpotlight = ({
+  gateway,
+  stage,
+  submission,
+  primaryTeamSpotlight,
+  primaryRoomNarrative,
+  primaryFallback,
+  emptyState,
+}: {
+  gateway: GatewayOverview;
+  stage: StageDefinition;
+  submission: ShowSubmissionNarrative;
+  primaryTeamSpotlight: ShowTeamRoomSpotlight | null;
+  primaryRoomNarrative: ShowRoomNarrative | null;
+  primaryFallback: ShowSoftFallbackNarrative | null;
+  emptyState: ShowEmptyState;
+}): ShowPrimarySpotlight => {
+  const currentSubmission = gateway.currentSubmission;
+  const latestActivity = gateway.activities[0] ?? null;
+  const leadLine =
+    pickSubmissionLeadLine(currentSubmission?.data) ??
+    latestActivity?.content ??
+    submission.headline;
+
+  if (!currentSubmission && !latestActivity) {
+    return buildFallbackPrimarySpotlight({
+      primaryTeamSpotlight,
+      primaryRoomNarrative,
+      primaryFallback,
+      emptyState,
+    });
+  }
+
+  return {
+    title:
+      currentSubmission?.teamId ??
+      currentSubmission?.id ??
+      latestActivity?.agentId ??
+      stage.title,
+    eyebrow: `${stage.title} · poem / canvas orbit`,
+    body: [submission.detail, primaryRoomNarrative?.detail]
+      .filter((value): value is string => Boolean(value))
+      .join(" "),
+    line: leadLine,
+    tone: currentSubmission?.locked ? "critical" : "warm",
+    source: "co-creation",
+  };
+};
+
+const buildPrimarySpotlight = ({
   gateway,
   stage,
   runtimeGuide,
+  contestants,
+  primaryTeamSpotlight,
+  primaryRoomNarrative,
+  submission,
+  score,
+  softFallbacks,
+  emptyState,
 }: {
   gateway: GatewayOverview;
   stage: StageDefinition;
   runtimeGuide: StageRuntimeGuide;
+  contestants: RankedContestant[];
+  primaryTeamSpotlight: ShowTeamRoomSpotlight | null;
+  primaryRoomNarrative: ShowRoomNarrative | null;
+  submission: ShowSubmissionNarrative;
+  score: ShowScoreNarrative;
+  softFallbacks: ShowSoftFallbackNarrative[];
+  emptyState: ShowEmptyState;
+}): ShowPrimarySpotlight => {
+  const primaryFallback = softFallbacks[0] ?? null;
+  const focusContestant = contestants[0] ?? null;
+
+  switch (runtimeGuide.scene.spotlightSource) {
+    case "speaker":
+      return buildPrimarySpeakerSpotlight({
+        contestant: focusContestant,
+        stage,
+        runtimeGuide,
+        primaryTeamSpotlight,
+        primaryFallback,
+        emptyState,
+        gateway,
+      });
+    case "team":
+      return buildPrimaryTeamSpotlight({
+        primaryTeamSpotlight,
+        primaryRoomNarrative,
+        primaryFallback,
+        emptyState,
+      });
+    case "room":
+      return buildPrimaryRoomSpotlight({
+        primaryTeamSpotlight,
+        primaryRoomNarrative,
+        primaryFallback,
+        emptyState,
+      });
+    case "submission":
+      return buildPrimarySubmissionSpotlight({
+        gateway,
+        stage,
+        submission,
+        primaryTeamSpotlight,
+        primaryRoomNarrative,
+        primaryFallback,
+        emptyState,
+      });
+    case "score":
+      return buildPrimaryScoreSpotlight({
+        gateway,
+        stage,
+        score,
+        primaryTeamSpotlight,
+        primaryRoomNarrative,
+        primaryFallback,
+        emptyState,
+      });
+    case "award":
+      return buildPrimaryAwardSpotlight({
+        gateway,
+        primaryTeamSpotlight,
+        primaryRoomNarrative,
+        primaryFallback,
+        emptyState,
+      });
+    case "co-creation":
+      return buildPrimaryCoCreationSpotlight({
+        gateway,
+        stage,
+        submission,
+        primaryTeamSpotlight,
+        primaryRoomNarrative,
+        primaryFallback,
+        emptyState,
+      });
+    default:
+      return buildFallbackPrimarySpotlight({
+        primaryTeamSpotlight,
+        primaryRoomNarrative,
+        primaryFallback,
+        emptyState,
+      });
+  }
+};
+
+export const buildShowAudienceComposition = ({
+  gateway,
+  stage,
+  runtimeGuide,
+  contestants,
+}: {
+  gateway: GatewayOverview;
+  stage: StageDefinition;
+  runtimeGuide: StageRuntimeGuide;
+  contestants: RankedContestant[];
 }): ShowAudienceComposition => {
   const authorityStageId = gateway.authorityStageId ?? gateway.activityRun?.currentStageId ?? null;
   const teamRoomSpotlights = buildTeamRoomSpotlights(gateway, runtimeGuide);
@@ -850,12 +1355,26 @@ export const buildShowAudienceComposition = ({
   const platformCue = buildPlatformCueNarrative(gateway, stage);
   const backstage = buildBackstageNarrative(gateway, stage);
   const softFallbacks = buildSoftFallbacks(gateway, stage);
+  const emptyState = buildShowEmptyState(gateway, stage);
+  const primarySpotlight = buildPrimarySpotlight({
+    gateway,
+    stage,
+    runtimeGuide,
+    contestants,
+    primaryTeamSpotlight: teamRoomSpotlights[0] ?? null,
+    primaryRoomNarrative: roomNarratives[0] ?? null,
+    submission,
+    score,
+    softFallbacks,
+    emptyState,
+  });
 
   return {
     authorityStageId,
     stageHeadline: authorityStageId
-      ? `节目当前由 ${authorityStageId} 驱动镜头编排`
-      : `节目当前使用 ${stage.id} 的本地预演镜头`,
+      ? `节目当前由 ${authorityStageId} 驱动镜头编排，scene preset = ${runtimeGuide.scene.layoutPreset ?? "default"}`
+      : `节目当前使用 ${stage.id} 的本地预演镜头，scene preset = ${runtimeGuide.scene.layoutPreset ?? "default"}`,
+    primarySpotlight,
     teamRoomSpotlights,
     roomNarratives,
     submission,

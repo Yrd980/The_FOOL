@@ -370,6 +370,9 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       preferredRoomIds: ["main-stage"],
       scene: {
         deskMode: "submission",
+        layoutPreset: "hero-monologue",
+        spotlightSource: "speaker",
+        heatAsTieBreaker: true,
       },
     },
     "act-2-preference": {
@@ -395,6 +398,9 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       preferredRoomIds: ["main-stage"],
       scene: {
         deskMode: "submission",
+        layoutPreset: "affinity-board",
+        spotlightSource: "speaker",
+        heatAsTieBreaker: true,
       },
     },
     "act-3-assignment": {
@@ -418,6 +424,9 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       preferredRoomIds: ["main-stage"],
       scene: {
         deskMode: "submission",
+        layoutPreset: "team-reveal",
+        spotlightSource: "team",
+        heatAsTieBreaker: true,
       },
     },
     "act-4-discussion": {
@@ -442,6 +451,9 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       preferredRoomIds: ["team-room-1", "team-room-2", "team-room-3"],
       scene: {
         deskMode: "submission",
+        layoutPreset: "war-room",
+        spotlightSource: "room",
+        heatAsTieBreaker: true,
       },
     },
     "act-5-submission": {
@@ -466,6 +478,9 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       ],
       scene: {
         deskMode: "submission",
+        layoutPreset: "submission-bench",
+        spotlightSource: "submission",
+        heatAsTieBreaker: true,
       },
     },
     "act-6-human-review": {
@@ -489,6 +504,9 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       preferredRoomIds: ["main-stage"],
       scene: {
         deskMode: "submission",
+        layoutPreset: "review-stage",
+        spotlightSource: "submission",
+        heatAsTieBreaker: true,
       },
     },
     "act-7-ai-judging": {
@@ -507,6 +525,9 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       preferredRoomIds: ["main-stage", "quiet-orbit"],
       scene: {
         deskMode: "score",
+        layoutPreset: "judge-verdict",
+        spotlightSource: "score",
+        heatAsTieBreaker: true,
       },
     },
     "act-8-awards": {
@@ -525,6 +546,9 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       preferredRoomIds: ["main-stage", "quiet-orbit"],
       scene: {
         deskMode: "score",
+        layoutPreset: "award-podium",
+        spotlightSource: "award",
+        heatAsTieBreaker: true,
       },
     },
     "act-9-co-creation": {
@@ -544,6 +568,9 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       preferredRoomIds: ["main-stage", "quiet-orbit"],
       scene: {
         deskMode: "submission",
+        layoutPreset: "canvas-orbit",
+        spotlightSource: "co-creation",
+        heatAsTieBreaker: true,
       },
     },
     "act-10-open-mic": {
@@ -559,6 +586,9 @@ const theFoolUiMetadata: ActivityUiMetadata = {
       preferredRoomIds: ["main-stage", "quiet-orbit"],
       scene: {
         deskMode: "submission",
+        layoutPreset: "open-mic",
+        spotlightSource: "speaker",
+        heatAsTieBreaker: true,
       },
     },
   },

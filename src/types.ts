@@ -1,4 +1,7 @@
-import type { ActivityRoomSceneRole } from "./openclaw/activityMetadata";
+import type {
+  ActivityRoomSceneRole,
+  ActivityStageSpotlightSource,
+} from "./openclaw/activityMetadata";
 import type { ControlActorRole } from "./openclaw/control";
 import type { ScoreAnnotations } from "./openclaw/platform/contracts";
 
@@ -31,6 +34,9 @@ export interface StageDefinition {
   capabilities: StageCapabilities;
   presentation: {
     deskMode: StageDeskMode;
+    layoutPreset: string | null;
+    spotlightSource: ActivityStageSpotlightSource;
+    heatAsTieBreaker: boolean;
   };
 }
 
@@ -40,6 +46,11 @@ export interface StageRuntimeGuide {
   preferredRoomIds: string[];
   suggestedDurationSec?: number;
   roomRoles: Record<string, ActivityRoomSceneRole>;
+  scene: {
+    layoutPreset: string | null;
+    spotlightSource: ActivityStageSpotlightSource;
+    heatAsTieBreaker: boolean;
+  };
 }
 
 export interface ActivityViewModel {

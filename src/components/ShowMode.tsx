@@ -4,7 +4,6 @@ import {
   buildShowAudienceComposition,
   buildShowEmptyState,
   buildShowEvents,
-  buildShowStateCopy,
   rankContestants,
 } from "../presentation";
 import type { GatewayOverview, StageDefinition, StageRuntimeGuide } from "../types";
@@ -45,11 +44,11 @@ export function ShowMode({
   const roomHeatById = new Map(roomHeat.map((room) => [room.roomId, room]));
   const hottestRoom = roomHeat[0] ?? null;
   const emptyState = buildShowEmptyState(gateway, stage);
-  const showState = buildShowStateCopy(focusContestant, stage, runtimeGuide);
   const audience = buildShowAudienceComposition({
     gateway,
     stage,
     runtimeGuide,
+    contestants: stageContestants,
   });
   const primaryTeamSpotlight = audience.teamRoomSpotlights[0] ?? null;
   const primaryRoomNarrative = audience.roomNarratives[0] ?? null;
@@ -66,32 +65,10 @@ export function ShowMode({
   const stageDeskValue = isScoreStage
     ? audience.score.leaderLabel ?? "待亮分"
     : audience.submission.progressLabel;
-  const spotlightTitle =
-    focusContestant?.agentId ??
-    primaryTeamSpotlight?.teamLabel ??
-    primaryFallback?.title ??
-    emptyState.title;
-  const spotlightEyebrow = focusContestant
-    ? `${showState.label} · ${showState.action}`
-    : primaryTeamSpotlight?.headline ??
-      primaryRoomNarrative?.headline ??
-      primaryFallback?.title ??
-      emptyState.eyebrow;
-  const spotlightBody = focusContestant
-    ? [showState.note, primaryTeamSpotlight?.detail]
-        .filter((value): value is string => Boolean(value))
-        .join(" ")
-    : primaryTeamSpotlight?.detail ??
-      primaryRoomNarrative?.detail ??
-      primaryFallback?.body ??
-      emptyState.body;
-  const spotlightLine =
-    focusContestant?.recentActivity?.content ??
-    gateway.activities[0]?.content ??
-    primaryTeamSpotlight?.headline ??
-    primaryRoomNarrative?.headline ??
-    primaryFallback?.body ??
-    emptyState.body;
+  const spotlightTitle = audience.primarySpotlight.title;
+  const spotlightEyebrow = audience.primarySpotlight.eyebrow;
+  const spotlightBody = audience.primarySpotlight.body;
+  const spotlightLine = audience.primarySpotlight.line;
   const fallbackCards =
     audience.softFallbacks.length > 0
       ? audience.softFallbacks

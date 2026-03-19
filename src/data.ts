@@ -1,6 +1,7 @@
 import type {
   ActivityRoomSceneRole,
   ActivityStageMetadata,
+  ActivityStageSpotlightSource,
 } from "./openclaw/activityMetadata";
 import { tryResolveActivityPackage } from "./openclaw/activityRuntime";
 import type {
@@ -28,6 +29,9 @@ const buildFallbackStageMetadata = (
   preferredRoomIds: [],
   scene: {
     deskMode: stage.presentation.deskMode,
+    layoutPreset: stage.presentation.layoutPreset ?? undefined,
+    spotlightSource: stage.presentation.spotlightSource,
+    heatAsTieBreaker: stage.presentation.heatAsTieBreaker,
   },
 });
 
@@ -43,6 +47,9 @@ const buildStageDefinition = ({
   submissionSchemaIds,
   durationSec,
   deskMode,
+  layoutPreset,
+  spotlightSource,
+  heatAsTieBreaker,
 }: {
   stageId: string;
   label: string;
@@ -55,6 +62,9 @@ const buildStageDefinition = ({
   submissionSchemaIds?: string[];
   durationSec?: number;
   deskMode: StageDefinition["presentation"]["deskMode"];
+  layoutPreset?: string;
+  spotlightSource: ActivityStageSpotlightSource;
+  heatAsTieBreaker: boolean;
 }): StageDefinition => ({
   id: stageId,
   label,
@@ -76,6 +86,9 @@ const buildStageDefinition = ({
   },
   presentation: {
     deskMode,
+    layoutPreset: layoutPreset?.trim() || null,
+    spotlightSource,
+    heatAsTieBreaker,
   },
 });
 
@@ -85,18 +98,29 @@ const buildStageRuntimeGuide = ({
   preferredRoomIds,
   durationSec,
   roomRoles,
+  layoutPreset,
+  spotlightSource,
+  heatAsTieBreaker,
 }: {
   operatorHint: string;
   successSignal: string;
   preferredRoomIds?: string[];
   durationSec?: number;
   roomRoles: Record<string, ActivityRoomSceneRole>;
+  layoutPreset?: string;
+  spotlightSource: ActivityStageSpotlightSource;
+  heatAsTieBreaker: boolean;
 }): StageRuntimeGuide => ({
   operatorHint,
   successSignal,
   preferredRoomIds: preferredRoomIds ?? [],
   suggestedDurationSec: durationSec,
   roomRoles,
+  scene: {
+    layoutPreset: layoutPreset?.trim() || null,
+    spotlightSource,
+    heatAsTieBreaker,
+  },
 });
 
 const buildFallbackSummaryStats = (stageCount: number): SummaryStat[] => [
@@ -168,6 +192,9 @@ const buildPendingStageDefinition = (
     },
     presentation: {
       deskMode: "submission",
+      layoutPreset: null,
+      spotlightSource: "submission",
+      heatAsTieBreaker: true,
     },
   };
 };
@@ -199,6 +226,9 @@ const buildPendingActivityViewModel = ({
           "一旦拿到已注册 templateId，对应 stage copy、room roles 和 operator cue 会自动接管当前视图。",
         preferredRoomIds: [],
         roomRoles: {},
+        layoutPreset: undefined,
+        spotlightSource: "submission",
+        heatAsTieBreaker: true,
       }),
     },
     summaryStats: [
@@ -273,6 +303,9 @@ export const buildActivityViewModel = (
         },
         presentation: {
           deskMode: "submission",
+          layoutPreset: null,
+          spotlightSource: "submission",
+          heatAsTieBreaker: true,
         },
       });
     const deskMode =
@@ -282,6 +315,24 @@ export const buildActivityViewModel = (
       stageTemplate.allowedActions.includes("grant_award")
         ? "score"
         : "submission");
+    const spotlightSource =
+      stageMetadata.scene?.spotlightSource ??
+      (stageTemplate.allowedActions.includes("grant_award")
+        ? "award"
+        : stageTemplate.allowedActions.includes("score") ||
+            stageTemplate.allowedActions.includes("submit_score")
+          ? "score"
+          : stageTemplate.allowedActions.includes("draw")
+            ? "co-creation"
+            : stageTemplate.allowedActions.some((action) =>
+                  ["submit", "update_submission", "lock_submission"].includes(action),
+                )
+              ? "submission"
+              : stageMetadata.preferredRoomIds?.length
+                ? "room"
+                : "speaker");
+    const heatAsTieBreaker =
+      stageMetadata.scene?.heatAsTieBreaker ?? true;
 
     return buildStageDefinition({
       stageId: stageTemplate.id,
@@ -295,6 +346,9 @@ export const buildActivityViewModel = (
       submissionSchemaIds: stageTemplate.submissionSchemaIds,
       durationSec: stageTemplate.durationSec,
       deskMode,
+      layoutPreset: stageMetadata.scene?.layoutPreset,
+      spotlightSource,
+      heatAsTieBreaker,
     });
   });
 
@@ -308,6 +362,9 @@ export const buildActivityViewModel = (
         preferredRoomIds: stageMetadata.preferredRoomIds,
         durationSec: stage.durationSec,
         roomRoles,
+        layoutPreset: stage.presentation.layoutPreset ?? undefined,
+        spotlightSource: stage.presentation.spotlightSource,
+        heatAsTieBreaker: stage.presentation.heatAsTieBreaker,
       });
       return result;
     },
@@ -365,14 +422,14 @@ export const buildOperatorCommands = ({
   if (isPreview) {
     return [
       {
-        label: "⚠ 预演模式",
-        command: "",
-        note: `当前正在预览 ${stage.id}，但权威 stage 是 ${gateway.activityRun?.currentStageId}。以下命令仅供参考，不会实际影响权威状态。`,
+        label: "Preview Safe Mode",
+        command: "Preview only: keep this stage workspace read-only until authority is explicitly switched.",
+        note: `当前正在预览 ${stage.id}，但权威 stage 是 ${gateway.activityRun?.currentStageId}。这里不再混入常规 live mutation 建议。`,
       },
       {
-        label: "切换到此幕",
+        label: "切换到此幕（危险）",
         command: `bun run openclaw:control -- stage ${activityRunId} ${stage.id}`,
-        note: `把权威 stage 从 ${gateway.activityRun?.currentStageId} 推到 ${stage.id}。`,
+        note: `显式把权威 stage 从 ${gateway.activityRun?.currentStageId} 推到 ${stage.id}。只有确定要把 preview 升格成 live 时才执行。`,
       },
     ];
   }

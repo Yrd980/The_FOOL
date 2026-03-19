@@ -1,5 +1,15 @@
 # molt-claw 当前实现现状
 
+总入口请先回到：[docs/README.md](../README.md)
+
+如果你是第一次进入这套文档，建议先读：
+
+- [平台 requirements](../openclaw-platform/requirements.md)
+- [平台 design](../openclaw-platform/design.md)
+- [The Fool v1 requirements](../activities/the-fool-v1/requirements.md)
+
+再回来看这份“当前实现到了哪”的说明，会更不容易把参考实现误读成正式 contract。
+
 ## 1. 文档定位
 
 本文记录 `molt-claw` 这个 worktree 当前已经实现到哪里。
@@ -99,6 +109,7 @@
 - Act III 已提供最小 `team.assigned` / `entity.moved` command 闭环，但还缺少更高层的分队约束校验、批量分配工具和主持工作流
 - Act IX 已提供 `draw` authoritative command / event / replay 最小闭环，但还没有持续的 canvas projection / palette rule / 共创结果聚合
 - Act IX 的个人诗歌路径现在支持“首个 `submit` 自动开 shell”，`open_submission` 已降级为可选路径而不是硬前置
+- submission payload 校验现在同时支持“活动包自定义 normalizer + 平台 `SubmissionSchema` fallback 校验”，但这仍只覆盖最小 schema/type 校验，还没有更高层 artifact 存储与跨活动 validation policy
 
 当前代码结构上的平台 / 活动边界也已经开始落地：
 
@@ -229,11 +240,14 @@
 - `/show`、`/show/:stageId`、`/control/stages/:stageId` 当前都已经改成按 authority stage + activity metadata 解析 active stage，不再以内建 The Fool stages 作为唯一来源
 - `src/presentation.ts` 的 stage desk / submission / score narrative 已改成消费 stage capabilities + activity metadata，不再依赖 `stageId.includes("submission" | "judging" | "award")`
 - `src/presentation.ts` 的 room stage-fit / heat / activity headline 已改成消费 activity metadata 的 room scene roles，不再在 shared presentation 层解析 The Fool room id 命名
+- `src/data.ts` 与 `src/openclaw/activities/theFoolV1.ts` 现在也把 stage-specific `layoutPreset` / `spotlightSource` / `heatAsTieBreaker` 装进 runtime guide，让 scene cue 真正随活动包下发
+- `/show` 的 primary spotlight 现在会先按当前幕的 `spotlightSource` 选 `speaker` / `team` / `room` / `submission` / `score` / `award` / `co-creation`，而不是默认回到 focus contestant + hottest room
 - authority/template 还不可用时，browser app shell 会显示通用 pending activity shell，不再默认退回首个 reference activity package；shared header / show fallback copy 也开始去掉固定 `Molt Claw` / `龙虾` / `contestant` 前台默认文案
-- `/control/stages/:stageId` 当前已经支持 preview 某一幕的 workspace，但非当前幕时仍未把命令区显式降级成“准备态 / 需确认”；右侧命令提示仍可能按 preview stage 生成下一幕建议
+- `/control/stages/:stageId` 当前已经支持 preview 某一幕的 workspace；当 `stageId !== currentStageId` 时，命令区会进入 `Preview Safe Mode`，并把“切换到此幕”单独标成危险操作
 
 `/show` 侧当前已经在同一层 shared state 之上补出 show-specific composition，而不是继续直接复用 control-first 分组：
 
+- stage-first 的 primary spotlight
 - current stage 下的 team / room spotlight
 - world/team/member 的 audience-facing room narrative
 - submission / score / platform cue 的节目侧编排
@@ -251,8 +265,6 @@
 | authority world 与 activity bootstrap seed 未完全分开 | 平台：authority world vs bootstrap seed 边界（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的 “Authority World 与 Bootstrap Seed”）与 snapshot world 来自投影（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 world_view 约束） | orchestrator/snapshot 构建不再读取活动包静态 world 充当运行时真相；活动 seed 只参与 bootstrap；运行时 world 只能来自 projection |
 | shared runtime 仍可能默认 fallback 到“首个已注册活动包” | 平台：Orchestrator 无隐式默认活动（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 “运行时真相约束”） | 当拿不到 `templateId`/activity package 时，明确返回 unavailable/pending，并在 `/control` 暴露诊断；不得静默 fallback |
 | `TransitionRule` 目前只覆盖固定几类规则，`condition_satisfied` 等更通用 predicate 仍未 runtime 化 | 平台：阶段切换至少应支持 timer / 提交完成 / 评分完成等自动规则（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的 TransitionRule 要求）与平台设计：还预留了更通用的条件型规则（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 TransitionRule 设计） | 在现有 `timer_expired` / `all_required_submissions_locked` / `scores_completed` 之外，再支持可配置的 `condition_satisfied` / richer predicates，并提供稳定诊断口径 |
-| `/show` room spotlight 仍会受 live heat 影响，可能带偏 stage-first | Scene：heat 只能做 tie-breaker，scene 选择只依赖 authority stage（[../../activities/the-fool-v1/scene-spec.md](../activities/the-fool-v1/scene-spec.md) 的 “Stage-first” 与实现 checklist） | `/show` 的 scene 选择只看 `currentStageId`；spotlight 只在当前幕候选集内使用 heat 作为 tie-breaker；不得用 heat 覆盖当前幕 |
-| `/control/stages/:stageId` 的 preview 仍未完全做成“安全预演态” | Scene：非当前 stage 的 control workspace 应进入准备态 / 需确认（[../../activities/the-fool-v1/scene-spec.md](../activities/the-fool-v1/scene-spec.md) 的路由职责与 checklist） | 当 `stageId !== currentStageId` 时，命令区显式标记 preview/需确认/禁用，避免按 preview stage 静默生成 live mutation 建议 |
 | browser/CLI/orchestrator 仍保留旧 score 字段与 flags 的兼容层 | 活动：活动专属字段应映射到平台通用扩展容器（[../../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md) 的 “平台能力映射索引” + AI 评分映射说明）与平台：通用 scoring 扩展点口径（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的“平台如何被活动扩展”） | 兼容层完全收口到活动包/活动适配层；平台通用 contract 只认识通用 score 结构（如 annotations/extras 容器），不出现活动字段名 |
 | Act IX 只有最小 poem/draw authoritative 闭环，仍缺少持续画布状态与更高层共创语义 | 活动：Act IX 允许 `submit` / `draw`，且画布行为需可记录与回放（[../../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md) 的 Act IX 要求） | 当前已具备 poem auto-open + `draw.submitted` 最小审计链；下一步需要补齐 canvas projection、回放聚合、palette 约束与更完整的 co-creation result model |
 | reference activity bootstrap 仍作为默认路径存在 | 平台：无隐式默认活动（[../../openclaw-platform/design.md](../openclaw-platform/design.md) 的 “运行时真相约束”）与 bootstrap 只在启动阶段生效（[../../openclaw-platform/requirements.md](../openclaw-platform/requirements.md) 的 seed 边界） | reference activity 仅作为本地开发的显式 bootstrap 配置；运行时路径/renderer/shared helpers 不得依赖它来补齐缺失数据；缺失时应 pending/unavailable |
@@ -271,7 +283,7 @@
 - 还没有完全
 - The Fool 已经从很多平台通用类型和前台默认文案里退出来了
 - 但 authority world、default activity fallback、reference activity bootstrap、CLI 兼容层这几块还没完全拔干净
-- `TransitionRule` 已落地到固定规则级别，Act III / Act IX 也已有最小 authority 闭环；真正欠的主要是 richer rule system、richer team-assignment workflow、richer canvas semantics，以及 control preview 安全态
+- `TransitionRule` 已落地到固定规则级别，Act III / Act IX 也已有最小 authority 闭环；`/show` 的 stage-first spotlight 和 `/control` 的 preview safe mode 已经补上，但真正欠的主要还是 richer rule system、richer team-assignment workflow 与 richer canvas semantics
 
 更准确地说，当前状态是：
 
@@ -287,7 +299,7 @@
 - `TransitionRule` 从固定规则迈向更通用的 `condition_satisfied` / declarative predicates
 - Act III 从最小命令闭环继续补齐批量分队与约束校验
 - Act IX 从最小 poem/draw audit 链继续补齐持续 canvas projection 与共创语义
-- `/control/stages/:stageId` 在非当前幕时变成明确的安全预演态
+- show/control 的 supporting cues 继续减少对 gateway session/chat heat 的依赖，进一步向 authority presence/message state 靠拢
 
 ### 6.2 离通用平台还有多少
 
@@ -317,8 +329,8 @@
   - Act IX 的诗歌提交和 `draw` 已进入 authoritative command / event / replay 链
   - 但还缺持续 canvas projection / 聚合结果 / 约束规则，平台对 submission / score / award 之外的玩法承载还不够稳
 - `/show` 与 `/control` 还差最后一层平台语义约束
-  - `/show` 仍有 live heat 带偏 spotlight 的风险
-  - `/control/stages/:stageId` 在非当前幕时还没完全变成安全预演态
+  - `/show` 的 primary spotlight 已经 stage-first，但 room narrative / live pulse 仍混合 gateway session/chat 派生 heat
+  - `/control/stages/:stageId` 已进入 preview safe mode，但还没有真正的二次确认与更细的危险命令分级
 - 自动化回归网几乎还没有
   - 当前 build / lint 可以过
   - 但还缺少保证“换活动也不坏”的测试基线
@@ -342,6 +354,31 @@
 - `docs/*` 继续定义正式 contract
 - `molt-claw` 内的 backend 只是当前 contract 的一个参考实现
 - 后续如果接入真正的 gateway/plugin/service，也应继续服从这些 docs，而不是反过来让实现覆盖 requirements
+
+### 6.3 从 Formal Platform Contract 看还缺什么
+
+如果不只看 “The Fool 这一份 reference activity 还差哪些 integration 尾项”，而是直接把当前代码和 formal platform contract 对照，尚未真正落地的通用平台能力主要还有：
+
+- world service 仍未完整
+  - contract 里要求的 `Map` / `Zone` / `Channel` / `Presence` / `Membership` 还没有成为稳定 projection / query object
+  - 当前 renderer 对 room heat / recent activity 仍会部分依赖 gateway session/chat 派生信号，而不是只读平台 authority presence/message state
+- permissions / lock / reminder 仍偏最小实现
+  - 当前主要还是 `host` / `judge` / `agent` 的 role gate
+  - 资源级 / 活动范围 / 阶段范围授权，以及 stage / vote / talk lock、timer 手动 pause / resume、reminder broadcast 还没独立成正式平台能力
+- messaging / audience / voting service 仍未完整
+  - room / team / global / system message、reaction / signal、authoritative presence 还不是 Orchestrator / World Service 的正式产物
+  - `Vote` / `Bet` / richer aggregation / tie-break / score dimensions（或等价结构）也还没真正进入平台 contract 的实现层
+- skill/docs service 仍主要是 seed 装配
+  - 当前已经有 activity / stage / role 级 seed binding
+  - 但 activity-instance / room / team 级绑定、version freeze、update / revoke policy、binding audit 还没有
+- activity lifecycle 仍未通用
+  - 当前更像 “reference activity bootstrap + 固定 run”
+  - 通用的 `start` / `resume` / `finish` run 与多 run 并发还没出来
+- award / artifact / co-creation 仍以最小闭环为主
+  - 手动 `grant_award` 已有，但自动 award derivation 还没有
+  - Act IX 的 canvas / co-creation state 还没长成可复用的平台级状态模型
+- 自动化回归网几乎还没有
+  - 还缺“换一个 activity package 也不坏”的测试基线
 
 ## 7. 与现有项目的关系
 

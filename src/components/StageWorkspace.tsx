@@ -163,7 +163,7 @@ export function StageWorkspace({
               Preview Mode
             </p>
             <p className="mt-1 text-xs leading-5 text-amber-700">
-              Authority stage is <span className="font-mono">{gateway.activityRun.currentStageId}</span>. Commands in this view are read-only references and will not affect the live run.
+              Authority stage is <span className="font-mono">{gateway.activityRun.currentStageId}</span>. This workspace is in safe preview mode: keep it read-only unless you explicitly promote this stage to live.
             </p>
           </div>
         )}
