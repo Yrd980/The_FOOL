@@ -1,5 +1,15 @@
 # 平台优先实施路线
 
+总入口请先回到：[docs/README.md](../README.md)
+
+本文不是正式 contract；它只回答“平台化应该按什么顺序推进”。
+
+如果你还没先确认正式真相，建议先读：
+
+- [../openclaw-platform/requirements.md](../openclaw-platform/requirements.md)
+- [../openclaw-platform/design.md](../openclaw-platform/design.md)
+- [../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md)
+
 ## 1. 目标
 
 这份路线文档回答的问题不是“OpenClaw 应该具备什么能力”，而是“如果要避免继续把流程写死在某个 renderer 里，应该按什么顺序把平台做起来”。

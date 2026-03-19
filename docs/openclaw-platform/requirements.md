@@ -1,5 +1,16 @@
 # OpenClaw Platform Requirements
 
+总入口请先回到：[docs/README.md](../README.md)
+
+本文是 OpenClaw 平台的正式 requirements，也就是“平台层什么必须成立”的真相来源。
+
+如果你想看：
+
+- 平台怎么实现这些 requirements：读 [design.md](./design.md)
+- 某个活动如何落到平台上：读 [../activities/README.md](../activities/README.md)
+- 当前实现做到了哪：读 [../reference-implementations/molt-claw.md](../reference-implementations/molt-claw.md)
+- 推荐推进顺序：读 [../roadmaps/platform-first-rollout.md](../roadmaps/platform-first-rollout.md)
+
 ## 1. 产品定义
 
 OpenClaw 的目标不是做一个“带地图的聊天室”，而是做一个可承载任意活动编排的权威平台。

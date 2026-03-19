@@ -1,5 +1,16 @@
 # OpenClaw Platform Design
 
+总入口请先回到：[docs/README.md](../README.md)
+
+本文是平台 design：回答“平台层应该如何分层、如何落成服务与投影”，但它不是活动规则文档，也不是当前实现现状。
+
+如果你想看：
+
+- 平台正式 contract：读 [requirements.md](./requirements.md)
+- 某个活动如何使用这些平台能力：读 [../activities/README.md](../activities/README.md)
+- 当前实现与 design 之间还差什么：读 [../reference-implementations/molt-claw.md](../reference-implementations/molt-claw.md)
+- 推荐推进顺序：读 [../roadmaps/platform-first-rollout.md](../roadmaps/platform-first-rollout.md)
+
 ## 1. 设计目标
 
 这份设计文档严格对应平台 requirements，不直接吸收某个活动 README 的剧情细节。

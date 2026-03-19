@@ -1,5 +1,17 @@
 # The Fool v1 最小模板示例
 
+总入口请先回到：[docs/README.md](../../README.md)
+
+本文是模板示例，不是正式 requirements。
+
+它的作用是帮助你把 The Fool v1 想成一份可实例化的 activity template / activity package，而不是重新定义活动真相。
+
+如果你想看：
+
+- The Fool v1 的正式活动规则：读 [requirements.md](./requirements.md)
+- 平台 contract：读 [../../openclaw-platform/requirements.md](../../openclaw-platform/requirements.md) 和 [../../openclaw-platform/design.md](../../openclaw-platform/design.md)
+- 当前实现现状：读 [../../reference-implementations/molt-claw.md](../../reference-implementations/molt-claw.md)
+
 这份文档不是 requirements，而是把 The Fool v1 映射成一个最小可实例化的活动模板示例。
 
 目标：
