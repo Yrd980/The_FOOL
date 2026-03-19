@@ -281,6 +281,53 @@
 - Act IX 的诗歌提交与画布事件真正进入 authoritative replay 链
 - `/control/stages/:stageId` 在非当前幕时变成明确的安全预演态
 
+### 6.2 离通用平台还有多少
+
+如果问题是“离一个真正的通用 OpenClaw 平台还有多少”，当前参考实现可以先按下面这个口径估算：
+
+- 如果只看“本地 authoritative backend + The Fool 能跑一场”，当前大约已经到 `75% ~ 80%`
+- 如果看“活动可插拔、无隐式 The Fool 假设、规则真正由平台 runtime 执行”，当前更接近 `55% ~ 65%`
+- 换句话说，离“真正的通用平台”大约还差 `35% ~ 45%` 的关键工作
+
+这里的估算不是在算“总任务数完成率”，而是在算**平台化关键路径**还差多少。
+
+当前最影响“能不能算通用平台”的，不是 The Fool 再多补几幕文案，而是下面这些平台化缺口：
+
+- `TransitionRule` 还没真正进入 runtime
+  - 现在有 `transition_stage` / `start_timer`
+  - 但 `timer_expired` / `all_required_submissions_locked` / `scores_completed` 还不会自动切幕
+- authority world 还没完全和 bootstrap seed 分开
+  - Act III 的正式分队结果还不是命令驱动的 authority 结果
+  - `world` 仍有 reference activity / bootstrap seed 的影子
+- activity package 边界还没完全拔干净
+  - 默认 reference activity
+  - room alias fallback
+  - The Fool 兼容 flags / legacy 字段
+  这些路径还没全部收口
+- “第二类活动能力”还没形成通用闭环
+  - Act IX 的诗歌提交和 `draw` 还没进入 authoritative command / event / replay 链
+  - 这意味着平台对 submission / score / award 之外的玩法承载还不够稳
+- `/show` 与 `/control` 还差最后一层平台语义约束
+  - `/show` 仍有 live heat 带偏 spotlight 的风险
+  - `/control/stages/:stageId` 在非当前幕时还没完全变成安全预演态
+- 自动化回归网几乎还没有
+  - 当前 build / lint 可以过
+  - 但还缺少保证“换活动也不坏”的测试基线
+
+所以更准确的说法是：
+
+- 平台骨架已经出来了
+- The Fool 作为首个参考活动也已经能验证不少 contract
+- 但距离“真正的通用平台”还差一轮专门的 platform-hardening
+
+如果要把这段评估压成一个最短优先级列表，当前最值得先收掉的是：
+
+1. `TransitionRule` runtime 化
+2. authority world 与 bootstrap seed 彻底分离
+3. activity package / reference fallback / legacy compat 全面拔干净
+4. Act IX 这类非 submission-only 流程真正进入 authoritative replay 链
+5. 给平台通用路径补最小自动化回归
+
 这里的含义是：
 
 - `docs/*` 继续定义正式 contract
