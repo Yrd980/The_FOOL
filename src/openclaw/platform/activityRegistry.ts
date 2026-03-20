@@ -17,6 +17,28 @@ export interface ActivityScoreConfig {
   normalizeAnnotations?: (annotations: ScoreAnnotations) => ScoreAnnotations;
 }
 
+export interface ActivitySubmissionPresentationContext {
+  schemaId?: string | null;
+  data: SubmissionData | null | undefined;
+}
+
+export interface ActivityCliCompatOptionDefinition {
+  canonicalKey: string;
+  optionNames: string[];
+  description?: string;
+}
+
+export interface ActivityPresentationAdapter {
+  summarizeSubmissionLeadLine?: (
+    context: ActivitySubmissionPresentationContext,
+  ) => string | null;
+  summarizeScoreAnnotations?: (annotations: ScoreAnnotations) => string | null;
+}
+
+export interface ActivityCliCompatAdapter {
+  scoreAnnotationOptions?: ActivityCliCompatOptionDefinition[];
+}
+
 export interface ActivityBootstrapSeed {
   world: WorldProjection;
 }
@@ -35,6 +57,8 @@ export interface ActivityPackage {
   inferSubmissionTeamId?: (submissionId: string) => string | undefined;
   scoreConfig?: ActivityScoreConfig;
   metadata?: ActivityUiMetadata;
+  presentationAdapter?: ActivityPresentationAdapter;
+  cliCompat?: ActivityCliCompatAdapter;
 }
 
 const activityPackages = new Map<string, ActivityPackage>();

@@ -2,9 +2,14 @@ import "./activities";
 import {
   getActivityPackage,
   tryGetActivityPackage,
+  type ActivityCliCompatOptionDefinition,
   type ActivityPackage,
 } from "./platform/activityRegistry";
-import type { ScoreAnnotations, WorldProjection } from "./platform/contracts";
+import type {
+  ScoreAnnotations,
+  SubmissionData,
+  WorldProjection,
+} from "./platform/contracts";
 
 export interface ActivityRoomCatalog {
   packageId: string;
@@ -176,6 +181,84 @@ export const normalizeActivityScoreAnnotations = (
     ? activityPackage.scoreConfig.normalizeAnnotations(annotations)
     : annotations;
 };
+
+const summarizeGenericSubmissionLeadLine = (
+  data: SubmissionData | null | undefined,
+): string | null => {
+  if (!data) {
+    return null;
+  }
+
+  for (const value of Object.values(data)) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+
+    if (Array.isArray(value)) {
+      const entry = value.find(
+        (item): item is string =>
+          typeof item === "string" && item.trim().length > 0,
+      );
+      if (entry) {
+        return entry.trim();
+      }
+    }
+  }
+
+  return null;
+};
+
+export const summarizeActivitySubmissionLeadLine = ({
+  activityPackageId,
+  schemaId,
+  data,
+}: {
+  activityPackageId?: string | null;
+  schemaId?: string | null;
+  data: SubmissionData | null | undefined;
+}): string | null => {
+  const activityPackage = tryResolveActivityPackage(activityPackageId);
+  return (
+    activityPackage?.presentationAdapter?.summarizeSubmissionLeadLine?.({
+      schemaId,
+      data,
+    }) ?? summarizeGenericSubmissionLeadLine(data)
+  );
+};
+
+export const summarizeActivityScoreAnnotationCopy = ({
+  activityPackageId,
+  annotations,
+}: {
+  activityPackageId?: string | null;
+  annotations: ScoreAnnotations | undefined;
+}): string | null => {
+  if (!annotations) {
+    return null;
+  }
+
+  const activityPackage = tryResolveActivityPackage(activityPackageId);
+  const genericSummary = Object.entries(annotations).reduce<string[]>(
+    (result, [key, value]) => {
+      if (typeof value === "string" && value.trim().length > 0) {
+        result.push(`${key}: ${value.trim()}`);
+      }
+      return result;
+    },
+    [],
+  );
+  return (
+    activityPackage?.presentationAdapter?.summarizeScoreAnnotations?.(
+      annotations,
+    ) ?? (genericSummary.join(" · ") || null)
+  );
+};
+
+export const getActivityCliCompatScoreAnnotationOptions = (
+  activityPackageId?: string | null,
+): ActivityCliCompatOptionDefinition[] =>
+  tryResolveActivityPackage(activityPackageId)?.cliCompat
+    ?.scoreAnnotationOptions ?? [];
 
 export const getActivityStageTemplate = ({
   activityPackageId,

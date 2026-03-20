@@ -45,14 +45,13 @@ import {
   type SubmitScorePayload,
 } from "../src/openclaw/control";
 import {
+  getActivityCliCompatScoreAnnotationOptions,
   buildWorldRoomCatalog,
   tryBuildBootstrapRoomCatalog,
   tryResolveActivityPackageId,
   type ActivityRoomCatalog,
 } from "../src/openclaw/activityRuntime";
-import {
-  THE_FOOL_SCORE_ANNOTATION_KEYS,
-} from "../src/openclaw/activities/theFoolV1";
+import { BOOTSTRAP_REFERENCE_ACTIVITY_TEMPLATE_ID } from "../src/openclaw/activities";
 import type { WorldProjection } from "../src/openclaw/platform/contracts";
 
 type CommandName =
@@ -76,51 +75,6 @@ type CommandName =
   | "replay"
   | "audit"
   | "command";
-
-const USAGE = `Usage:
-  bun run openclaw:control -- probe
-  bun run openclaw:control -- move <agent-id> <room> [--activity-run-id <id>] [--activity-package-id <id>]
-  bun run openclaw:control -- say <agent-id> <room> <message> [--activity-run-id <id>] [--activity-package-id <id>]
-  bun run openclaw:control -- stage <activity-run-id> <target-stage-id>
-  bun run openclaw:control -- start-timer <activity-run-id> <stage-id> <duration-sec>
-  bun run openclaw:control -- open-submission <activity-run-id> <submission-id>
-  bun run openclaw:control -- submit <activity-run-id> <submission-id> <payload-json>
-  bun run openclaw:control -- update-submission <activity-run-id> <submission-id> <payload-json>
-  bun run openclaw:control -- lock-submission <activity-run-id> <submission-id>
-  bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> --annotations-json <json>
-  bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> --favorite <text> --most-absurd <text>
-  bun run openclaw:control -- grant-award <activity-run-id> <award-id> <entity-id> [label] [reason]
-  bun run openclaw:control -- draw <activity-run-id> <entity-id> <draw-data-json>
-  bun run openclaw:control -- move-entity <activity-run-id> <entity-id> <to-room-id> [kind]
-  bun run openclaw:control -- assign-team <activity-run-id> <team-id> [--members <id,id,...>] [--room-id <room-id>]
-  bun run openclaw:control -- snapshot <activity-run-id>
-  bun run openclaw:control -- scores <activity-run-id> [--after-sequence <n>] [--from-sequence <n>] [--to-sequence <n>] [--limit <n>]
-  bun run openclaw:control -- events <activity-run-id> [--after-sequence <n>] [--from-sequence <n>] [--to-sequence <n>] [--limit <n>]
-  bun run openclaw:control -- replay <activity-run-id> [--after-sequence <n>] [--from-sequence <n>] [--to-sequence <n>] [--limit <n>]
-  bun run openclaw:control -- audit <activity-run-id> [--limit <n>]
-  bun run openclaw:control -- command <activity-run-id> <command-type> <payload-json>
-
-Room alias resolution for move/say:
-  - with OPENCLAW_ORCHESTRATOR_URL, aliases resolve against the authoritative snapshot.world catalog for the current activity
-  - with --activity-package-id, aliases resolve against that activity package's bootstrap/dev room catalog only
-  - shorthand aliases are not resolved against an implicit default reference activity anymore
-  - reference-activity examples: main | team1 | team2 | team3 | quiet
-  - reference-activity room ids: main-stage | team-room-1 | team-room-2 | team-room-3 | quiet-orbit
-
-Optional env for command dispatch:
-  OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791
-  OPENCLAW_ORCHESTRATOR_TOKEN=<local-backend-token>
-  OPENCLAW_COMMAND_METHOD=<verified-live-method>
-  OPENCLAW_COMMAND_PARAM_KEY=command
-  OPENCLAW_COMMAND_ACTOR_ID=molt-claw
-  OPENCLAW_COMMAND_ACTOR_ROLE=host
-
-Dangerous orchestrator mutations require --confirm <challenge> when they are actually dispatched:
-  stage -> --confirm "PROMOTE <target-stage-id>"
-  lock-submission -> --confirm "LOCK <submission-id>"
-  grant-award -> --confirm "AWARD <award-id> <entity-id>"
-  move-entity -> --confirm "MOVE <entity-id> <to-room-id>"
-  assign-team -> --confirm "ASSIGN <team-id>"`;
 
 interface GatewayHelloSummary {
   snapshotKeys: string[];
@@ -256,6 +210,67 @@ const openClawGatewayToken =
 const resolveConfigValue = (key: string): string | undefined =>
   normalizeControlConfigValue(process.env[key]) ??
   normalizeControlConfigValue(envFile[key]);
+
+const resolveCliCompatActivityPackageId = (): string =>
+  resolveConfigValue("OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID") ??
+  resolveConfigValue("OPENCLAW_ACTIVITY_TEMPLATE_ID") ??
+  BOOTSTRAP_REFERENCE_ACTIVITY_TEMPLATE_ID;
+
+const legacyScoreCompatOptions = getActivityCliCompatScoreAnnotationOptions(
+  resolveCliCompatActivityPackageId(),
+);
+
+const legacyScoreCompatUsage = legacyScoreCompatOptions
+  .map((option) => option.description)
+  .filter(
+    (value): value is string =>
+      typeof value === "string" && value.trim().length > 0,
+  )
+  .join(" ");
+
+const USAGE = `Usage:
+  bun run openclaw:control -- probe
+  bun run openclaw:control -- move <agent-id> <room> [--activity-run-id <id>] [--activity-package-id <id>]
+  bun run openclaw:control -- say <agent-id> <room> <message> [--activity-run-id <id>] [--activity-package-id <id>]
+  bun run openclaw:control -- stage <activity-run-id> <target-stage-id>
+  bun run openclaw:control -- start-timer <activity-run-id> <stage-id> <duration-sec>
+  bun run openclaw:control -- open-submission <activity-run-id> <submission-id>
+  bun run openclaw:control -- submit <activity-run-id> <submission-id> <payload-json>
+  bun run openclaw:control -- update-submission <activity-run-id> <submission-id> <payload-json>
+  bun run openclaw:control -- lock-submission <activity-run-id> <submission-id>
+  bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> --annotations-json <json>
+  ${legacyScoreCompatUsage ? `bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> ${legacyScoreCompatUsage}\n` : ""}  bun run openclaw:control -- grant-award <activity-run-id> <award-id> <entity-id> [label] [reason]
+  bun run openclaw:control -- draw <activity-run-id> <entity-id> <draw-data-json>
+  bun run openclaw:control -- move-entity <activity-run-id> <entity-id> <to-room-id> [kind]
+  bun run openclaw:control -- assign-team <activity-run-id> <team-id> [--members <id,id,...>] [--room-id <room-id>]
+  bun run openclaw:control -- snapshot <activity-run-id>
+  bun run openclaw:control -- scores <activity-run-id> [--after-sequence <n>] [--from-sequence <n>] [--to-sequence <n>] [--limit <n>]
+  bun run openclaw:control -- events <activity-run-id> [--after-sequence <n>] [--from-sequence <n>] [--to-sequence <n>] [--limit <n>]
+  bun run openclaw:control -- replay <activity-run-id> [--after-sequence <n>] [--from-sequence <n>] [--to-sequence <n>] [--limit <n>]
+  bun run openclaw:control -- audit <activity-run-id> [--limit <n>]
+  bun run openclaw:control -- command <activity-run-id> <command-type> <payload-json>
+
+Room alias resolution for move/say:
+  - with OPENCLAW_ORCHESTRATOR_URL, aliases resolve against the authoritative snapshot.world catalog for the current activity
+  - with --activity-package-id, aliases resolve against that activity package's bootstrap/dev room catalog only
+  - shorthand aliases are not resolved against an implicit default reference activity anymore
+  - reference-activity examples: main | team1 | team2 | team3 | quiet
+  - reference-activity room ids: main-stage | team-room-1 | team-room-2 | team-room-3 | quiet-orbit
+
+Optional env for command dispatch:
+  OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791
+  OPENCLAW_ORCHESTRATOR_TOKEN=<local-backend-token>
+  OPENCLAW_COMMAND_METHOD=<verified-live-method>
+  OPENCLAW_COMMAND_PARAM_KEY=command
+  OPENCLAW_COMMAND_ACTOR_ID=molt-claw
+  OPENCLAW_COMMAND_ACTOR_ROLE=host
+
+Dangerous orchestrator mutations require --confirm <challenge> when they are actually dispatched:
+  stage -> --confirm "PROMOTE <target-stage-id>"
+  lock-submission -> --confirm "LOCK <submission-id>"
+  grant-award -> --confirm "AWARD <award-id> <entity-id>"
+  move-entity -> --confirm "MOVE <entity-id> <to-room-id>"
+  assign-team -> --confirm "ASSIGN <team-id>"`;
 
 const resolveGatewayToken = (): string | undefined =>
   resolveConfigValue("OPENCLAW_GATEWAY_TOKEN") ??
@@ -1246,6 +1261,38 @@ const parseAnnotationsJson = (
   );
 };
 
+const readLegacyScoreCompatAnnotations = (
+  options: Record<string, string>,
+): {
+  annotations: Record<string, string>;
+  usingLegacyCompatFlags: boolean;
+} => {
+  const annotations: Record<string, string> = {};
+  let usingLegacyCompatFlags = false;
+
+  for (const option of legacyScoreCompatOptions) {
+    const providedValue = option.optionNames
+      .map((optionName) => options[optionName]?.trim())
+      .find((value) => value !== undefined);
+
+    if (providedValue === undefined) {
+      continue;
+    }
+
+    usingLegacyCompatFlags = true;
+    if (!providedValue) {
+      fail(`submit-score requires --${option.optionNames[0]} <text>.`);
+    }
+
+    annotations[option.canonicalKey] = providedValue;
+  }
+
+  return {
+    annotations,
+    usingLegacyCompatFlags,
+  };
+};
+
 const parseSubmitScoreArgs = (
   rawArgs: string[],
 ): {
@@ -1267,41 +1314,25 @@ const parseSubmitScoreArgs = (
   const annotationsFromJson = options["annotations-json"]?.trim()
     ? parseAnnotationsJson(options["annotations-json"])
     : {};
-  const favorite = options.favorite?.trim();
-  const mostAbsurd =
-    options["most-absurd"]?.trim() ??
-    options.weirdest?.trim() ??
-    options.absurd?.trim();
-  const isUsingTheFoolCompatFlags =
-    favorite !== undefined || mostAbsurd !== undefined;
+  const {
+    annotations: annotationsFromCompatFlags,
+    usingLegacyCompatFlags,
+  } = readLegacyScoreCompatAnnotations(options);
 
   if (!reason) {
     fail("submit-score requires --reason <text>.");
   }
 
-  if (isUsingTheFoolCompatFlags && !favorite) {
-    fail("submit-score requires --favorite <text>.");
-  }
-
-  if (isUsingTheFoolCompatFlags && !mostAbsurd) {
-    fail(
-      "submit-score requires --most-absurd <text>. Aliases --weirdest / --absurd are accepted.",
-    );
-  }
-
   const annotations = {
     ...annotationsFromJson,
-    ...(favorite
-      ? { [THE_FOOL_SCORE_ANNOTATION_KEYS.favorite]: favorite }
-      : {}),
-    ...(mostAbsurd
-      ? { [THE_FOOL_SCORE_ANNOTATION_KEYS.mostAbsurd]: mostAbsurd }
-      : {}),
+    ...annotationsFromCompatFlags,
   };
 
   if (Object.keys(annotations).length === 0) {
     fail(
-      "submit-score requires score annotations. Use --annotations-json '{\"key\":\"value\"}' or the legacy reference-activity compatibility flags.",
+      usingLegacyCompatFlags
+        ? "submit-score requires non-empty score annotation values."
+        : "submit-score requires score annotations. Use --annotations-json '{\"key\":\"value\"}' or the legacy activity compatibility flags.",
     );
   }
 

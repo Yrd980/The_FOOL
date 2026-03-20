@@ -15,7 +15,7 @@ Formal truth still belongs to `docs/*`; the local backend is an implementation o
 Current code boundaries inside `src/openclaw` are now split as:
 
 - `platform/*`: generic OpenClaw platform contracts and activity registration boundary
-- `activities/theFoolV1.ts`: The Fool v1 activity package, including stage/schema/bootstrap world seed and activity-specific score rules
+- `activities/theFoolV1/*`: The Fool v1 activity package modules, split into definition / metadata / submission / scoring / package assembly
 - `gateway/*`, `useGatewayOverview.ts`, `control.ts`: renderer/control adapters and shared consumers of authority state
 
 ## Documentation
@@ -145,7 +145,9 @@ renderer 侧现状：
 - shared typed state 现在会把 `snapshot.health`、`audit`、query `status/source/freshness/error` 归并成稳定 operator evidence，而不是让 `/control` 组件直接手搓原始 payload
 - shared typed state 现在也会把 `snapshot.world` / `snapshot.skills` 归并成稳定的 world/team/skill summaries，而不是让组件直接解析 `rooms` / `teams` / `entities` / `skills` 原始 payload
 - `/show` 现在继续复用同一份 authoritative state，但已经额外补了 audience-facing composition，而不是继续照搬导演台的数据分组
-- `src/data.ts` / `src/openclaw/activities/theFoolV1.ts` 现在会把每一幕的 `layoutPreset` / `spotlightSource` / `heatAsTieBreaker` scene cue 一起装进 stage model
+- `src/view-model/activityViewModel.ts` / `src/openclaw/activities/theFoolV1/metadata.ts` 现在会把每一幕的 `layoutPreset` / `spotlightSource` / `heatAsTieBreaker` scene cue 一起装进 stage model
+- 共享 presentation 现在通过 activity adapter 读取 submission lead line 与 score annotation summary，不再在 `src/presentation.ts` 里直接硬编码 The Fool 字段名
+- `scripts/openclaw-control.ts` 的 legacy score flags 现在通过 activity CLI compat adapter 解析，不再直接 import The Fool scoring 常量
 - `/show` 的 hero spotlight 现在先按当前幕的 scene cue 选 `speaker` / `team` / `room` / `submission` / `score` / `award` / `co-creation`，而不是默认先追最活跃选手或最热房间
 - `/show` 的 room narrative / room radar / live pulse 现在也优先吃 authority `world` + `domainEvents`，live session/chat heat 只在同幕内做 tie-breaker，不再主导房间排序
 - `/show` 当前至少会把下列 shared state 重新编排成节目叙事：
@@ -528,16 +530,20 @@ bun run openclaw:control -- command activity-run-01 transition_stage '{"targetSt
 
 ## Structure
 
-- `src/data.ts`: typed stage, scene cue, operator, and agent-doc copy used by the UI
+- `src/data.ts`: thin export layer for view-model builders
+- `src/view-model/activityViewModel.ts`: typed stage, scene cue, operator, and agent-doc copy assembly used by the UI
+- `src/view-model/operatorCommands.ts`: operator command card builder for live / preview / confirm states
 - `src/presentation.ts`: stage-first selector layer that translates gateway data for both show and control views
 - `src/components/ShowMode.tsx`: audience-facing live broadcast surface
 - `src/components/ControlMode.tsx`: operator-facing director deck shell
 - `src/components/*`: shared control header, stage workspace, stage sidebar, integration rail
+- `src/components/stage-workspace/*`: extracted stage workspace subsections such as backend evidence panels
 - `src/openclaw/control.ts`: room aliases and gateway call arg builders
 - `src/openclaw/orchestratorQueryClient.ts`: typed local authoritative HTTP query adapter for `snapshot` / `scores` / `events` / `replay` / `audit`
 - `src/openclaw/overviewSharedState.ts`: shared typed adapters for `snapshot.world` / `snapshot.skills`
 - `src/openclaw/useGatewayOverview.ts`: shared state adapter that merges websocket feed and authoritative query into stable UI state
 - `src/openclaw/gateway/*`: lightweight gateway client and connection reducer
+- `src/openclaw/activities/theFoolV1/*`: The Fool-specific adapters and package modules
 - `scripts/openclaw-control.ts`: operator-facing wrapper around the OpenClaw CLI
 - `scripts/openclaw-orchestrator.ts`: local authoritative orchestrator backend with snapshot/event/command endpoints
 - `public/skill.md`: contestant agent onboarding

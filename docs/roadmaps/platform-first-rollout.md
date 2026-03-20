@@ -198,7 +198,7 @@ The Fool 应作为第一份 `ActivityTemplate` / `ActivityRun` 接入平台，�
 
 - 平台通用 contract 已独立收口到 `src/openclaw/platform/contracts.ts`
 - 活动包注册边界已独立收口到 `src/openclaw/platform/activityRegistry.ts`
-- The Fool v1 的 stage/schema/world/score config 已搬到 `src/openclaw/activities/theFoolV1.ts`
+- The Fool v1 的 stage/schema/world/score config 已搬到 `src/openclaw/activities/theFoolV1/*`，并按 definition / metadata / submission / scoring / package assembly 拆开
 - score projection 已改成通用 `annotations`，The Fool 的 `favorite` / `mostAbsurd` 只留在活动包与 CLI 兼容层
 
 因此下一批最值得继续收口的是：

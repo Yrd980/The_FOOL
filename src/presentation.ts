@@ -1,4 +1,8 @@
 import type { ActivityRoomSceneRole } from "./openclaw/activityMetadata";
+import {
+  summarizeActivityScoreAnnotationCopy,
+  summarizeActivitySubmissionLeadLine,
+} from "./openclaw/activityRuntime";
 import type {
   GatewayContestantSummary,
   GatewayOverview,
@@ -1155,72 +1159,6 @@ const buildFallbackPrimarySpotlight = ({
   source: "fallback",
 });
 
-const pickSubmissionLeadLine = (
-  data: Record<string, unknown> | null | undefined,
-): string | null => {
-  if (!data) {
-    return null;
-  }
-
-  const poem =
-    typeof data.poem === "string" && data.poem.trim().length > 0
-      ? data.poem.trim()
-      : null;
-  if (poem) {
-    return poem;
-  }
-
-  const elevatorPitch =
-    typeof data.elevatorPitch === "string" && data.elevatorPitch.trim().length > 0
-      ? data.elevatorPitch.trim()
-      : null;
-  if (elevatorPitch) {
-    return elevatorPitch;
-  }
-
-  const highlights = Array.isArray(data.highlights)
-    ? data.highlights.find(
-        (entry): entry is string =>
-          typeof entry === "string" && entry.trim().length > 0,
-      ) ?? null
-    : null;
-  if (highlights) {
-    return highlights.trim();
-  }
-
-  const risk =
-    typeof data.risk === "string" && data.risk.trim().length > 0
-      ? data.risk.trim()
-      : null;
-  if (risk) {
-    return risk;
-  }
-
-  const posterOrDeck =
-    typeof data.posterOrDeck === "string" && data.posterOrDeck.trim().length > 0
-      ? data.posterOrDeck.trim()
-      : null;
-
-  return posterOrDeck;
-};
-
-const summarizeScoreAnnotations = (
-  annotations: Record<string, string> | undefined,
-): string | null => {
-  if (!annotations) {
-    return null;
-  }
-
-  const favorite = annotations.favorite?.trim();
-  const mostAbsurd = annotations.mostAbsurd?.trim();
-  const pieces = [
-    favorite ? `favorite: ${favorite}` : null,
-    mostAbsurd ? `mostAbsurd: ${mostAbsurd}` : null,
-  ].filter((value): value is string => Boolean(value));
-
-  return pieces.length > 0 ? pieces.join(" · ") : null;
-};
-
 const buildPrimarySpeakerSpotlight = ({
   contestant,
   stage,
@@ -1359,7 +1297,11 @@ const buildPrimarySubmissionSpotlight = ({
   const title =
     currentSubmission.teamId ?? currentSubmission.id;
   const leadLine =
-    pickSubmissionLeadLine(currentSubmission.data) ??
+    summarizeActivitySubmissionLeadLine({
+      activityPackageId: gateway.activityRun?.templateId,
+      schemaId: currentSubmission.schemaId,
+      data: currentSubmission.data,
+    }) ??
     submission.headline;
 
   return {
@@ -1403,7 +1345,10 @@ const buildPrimaryScoreSpotlight = ({
     });
   }
 
-  const annotationLine = summarizeScoreAnnotations(latestScore.annotations);
+  const annotationLine = summarizeActivityScoreAnnotationCopy({
+    activityPackageId: gateway.activityRun?.templateId,
+    annotations: latestScore.annotations,
+  });
 
   return {
     title:
@@ -1477,7 +1422,11 @@ const buildPrimaryCoCreationSpotlight = ({
   const currentSubmission = gateway.currentSubmission;
   const latestAuthorityCue = gateway.domainEvents[0] ?? null;
   const leadLine =
-    pickSubmissionLeadLine(currentSubmission?.data) ??
+    summarizeActivitySubmissionLeadLine({
+      activityPackageId: gateway.activityRun?.templateId,
+      schemaId: currentSubmission?.schemaId,
+      data: currentSubmission?.data,
+    }) ??
     latestAuthorityCue?.detail ??
     submission.headline;
 

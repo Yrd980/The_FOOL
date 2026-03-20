@@ -116,15 +116,15 @@
 - `src/openclaw/platform/contracts.ts` 收口平台通用 contract
 - `src/openclaw/platform/activityRegistry.ts` 提供活动包注册与加载边界
 - `src/openclaw/activities/index.ts` 现在作为显式 activity registration/bootstrap 入口，避免 browser 侧再依赖隐式 side effect
-- `src/openclaw/activities/theFoolV1.ts` 承载 The Fool v1 的 stage/schema/bootstrap seed/score config
-- `src/openclaw/activities/theFoolV1.ts` 现在也承载 The Fool v1 的前端 stage copy、runtime guide、room aliases、room scene roles、UI summary，以及 stage-specific skill/doc bindings 等 activity metadata
-- `src/data.ts` 不再维护 The Fool 静态 stage 数组，而是从 activity package 装配 activity-driven view model；当 authority/template 还没解出来时，前端会退回通用 pending shell，也不再在 pending copy 里默认借用 The Fool 口吻
+- `src/openclaw/activities/theFoolV1/*` 现在按 definition / metadata / submission / scoring / package assembly 拆分 The Fool v1 的 stage/schema/bootstrap seed、score config、room alias、UI metadata 与兼容层
+- `src/openclaw/activities/theFoolV1.ts` 退回为兼容导出入口，不再承载主要实现
+- `src/view-model/activityViewModel.ts` 不再维护 The Fool 静态 stage 数组，而是从 activity package 装配 activity-driven view model；当 authority/template 还没解出来时，前端会退回通用 pending shell，也不再在 pending copy 里默认借用 The Fool 口吻
 - `scripts/openclaw-orchestrator.ts` 不再直接把 The Fool 的十幕、schema 和 world seed 写死在主文件里，而是从 activity package 装配；bootstrap 语义也已改成支持 `OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID` 的显式 reference activity，activity package 里的 bootstrap world 只在初始化 projection 时使用，`snapshot.world` 之后只从 projection 读取
 - `src/presentation.ts` 的 room narrative / live copy 已改成消费 activity metadata 里的 room scene roles，不再硬编码 `main-stage` / `team-room-*` / `quiet-orbit`
 - `src/openclaw/useGatewayOverview.ts` 不再在运行时按 `stageId` 反推 activity package；authority event/snapshot 没给出 `templateId` 时，浏览器侧退回 pending activity shell，而不是默认套用 The Fool
 - `src/openclaw/useGatewayOverview.ts` 与 `scripts/openclaw-orchestrator.ts` 读取 score annotations 时，旧 `favorite` / `mostAbsurd` 顶层字段兼容已下沉到 activity package 的 `scoreConfig.extractLegacyAnnotations`
 - `src/openclaw/control.ts` 与 `src/openclaw/useGatewayOverview.ts` 的 room catalog 现在只从 runtime projection world 派生；authority world 缺失时会显式落到 unavailable/pending，而不会借 bootstrap world 或 reference activity metadata 伪装成当前房间真相
-- `src/openclaw/control.ts` 的 `submit` / `update_submission` / `submit_score` envelope builder 已收口成平台通用 payload，`scripts/openclaw-control.ts` 则改成通用 payload / annotations 输入 + The Fool 兼容别名
+- `src/openclaw/control.ts` 的 `submit` / `update_submission` / `submit_score` envelope builder 已收口成平台通用 payload，`scripts/openclaw-control.ts` 则改成通用 payload / annotations 输入 + activity CLI compat adapter
 
 当前 The Fool v1 在这个 worktree 里的 submission write loop 已收口为：
 
@@ -240,7 +240,8 @@
 - `/show`、`/show/:stageId`、`/control/stages/:stageId` 当前都已经改成按 authority stage + activity metadata 解析 active stage，不再以内建 The Fool stages 作为唯一来源
 - `src/presentation.ts` 的 stage desk / submission / score narrative 已改成消费 stage capabilities + activity metadata，不再依赖 `stageId.includes("submission" | "judging" | "award")`
 - `src/presentation.ts` 的 room stage-fit / heat / activity headline 已改成消费 activity metadata 的 room scene roles，不再在 shared presentation 层解析 The Fool room id 命名
-- `src/data.ts` 与 `src/openclaw/activities/theFoolV1.ts` 现在也把 stage-specific `layoutPreset` / `spotlightSource` / `heatAsTieBreaker` 装进 runtime guide，让 scene cue 真正随活动包下发
+- `src/view-model/activityViewModel.ts` 与 `src/openclaw/activities/theFoolV1/metadata.ts` 现在也把 stage-specific `layoutPreset` / `spotlightSource` / `heatAsTieBreaker` 装进 runtime guide，让 scene cue 真正随活动包下发
+- 共享 presentation 对 submission lead line / score summary 的派生现在优先走 activity presentation adapter，不再把 The Fool 的 submission 字段顺序和 annotation key 写死在 shared layer
 - `/show` 的 primary spotlight 现在会先按当前幕的 `spotlightSource` 选 `speaker` / `team` / `room` / `submission` / `score` / `award` / `co-creation`，而不是默认回到 focus contestant + hottest room
 - `/show` 的 room narrative / room radar / pulse 现在也优先消费 authority `world` + `domainEvents`，并把 room/team/submission/entity 关联先解出来；live session/chat heat 只在同幕内做 tie-breaker
 - authority/template 还不可用时，browser app shell 会显示通用 pending activity shell，不再默认退回首个 reference activity package；shared header / show fallback copy 也开始去掉固定 `Molt Claw` / `龙虾` / `contestant` 前台默认文案
@@ -346,7 +347,7 @@
 
 1. `TransitionRule` 从固定规则继续走向通用 predicate
 2. world service 从最小 projection 走向 richer presence/message/signal model
-3. activity package / reference bootstrap default / legacy compat 全面拔干净
+3. activity package / reference bootstrap default / legacy compat 继续从入口层往适配层收口
 4. Act IX 这类非 submission-only 流程从最小审计链走向真正的平台级 state model
 5. 给平台通用路径补最小自动化回归
 
@@ -396,4 +397,3 @@ bun run openclaw:control -- probe
 ```
 
 它会直接打印 live hello methods/events、snapshot keys、token-only websocket `status` blocker，以及 paired CLI 读到的 `status / tools.catalog / config / plugins` provenance 摘要。
-
