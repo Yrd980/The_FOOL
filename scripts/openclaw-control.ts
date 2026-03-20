@@ -51,7 +51,7 @@ import {
   tryResolveActivityPackageId,
   type ActivityRoomCatalog,
 } from "../src/openclaw/activityRuntime";
-import { BOOTSTRAP_REFERENCE_ACTIVITY_TEMPLATE_ID } from "../src/openclaw/activities";
+import { resolveLocalPlatformBootstrapConfig } from "../src/openclaw/localPlatformConfig";
 import type { WorldProjection } from "../src/openclaw/platform/contracts";
 
 type CommandName =
@@ -214,7 +214,7 @@ const resolveConfigValue = (key: string): string | undefined =>
 const resolveCliCompatActivityPackageId = (): string =>
   resolveConfigValue("OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID") ??
   resolveConfigValue("OPENCLAW_ACTIVITY_TEMPLATE_ID") ??
-  BOOTSTRAP_REFERENCE_ACTIVITY_TEMPLATE_ID;
+  resolveLocalPlatformBootstrapConfig().defaultTemplateId;
 
 const legacyScoreCompatOptions = getActivityCliCompatScoreAnnotationOptions(
   resolveCliCompatActivityPackageId(),
@@ -254,8 +254,8 @@ Room alias resolution for move/say:
   - with OPENCLAW_ORCHESTRATOR_URL, aliases resolve against the authoritative snapshot.world catalog for the current activity
   - with --activity-package-id, aliases resolve against that activity package's bootstrap/dev room catalog only
   - shorthand aliases are not resolved against an implicit default reference activity anymore
-  - reference-activity examples: main | team1 | team2 | team3 | quiet
-  - reference-activity room ids: main-stage | team-room-1 | team-room-2 | team-room-3 | quiet-orbit
+  - configured activity examples: main | team1 | team2 | team3 | quiet
+  - configured activity room ids: main-stage | team-room-1 | team-room-2 | team-room-3 | quiet-orbit
 
 Optional env for command dispatch:
   OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791

@@ -40,6 +40,12 @@
 - [参考实现目录说明](./reference-implementations/README.md)
 - [仓库 README](../README.md)
 
+当前这一轮要先记住：
+
+- `molt-claw` 已经转成 backend-first worktree
+- 浏览器只保留最小状态壳，不再代表富内容 `/show` / `/control` 原型
+- scene spec 仍然保留为活动播出规范，但不代表当前 worktree 已完整实现该 renderer
+
 ### 4. 你想知道“下一步应该先做什么”
 
 最后再读路线文档：
@@ -54,7 +60,7 @@
 | 平台层 | OpenClaw 通用 contract 是什么 | 是 | [`openclaw-platform/*`](./openclaw-platform/) |
 | 活动层 | 某档活动如何表达在平台之上 | 是 | [`activities/*`](./activities/) |
 | scene / 播出层 | 同一份 authority state 要怎么播出来 | 否，依赖 authority | 活动目录下的 `scene-spec.md` |
-| 参考实现层 | 当前某个 worktree / renderer / backend 做到了哪 | 否 | [`reference-implementations/*`](./reference-implementations/) |
+| 参考实现层 | 当前某个 worktree / backend / browser shell 做到了哪 | 否 | [`reference-implementations/*`](./reference-implementations/) |
 | 路线层 | 应该按什么顺序推进 | 否 | [`roadmaps/*`](./roadmaps/) |
 
 ## 目录作用

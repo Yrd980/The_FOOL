@@ -4,6 +4,7 @@ import {
   tryGetActivityPackage,
   type ActivityCliCompatOptionDefinition,
   type ActivityPackage,
+  type ActivityRoomAliasDefinition,
 } from "./platform/activityRegistry";
 import type {
   ScoreAnnotations,
@@ -47,7 +48,7 @@ const normalizeRoomAlias = (room: string): string =>
 
 const applyActivityRoomAliases = (
   aliasMap: Record<string, string>,
-  aliases: Array<{ roomId: string; aliases: string[] }>,
+  aliases: ActivityRoomAliasDefinition[],
 ): void => {
   for (const aliasEntry of aliases) {
     aliasMap[normalizeRoomAlias(aliasEntry.roomId)] = aliasEntry.roomId;
@@ -69,7 +70,7 @@ export const buildWorldRoomCatalog = ({
   const activityPackage = tryGetActivityPackage(activityPackageId);
   const resolvedFallbackRoomId =
     fallbackRoomId?.trim() ||
-    activityPackage?.metadata?.rooms?.fallbackRoomId?.trim() ||
+    activityPackage?.roomConfig?.fallbackRoomId?.trim() ||
     world.rooms.at(-1)?.id ||
     "room";
   const roomIds = world.rooms.map((room) => room.id);
@@ -82,7 +83,7 @@ export const buildWorldRoomCatalog = ({
     return result;
   }, {});
 
-  applyActivityRoomAliases(aliasMap, activityPackage?.metadata?.rooms?.aliases ?? []);
+  applyActivityRoomAliases(aliasMap, activityPackage?.roomConfig?.aliases ?? []);
 
   return {
     packageId:
@@ -136,7 +137,7 @@ export const tryBuildBootstrapRoomCatalog = (
   return buildWorldRoomCatalog({
     world: activityPackage.bootstrap.world,
     activityPackageId: activityPackage.id,
-    fallbackRoomId: activityPackage.metadata?.rooms?.fallbackRoomId,
+    fallbackRoomId: activityPackage.roomConfig?.fallbackRoomId,
   });
 };
 
@@ -152,7 +153,7 @@ export const tryBuildActivityRoomCatalog = (
   return buildWorldRoomCatalog({
     world: authorityWorld,
     activityPackageId: activityPackage?.id ?? activityPackageId,
-    fallbackRoomId: activityPackage?.metadata?.rooms?.fallbackRoomId,
+    fallbackRoomId: activityPackage?.roomConfig?.fallbackRoomId,
   });
 };
 

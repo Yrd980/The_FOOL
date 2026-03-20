@@ -2,7 +2,7 @@
 
 总入口请先回到：[docs/README.md](../../README.md)
 
-本文是 The Fool v1 的 scene / 播出层说明：回答“同一份 authority runtime state 要怎么被 `/show` 和 stage preview 播出来”。
+本文是 The Fool v1 的 scene / 播出层说明：回答“同一份 authority runtime state 要怎么被 live show、preview 或 operator-facing 播出层消费”。
 
 它不是平台 formal contract，也不是活动规则真相。
 
@@ -10,11 +10,16 @@
 
 - 平台层什么必须成立：读 [../../openclaw-platform/requirements.md](../../openclaw-platform/requirements.md)
 - The Fool v1 的正式活动规则：读 [requirements.md](./requirements.md)
-- 当前 renderer 实现到了哪：读 [../../reference-implementations/molt-claw.md](../../reference-implementations/molt-claw.md)
+- 当前 worktree 实现到了哪：读 [../../reference-implementations/molt-claw.md](../../reference-implementations/molt-claw.md)
 
 ## 1. 目的与边界
 
-本文定义 `The Fool v1` 的播出层 / scene contract，用于把 `/show` 从“通用 dashboard 投影”收口为“按 `stageId` 切换的节目场景”。
+本文定义 `The Fool v1` 的播出层 / scene contract，用于说明“如果存在播出层或 renderer，它应如何按 `stageId` 消费 authority state 并组织节目场景”。
+
+当前要特别注意：
+
+- 这是 scene contract，不是当前 `molt-claw` browser shell 的功能说明
+- 当前 `molt-claw` 已经缩成 backend-first worktree；富内容 show/control renderer 已不再是这份实现的主线
 
 它建立在以下正式文档之上：
 

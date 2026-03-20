@@ -10,6 +10,16 @@
 - [../openclaw-platform/design.md](../openclaw-platform/design.md)
 - [../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md)
 
+## 当前备注
+
+这份路线图保留的是“平台优先、活动验证、renderer 变薄”的推进思路。
+
+但当前 `molt-claw` worktree 已经进一步收口成 backend-first 形态：
+
+- 本地 orchestrator、CLI、activity registry 是主线
+- 浏览器只保留最小 status shell
+- Phase 4 里关于富内容 `/show` / `/control` 的内容，应理解为未来独立 renderer 或后续前端项目的工作，不再是当前 worktree 的主交付
+
 ## 1. 目标
 
 这份路线文档回答的问题不是“OpenClaw 应该具备什么能力”，而是“如果要避免继续把流程写死在某个 renderer 里，应该按什么顺序把平台做起来”。
@@ -133,6 +143,8 @@ The Fool 应作为第一份 `ActivityTemplate` / `ActivityRun` 接入平台，�
 - 用 The Fool 的特殊字段重命名平台通用 score / submission 模型
 
 ### Phase 4: Show / Control Integration
+
+注：这一阶段现在更适合作为“未来 renderer 项目或单独前端工作树”的目标，而不是当前 `molt-claw` 的近期主线。
 
 目标：
 

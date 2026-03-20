@@ -79,5 +79,5 @@
 
 - `docs/openclaw-platform/*` 定义 OpenClaw 平台的通用 contract
 - `docs/activities/the-fool-v1/*` 定义 The Fool v1 这档活动
-- `docs/activities/the-fool-v1/scene-spec.md` 定义 The Fool 在 `/show`、`/show/:stageId`、`/control/stages/:stageId` 上的播出层 scene contract
-- `molt-claw` 里的 `/show`、`/control` 只是当前 The Fool 的 renderer / control 原型，不是平台总规格本身
+- `docs/activities/the-fool-v1/scene-spec.md` 定义 The Fool 的播出层 / scene contract；它描述“如果要做播出层，应该怎么消费 authority state”
+- `molt-claw` 当前已经退回 backend-first worktree，只保留最小 browser status shell；它不再代表富内容 `/show`、`/control` renderer 原型

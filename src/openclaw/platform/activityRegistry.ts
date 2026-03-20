@@ -1,4 +1,3 @@
-import type { ActivityUiMetadata } from "../activityMetadata";
 import type {
   ScoreAnnotations,
   SkillBinding,
@@ -39,6 +38,16 @@ export interface ActivityCliCompatAdapter {
   scoreAnnotationOptions?: ActivityCliCompatOptionDefinition[];
 }
 
+export interface ActivityRoomAliasDefinition {
+  roomId: string;
+  aliases: string[];
+}
+
+export interface ActivityRoomConfig {
+  fallbackRoomId?: string;
+  aliases?: ActivityRoomAliasDefinition[];
+}
+
 export interface ActivityBootstrapSeed {
   world: WorldProjection;
 }
@@ -56,7 +65,7 @@ export interface ActivityPackage {
   ) => SubmissionData;
   inferSubmissionTeamId?: (submissionId: string) => string | undefined;
   scoreConfig?: ActivityScoreConfig;
-  metadata?: ActivityUiMetadata;
+  roomConfig?: ActivityRoomConfig;
   presentationAdapter?: ActivityPresentationAdapter;
   cliCompat?: ActivityCliCompatAdapter;
 }

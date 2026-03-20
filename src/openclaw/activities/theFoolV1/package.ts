@@ -20,7 +20,7 @@ import {
   theFoolSubmissionSchemas,
   theFoolWorld,
 } from "./definition";
-import { theFoolUiMetadata } from "./metadata";
+import { theFoolRoomConfig } from "./rooms";
 
 export const theFoolV1ActivityPackage: ActivityPackage = registerActivityPackage({
   id: THE_FOOL_V1_TEMPLATE_ID,
@@ -31,7 +31,7 @@ export const theFoolV1ActivityPackage: ActivityPackage = registerActivityPackage
   bootstrap: {
     world: theFoolWorld,
   },
-  metadata: theFoolUiMetadata,
+  roomConfig: theFoolRoomConfig,
   presentationAdapter: {
     ...theFoolPresentationAdapter,
     ...theFoolScorePresentationAdapter,

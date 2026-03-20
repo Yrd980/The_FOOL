@@ -10,7 +10,7 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  BOOTSTRAP_REFERENCE_ACTIVITY_TEMPLATE_ID,
+  ensureActivityPackagesRegistered,
 } from "../src/openclaw/activities";
 import { normalizeActivityScoreAnnotations } from "../src/openclaw/activityRuntime";
 import {
@@ -44,6 +44,7 @@ import type {
   TimerStatus,
   WorldProjection,
 } from "../src/openclaw/platform/contracts";
+import { resolveLocalPlatformBootstrapConfig } from "../src/openclaw/localPlatformConfig";
 
 type Role = ActorRole;
 type ReceiptStatus = "accepted" | "replayed";
@@ -213,13 +214,17 @@ const authToken =
   process.env.VITE_OPENCLAW_TOKEN?.trim() ||
   "molt-claw-local-dev";
 
-const bootstrapReferenceActivityTemplateId =
-  process.env.OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID?.trim() ||
-  process.env.OPENCLAW_ACTIVITY_TEMPLATE_ID?.trim() ||
-  BOOTSTRAP_REFERENCE_ACTIVITY_TEMPLATE_ID;
+ensureActivityPackagesRegistered();
 
-const bootstrapReferenceActivityPackage = getActivityPackage(
-  bootstrapReferenceActivityTemplateId,
+const localBootstrapConfig = resolveLocalPlatformBootstrapConfig({
+  activityRunId: process.env.OPENCLAW_ACTIVITY_RUN_ID?.trim(),
+  templateId:
+    process.env.OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID?.trim() ||
+    process.env.OPENCLAW_ACTIVITY_TEMPLATE_ID?.trim(),
+});
+
+const bootstrapActivityPackage = getActivityPackage(
+  localBootstrapConfig.defaultTemplateId,
 );
 
 const tryResolveActivityPackageByTemplateId = (
@@ -283,16 +288,16 @@ const buildSeedProjection = (now = Date.now()): ProjectionState => ({
   version: 6,
   snapshotId: `snapshot-${now}`,
   activityRun: {
-    id: "activity-run-01",
-    templateId: bootstrapReferenceActivityPackage.id,
+    id: localBootstrapConfig.defaultActivityRunId,
+    templateId: bootstrapActivityPackage.id,
     status: "running",
-    currentStageId: bootstrapReferenceActivityPackage.initialStageId,
+    currentStageId: bootstrapActivityPackage.initialStageId,
     startedAt: now,
   },
-  stageTemplates: cloneJsonValue(bootstrapReferenceActivityPackage.stageTemplates),
-  submissionSchemas: cloneJsonValue(bootstrapReferenceActivityPackage.submissionSchemas),
-  world: cloneJsonValue(bootstrapReferenceActivityPackage.bootstrap.world),
-  skills: cloneJsonValue(bootstrapReferenceActivityPackage.skillBindings),
+  stageTemplates: cloneJsonValue(bootstrapActivityPackage.stageTemplates),
+  submissionSchemas: cloneJsonValue(bootstrapActivityPackage.submissionSchemas),
+  world: cloneJsonValue(bootstrapActivityPackage.bootstrap.world),
+  skills: cloneJsonValue(bootstrapActivityPackage.skillBindings),
   timers: [],
   submissions: [],
   scores: [],
