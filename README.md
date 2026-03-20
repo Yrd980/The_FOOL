@@ -28,6 +28,8 @@ This worktree is now intentionally split into:
 
 - Generic backend/runtime code in \`src/openclaw/platform/*\`
 - Generic gateway/query consumers in \`src/openclaw/gateway/*\`, \`src/openclaw/useGatewayOverview.ts\`, and \`src/openclaw/control.ts\`
+- Browser overview assembly split between the thin hook \`src/openclaw/useGatewayOverview.ts\` and pure helpers in \`src/openclaw/overview/runtime.ts\`
+- Orchestrator query / transport / audit / snapshot / command execution split under \`scripts/orchestrator/*\` and \`scripts/orchestrator/commands/*\`
 - Explicit local bootstrap configuration in \`src/openclaw/localPlatformConfig.ts\`
 - Activity-local rules, schemas, score compatibility, and bootstrap seed in \`src/openclaw/activities/theFoolV1/*\`
 
@@ -37,6 +39,7 @@ Important boundary rules:
 - The Fool remains the first built-in activity, but only via explicit local bootstrap config.
 - \`bootstrap.world\` is initialization-only; runtime truth comes from the authority projection.
 - \`--activity-package-id\` remains a bootstrap/dev fallback for room aliases, not a hidden runtime default.
+- \`scripts/openclaw-orchestrator.ts\` should stay as bootstrap / routing / journal glue, while command-family behavior lives in \`scripts/orchestrator/commands/*\`.
 
 ## Scripts
 
@@ -53,6 +56,11 @@ bun run openclaw:control -- lock-submission activity-run-01 submission-01 --conf
 ~~~
 
 The CLI/query contract is intentionally kept stable while the internal structure is made more generic.
+
+Current verification baseline for this worktree:
+
+- \`bun run build\`
+- \`bun run lint\`
 
 ## Local Bootstrap
 

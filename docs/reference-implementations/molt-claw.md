@@ -69,7 +69,9 @@
 - \`src/openclaw/platform/activityRegistry.ts\` 只承载活动定义、房间 alias 配置、score config、compat adapter 等后端运行时需要的内容
 - \`src/openclaw/localPlatformConfig.ts\` 明确声明本地 bootstrap 默认值
 - \`src/openclaw/activities/theFoolV1/*\` 承载 The Fool 的 stage/schema/bootstrap world/score compat/room alias
-- \`scripts/openclaw-orchestrator.ts\` 只从显式 bootstrap config + registry 装配首个 activity
+- \`scripts/openclaw-orchestrator.ts\` 只从显式 bootstrap config + registry 装配首个 activity，并承担 routing / journal / HTTP / WS glue
+- \`scripts/orchestrator/*\` 承载 query / transport / audit / snapshot 等后端模块
+- \`scripts/orchestrator/commands/*\` 承载 command-family handler、fresh command executor、以及 submission/score/confirmation helper
 - \`scripts/openclaw-control.ts\` 优先读取 authority \`snapshot.world\`，显式 \`--activity-package-id\` 仅作为 bootstrap/dev fallback
 
 不再允许的路径：
@@ -100,6 +102,12 @@ The Fool 仍然是第一份内置活动，但现在它是“显式配置的首�
 - 最近 audit 活动
 - CLI/operator 入口提示
 
+浏览器内部现在也已经按低耦合方式拆开：
+
+- \`src/openclaw/useGatewayOverview.ts\` 主要负责连接 gateway / query client 与 React state
+- \`src/openclaw/overview/runtime.ts\` 主要负责纯 overview/runtime 归一化、summary 组装、事件应用与格式化
+- \`src/openclaw/overviewSharedState.ts\` 继续负责 authority world / skill 相关共享摘要
+
 它不再负责：
 
 - 节目叙事编排
@@ -108,7 +116,24 @@ The Fool 仍然是第一份内置活动，但现在它是“显式配置的首�
 - scene preset / spotlight / heat tie-break
 - activity-specific presenter copy
 
-## 7. 已知剩余事项
+## 7. 当前代码组织快照
+
+如果你只是想快速判断“这份实现现在怎么拆”：
+
+- command 执行主线已经从单个大分支拆成 stage/timer、submission、score、award、entity、team 等 family handler
+- fresh command 的统一 role gate、dispatch、commit/broadcast、auto-transition 后处理已经单独收进 \`scripts/orchestrator/commands/execute.ts\`
+- submission payload 校验、dangerous confirmation、score projection 构建等 command 专用 helper 已经下沉到 \`scripts/orchestrator/commands/helpers.ts\`
+- 主 orchestrator 文件还保留 projection rebuild、timer schedule、transition rule、idempotency journal、query endpoint、HTTP/WS server 这些真正的 orchestration glue
+
+## 8. 验证基线
+
+当前这份参考实现的最小验证基线仍然是：
+
+- \`bun run build\`
+- \`bun run lint\`
+- 在需要确认 command 语义时，优先走真实 \`/api/orchestrator/commands\` 与 query endpoint 做最小命令链验证
+
+## 9. 已知剩余事项
 
 当前还没有解决、但现在也被明确隔离的问题：
 
