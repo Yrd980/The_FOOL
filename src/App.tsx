@@ -41,7 +41,6 @@ function App() {
   const gateway = useGatewayOverview();
   const resolvedActivityPackageId = tryResolveActivityPackageId({
     templateId: gateway.activityRun?.templateId,
-    previewStageId: route.previewStageId,
   });
   const activity = buildActivityViewModel({
     activityPackageId: resolvedActivityPackageId,

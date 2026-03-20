@@ -81,6 +81,9 @@ export interface DangerousCommandConfirmationRequirement {
   reason: string;
 }
 
+export const UNAVAILABLE_ROOM_ID = "openclaw:room-unavailable";
+export const UNAVAILABLE_ROOM_LABEL = "Authority room unavailable";
+
 interface ControlRoomResolutionOptions {
   roomCatalog?: ActivityRoomCatalog | null;
 }
@@ -411,7 +414,7 @@ export const resolveSessionRoomId = (
 ): string => {
   const roomCatalog = resolveRoomCatalog(activityPackageId, options);
   if (!sessionKey) {
-    return roomCatalog?.fallbackRoomId ?? "room";
+    return roomCatalog?.fallbackRoomId ?? UNAVAILABLE_ROOM_ID;
   }
 
   const match = sessionKey.match(/^agent:[^:]+:(.+)$/);
@@ -422,7 +425,7 @@ export const resolveSessionRoomId = (
   );
 
   if (!roomCatalog) {
-    return roomId || "room";
+    return UNAVAILABLE_ROOM_ID;
   }
 
   if (roomCatalog.roomIds.includes(roomId)) {
@@ -437,7 +440,9 @@ export const getRoomLabel = (
   activityPackageId?: string | null,
   options?: ControlRoomResolutionOptions,
 ): string =>
-  resolveRoomCatalog(activityPackageId, options)?.labels[roomId] ?? roomId;
+  roomId === UNAVAILABLE_ROOM_ID
+    ? UNAVAILABLE_ROOM_LABEL
+    : resolveRoomCatalog(activityPackageId, options)?.labels[roomId] ?? roomId;
 
 export const normalizeControlGatewayUrl = (
   configuredUrl: string | undefined,

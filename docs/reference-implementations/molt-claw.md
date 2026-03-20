@@ -121,9 +121,9 @@
 - `src/data.ts` 不再维护 The Fool 静态 stage 数组，而是从 activity package 装配 activity-driven view model；当 authority/template 还没解出来时，前端会退回通用 pending shell，也不再在 pending copy 里默认借用 The Fool 口吻
 - `scripts/openclaw-orchestrator.ts` 不再直接把 The Fool 的十幕、schema 和 world seed 写死在主文件里，而是从 activity package 装配；bootstrap 语义也已改成支持 `OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID` 的显式 reference activity，activity package 里的 bootstrap world 只在初始化 projection 时使用，`snapshot.world` 之后只从 projection 读取
 - `src/presentation.ts` 的 room narrative / live copy 已改成消费 activity metadata 里的 room scene roles，不再硬编码 `main-stage` / `team-room-*` / `quiet-orbit`
-- `src/openclaw/useGatewayOverview.ts` 与 `src/openclaw/overviewSharedState.ts` 在拿不到 `templateId` 时，已优先退回 authority world label / raw room id，而不是默认套用 The Fool room catalog
+- `src/openclaw/useGatewayOverview.ts` 不再在运行时按 `stageId` 反推 activity package；authority event/snapshot 没给出 `templateId` 时，浏览器侧退回 pending activity shell，而不是默认套用 The Fool
 - `src/openclaw/useGatewayOverview.ts` 与 `scripts/openclaw-orchestrator.ts` 读取 score annotations 时，旧 `favorite` / `mostAbsurd` 顶层字段兼容已下沉到 activity package 的 `scoreConfig.extractLegacyAnnotations`
-- `src/openclaw/control.ts` 的 room alias / room catalog 现在优先从 authority `snapshot.world` 派生；`scripts/openclaw-control.ts` 的 `move` / `say` 在严格路径下会读取 authority snapshot 做 activity-scoped room resolution，而显式 `--activity-package-id` 只保留为 bootstrap/dev alias fallback，不再伪装成 authority world
+- `src/openclaw/control.ts` 与 `src/openclaw/useGatewayOverview.ts` 的 room catalog 现在只从 runtime projection world 派生；authority world 缺失时会显式落到 unavailable/pending，而不会借 bootstrap world 或 reference activity metadata 伪装成当前房间真相
 - `src/openclaw/control.ts` 的 `submit` / `update_submission` / `submit_score` envelope builder 已收口成平台通用 payload，`scripts/openclaw-control.ts` 则改成通用 payload / annotations 输入 + The Fool 兼容别名
 
 当前 The Fool v1 在这个 worktree 里的 submission write loop 已收口为：
@@ -396,3 +396,4 @@ bun run openclaw:control -- probe
 ```
 
 它会直接打印 live hello methods/events、snapshot keys、token-only websocket `status` blocker，以及 paired CLI 读到的 `status / tools.catalog / config / plugins` provenance 摘要。
+

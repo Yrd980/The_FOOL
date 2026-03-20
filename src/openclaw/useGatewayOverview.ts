@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   extractActivityScoreAnnotations,
-  findActivityPackageByStageId,
+  tryBuildActivityRoomCatalog,
 } from "./activityRuntime";
 import type {
   GatewayActivity,
@@ -27,6 +27,7 @@ import {
   normalizeControlDispatchMethod,
   resolveSessionRoomId,
   summarizeGatewayOrchestrationContract,
+  UNAVAILABLE_ROOM_ID,
 } from "./control";
 import {
   buildGatewaySkillSummary,
@@ -505,17 +506,6 @@ const stageIdFromPayload = (payload: Record<string, unknown>): string | null => 
   return null;
 };
 
-const inferActivityPackageIdFromStageId = (
-  stageId: string | null | undefined,
-): string | null => {
-  const normalizedStageId = stageId?.trim();
-  if (!normalizedStageId) {
-    return null;
-  }
-
-  return findActivityPackageByStageId(normalizedStageId)?.id ?? null;
-};
-
 const resolveEventActivityPackageId = ({
   payload,
   previous,
@@ -533,8 +523,7 @@ const resolveEventActivityPackageId = ({
   }
 
   return (
-    previous.activityRun?.templateId ??
-    inferActivityPackageIdFromStageId(stageIdFromPayload(payload))
+    previous.activityRun?.templateId ?? null
   );
 };
 
@@ -1024,10 +1013,7 @@ const applyOrchestrationEvent = (
       activityRun: {
         id: previous.activityRun?.id ?? readString(payload, "activityRunId") ?? "activity-run",
         templateId:
-          activityPackageId ??
-          inferActivityPackageIdFromStageId(
-            readString(payload, "toStageId", "currentStageId", "stageId"),
-          ),
+          activityPackageId,
         status: previous.activityRun?.status ?? "running",
         currentStageId:
           readString(payload, "toStageId", "currentStageId", "stageId") ?? null,
@@ -1913,6 +1899,7 @@ export function useGatewayOverview(): GatewayOverview {
     const authoritativeActivityRun =
       authoritativeSnapshot?.activityRun ?? orchestration.activityRun;
     const authoritativeWorld = authoritativeSnapshot?.world ?? null;
+    const runtimeWorld = authoritativeSnapshot?.world ?? orchestration.world ?? null;
     const authoritativeTimers =
       authoritativeSnapshot?.timers ?? orchestration.timers;
     const authoritativeSkills = authoritativeSnapshot?.skills ?? null;
@@ -1926,29 +1913,31 @@ export function useGatewayOverview(): GatewayOverview {
       authoritativeQuery.scores?.scoreSummary ??
       authoritativeSnapshot?.scoreSummary ??
       orchestration.scoreSummary;
-    const activityPackageId =
-      authoritativeActivityRun?.templateId ??
-      inferActivityPackageIdFromStageId(authoritativeActivityRun?.currentStageId) ??
-      null;
+    const activityPackageId = authoritativeActivityRun?.templateId ?? null;
+    const roomCatalog = tryBuildActivityRoomCatalog(
+      activityPackageId,
+      runtimeWorld,
+    );
+    const roomCatalogOptions = roomCatalog ? { roomCatalog } : undefined;
     const roomLabelById = new Map(
-      (authoritativeWorld ?? orchestration.world ?? { rooms: [] }).rooms.map((room) => [
+      (runtimeWorld ?? { rooms: [] }).rooms.map((room) => [
         room.id,
         room.label?.trim() || room.id,
       ]),
     );
     const observedRoomIds = new Set<string>(
-      getGatewayRoomIds(activityPackageId),
+      getGatewayRoomIds(activityPackageId, roomCatalogOptions),
     );
 
-    for (const room of authoritativeWorld?.rooms ?? []) {
+    for (const room of runtimeWorld?.rooms ?? []) {
       observedRoomIds.add(room.id);
     }
-    for (const team of authoritativeWorld?.teams ?? []) {
+    for (const team of runtimeWorld?.teams ?? []) {
       if (team.roomId) {
         observedRoomIds.add(team.roomId);
       }
     }
-    for (const entity of authoritativeWorld?.entities ?? []) {
+    for (const entity of runtimeWorld?.entities ?? []) {
       if (entity.roomId) {
         observedRoomIds.add(entity.roomId);
       }
@@ -1957,7 +1946,11 @@ export function useGatewayOverview(): GatewayOverview {
     const allSessionSummaries: GatewaySessionSummary[] = [...sessions]
       .sort((left, right) => normalizeTimestamp(right.updatedAt) - normalizeTimestamp(left.updatedAt))
       .map((session) => {
-        const roomId = resolveSessionRoomId(session.key, activityPackageId);
+        const roomId = resolveSessionRoomId(
+          session.key,
+          activityPackageId,
+          roomCatalogOptions,
+        );
         observedRoomIds.add(roomId);
         const state = deriveContestantState(session);
         return {
@@ -1966,7 +1959,7 @@ export function useGatewayOverview(): GatewayOverview {
           roomId,
           roomLabel:
             roomLabelById.get(roomId) ??
-            getRoomLabel(roomId, activityPackageId),
+            getRoomLabel(roomId, activityPackageId, roomCatalogOptions),
           updatedAt: normalizeTimestamp(session.updatedAt),
           updatedLabel: formatUpdatedLabel(session.updatedAt),
           state,
@@ -2014,9 +2007,9 @@ export function useGatewayOverview(): GatewayOverview {
     ];
 
     const fallbackRoomId =
-      authoritativeWorld?.rooms.at(-1)?.id ??
-      [...observedRoomIds].at(-1) ??
-      "room";
+      runtimeWorld?.rooms.at(-1)?.id ??
+      roomCatalog?.fallbackRoomId ??
+      UNAVAILABLE_ROOM_ID;
 
     const allActivities: GatewayActivity[] = messages.map((message) => {
       const relatedRoom = roomByAgent.get(message.senderId);
@@ -2031,7 +2024,7 @@ export function useGatewayOverview(): GatewayOverview {
         roomLabel:
           relatedRoom?.roomLabel ??
           roomLabelById.get(roomId) ??
-          getRoomLabel(roomId, activityPackageId),
+          getRoomLabel(roomId, activityPackageId, roomCatalogOptions),
         content: message.content,
         timestamp,
         timestampLabel: formatClockLabel(timestamp),
@@ -2045,14 +2038,14 @@ export function useGatewayOverview(): GatewayOverview {
       roomId,
       label:
         roomLabelById.get(roomId) ??
-        getRoomLabel(roomId, activityPackageId),
+        getRoomLabel(roomId, activityPackageId, roomCatalogOptions),
       count: allSessionSummaries.filter((session) => session.roomId === roomId).length,
     }));
     const roomRosters = resolvedRoomIds.map((roomId) => ({
       roomId,
       label:
         roomLabelById.get(roomId) ??
-        getRoomLabel(roomId, activityPackageId),
+        getRoomLabel(roomId, activityPackageId, roomCatalogOptions),
       sessions: allSessionSummaries.filter((session) => session.roomId === roomId),
     }));
 

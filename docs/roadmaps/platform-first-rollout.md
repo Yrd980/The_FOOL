@@ -213,6 +213,7 @@ The Fool 应作为第一份 `ActivityTemplate` / `ActivityRun` 接入平台，�
 
 - 去掉 renderer / shared runtime 的 implicit fallback
   - 未解析到 `activityPackageId` / `templateId` 时，返回 pending / unavailable，而不是静默退回首个已注册活动包
+  - 运行时 activity package 解析只认显式 `templateId`；`stageId` 只用于 stage 内语义，不再充当跨活动识别入口
 - 把活动包里的 `world` 语义明确收口为 bootstrap seed
   - world seed 只用于启动时初始化 authority world
   - 运行时 snapshot / query 里的 `world` 一律来自 projection

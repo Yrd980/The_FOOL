@@ -1,6 +1,5 @@
 import "./activities";
 import {
-  findActivityPackageByStageId,
   getActivityPackage,
   tryGetActivityPackage,
   type ActivityPackage,
@@ -102,21 +101,7 @@ export const tryResolveActivityPackageId = ({
   previewStageId?: string | null;
 } = {}): string | null => {
   const templateActivityPackage = tryGetActivityPackage(templateId);
-  if (
-    previewStageId &&
-    templateActivityPackage?.stageTemplates.some(
-      (stageTemplate) => stageTemplate.id === previewStageId,
-    )
-  ) {
-    return templateActivityPackage.id;
-  }
-
-  if (previewStageId) {
-    const previewActivityPackage = findActivityPackageByStageId(previewStageId);
-    if (previewActivityPackage) {
-      return previewActivityPackage.id;
-    }
-  }
+  void previewStageId;
 
   if (templateActivityPackage) {
     return templateActivityPackage.id;
@@ -204,6 +189,5 @@ export const getActivityStageTemplate = ({
   );
 
 export {
-  findActivityPackageByStageId,
   getActivityPackage,
 };
