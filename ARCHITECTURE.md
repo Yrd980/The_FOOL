@@ -51,7 +51,7 @@ These modules define semantics that should stay stable across refactors:
 
 ### Adapters and presentation
 
-- [src/openclaw/control.ts](./src/openclaw/control.ts): control-side command DSL, confirmation policy, URL and config normalization, transport args
+- [src/openclaw/control.ts](./src/openclaw/control.ts): stable control helper barrel that re-exports the split command DSL, confirmation policy, URL and config normalization, and transport arg modules under src/openclaw/control/*
 - [scripts/openclaw-control.ts](./scripts/openclaw-control.ts): operator CLI entrypoint, orchestration commands, probe flow, ASCII watch wiring
 - [src/openclaw/orchestratorQueryClient.ts](./src/openclaw/orchestratorQueryClient.ts): client-side HTTP query adapter
 - [src/openclaw/asciiOverview.ts](./src/openclaw/asciiOverview.ts): read-model formatting and ASCII layout

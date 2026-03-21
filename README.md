@@ -29,7 +29,7 @@ Public operational handoff files remain under [public/](./public/):
 - Generic backend and runtime code lives in src/openclaw/platform/*
 - Activity extension points live in src/openclaw/platform/activityRegistry.ts and src/openclaw/activityRuntime.ts
 - Orchestrator query, transport, audit, snapshot, and command-family handlers live under scripts/orchestrator/*
-- Control-side command building and transport helpers live in src/openclaw/control.ts
+- Control-side command helpers keep the stable entrypoint in src/openclaw/control.ts, with the implementation split across src/openclaw/control/*
 - Terminal ASCII watch assembly lives in src/openclaw/asciiOverview.ts
 - Local bootstrap defaults live in src/openclaw/localPlatformConfig.ts
 
