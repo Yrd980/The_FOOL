@@ -6,8 +6,8 @@
 
 如果你想看：
 
-- 平台通用 contract：读 [../../openclaw-platform/requirements.md](../../openclaw-platform/requirements.md)
-- 当前 `molt-claw` 如何运行与验证：读 [../../README.md](../../README.md)
+- 当前仓库的 runtime 边界与平台实现说明：读 [../../../ARCHITECTURE.md](../../../ARCHITECTURE.md)
+- 当前 `molt-claw` 如何运行与验证：读 [../../../README.md](../../../README.md)
 
 ## 1. 活动定义
 
@@ -44,24 +44,24 @@ The Fool v1 负责定义：
 
 平台 contract 入口：
 
-- 平台 requirements：[`../../openclaw-platform/requirements.md`](../../openclaw-platform/requirements.md)
+- [`../../../ARCHITECTURE.md`](../../../ARCHITECTURE.md)
 
 本活动依赖的平台能力（按平台层语义分组）：
 
 - **活动编排（ActivityTemplate/Run、Stage、TransitionRule、Constraint）**：十幕流程必须由平台权威驱动（`activityRun.currentStageId` 等），renderer 不得自行决定当前幕。
-  对应平台：平台 requirements 中的“活动编排模型”“Constraint”“首版最小同步闭环”
+  对应仓库边界：`ARCHITECTURE.md` 中的 “Runtime Model”“Stable Boundaries”“Authority Rules”
 - **时间与锁（Timer/Lock）**：每幕倒计时、窗口开关、自动/手动收口必须事件化并可回放。
-  对应平台：平台 requirements 中的“调度与时间系统”“实时同步协议”
+  对应仓库边界：`ARCHITECTURE.md` 中的 “Runtime Model”“Transport Surface”“Current Priorities”
 - **世界与空间（World/Room/Channel/Team/Presence）**：房间/队伍分配与移动必须是权威状态；活动的 world seed 只能用于 bootstrap。
-  对应平台：平台 requirements 中的“世界模型”“Authority World 与 Bootstrap Seed”
+  对应仓库边界：`ARCHITECTURE.md` 中的 “Authority Rules”“Activity Package Boundary”
 - **提交（SubmissionSchema/Submission/Version/Lock）**：Act V 的 submission window、版本历史、锁定与审计必须由平台提供；活动只定义 schema 字段与校验口径。
-  对应平台：平台 requirements 中的“提交物与作品模型”“最小命令集”
+  对应仓库边界：`ARCHITECTURE.md` 中的 “Stable Boundaries”“Runtime and persistence”
 - **评分与汇总（JudgeScore/Aggregation/Award）**：Act VII 的结构化评分必须落入平台 scoring 能力；活动专属评分字段应映射到通用扩展容器（如 `annotations` / `extras`）。
-  对应平台：平台 requirements 中的“投票与评分模型”“审计与回放”
+  对应仓库边界：`ARCHITECTURE.md` 中的 “Stable Boundaries”“Activity Package Boundary”
 - **命令/事件/快照/回放/审计（CommandReceipt/Idempotency、Event sequence、Snapshot/Delta/Replay/Audit）**：整场活动所有关键状态变化必须能订阅、回放、审计与重算。
-  对应平台：平台 requirements 中的“实时同步协议”“命令回执与幂等”“审计与回放”
+  对应仓库边界：`ARCHITECTURE.md` 中的 “Runtime Model”“Transport Surface”“Runtime and persistence”
 - **Skill 绑定与版本冻结（SkillBinding、freeze）**：活动开始后默认冻结文档版本；按角色/阶段发放。
-  对应平台：平台 requirements 中的“Skill 与平台文档绑定”
+  对应仓库边界：`ARCHITECTURE.md` 中的 “Activity Package Boundary”“Documentation Rules”
 
 ## 2. 活动目标
 

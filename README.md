@@ -1,45 +1,45 @@
 # Molt Claw
 
-Backend-first OpenClaw local platform worktree.
+molt-claw is a backend-first OpenClaw worktree. It runs a local authoritative activity runtime and exposes only backend and terminal-facing surfaces:
 
-\`molt-claw\` no longer ships the old rich \`/show\` and \`/control\` experience. This worktree now exposes only backend and terminal-facing surfaces:
+- scripts/openclaw-orchestrator.ts: local authoritative backend
+- scripts/openclaw-control.ts: operator CLI
+- src/openclaw/asciiOverview.ts: terminal ASCII watch built from authority-backed queries
+- src/openclaw/platform/*: generic contracts and activity registry
+- src/openclaw/activities/theFoolV1/*: the first built-in activity package
 
-- \`scripts/openclaw-orchestrator.ts\`: local authoritative backend
-- \`scripts/openclaw-control.ts\`: operator CLI
-- \`src/openclaw/asciiOverview.ts\`: terminal ASCII live console built from authoritative \`snapshot + events + replay\`
-- \`src/openclaw/platform/*\`: generic platform contracts and activity registry
-- \`src/openclaw/activities/theFoolV1/*\`: the first configured activity package
-
-Formal truth still lives in \`docs/*\`; this repo is an implementation of those contracts, not a replacement for them.
+This worktree no longer ships the old rich /show and /control web experience. Runtime truth stays in the orchestrator, not in CLI output, docs, or a renderer.
 
 ## Documentation
 
-- [docs/README.md](./docs/README.md): formal doc entrypoint
+- [README.md](./README.md): repo entry, run commands, current shipped surface
+- [ARCHITECTURE.md](./ARCHITECTURE.md): runtime boundaries, file responsibilities, refactor targets
+- [TASKS.md](./TASKS.md): active refactor track
+- [docs/README.md](./docs/README.md): formal activity docs entry
+- [docs/activities/the-fool-v1/requirements.md](./docs/activities/the-fool-v1/requirements.md): The Fool v1 formal requirements
 
-Public operational handoff files remain under \`public/\`:
+Public operational handoff files remain under [public/](./public/):
 
-- \`public/skill.md\`
-- \`public/heartbeat.md\`
-- \`public/task.md\`
+- [public/skill.md](./public/skill.md)
+- [public/heartbeat.md](./public/heartbeat.md)
+- [public/task.md](./public/task.md)
 
 ## Current Shape
 
-This worktree is now intentionally split into:
-
-- Generic backend/runtime code in \`src/openclaw/platform/*\`
-- Generic gateway/query types plus CLI/orchestrator URL helpers in \`src/openclaw/gateway/*\`, \`src/openclaw/control.ts\`, and \`src/openclaw/orchestratorQueryClient.ts\`
-- Orchestrator query / transport / audit / snapshot / command execution split under \`scripts/orchestrator/*\` and \`scripts/orchestrator/commands/*\`
-- Terminal ASCII watch assembly split into \`src/openclaw/asciiOverview.ts\` plus authoritative orchestrator queries in \`src/openclaw/orchestratorQueryClient.ts\`
-- Explicit local bootstrap configuration in \`src/openclaw/localPlatformConfig.ts\`
-- Activity-local rules, schemas, score compatibility, and bootstrap seed in \`src/openclaw/activities/theFoolV1/*\`
+- Generic backend and runtime code lives in src/openclaw/platform/*
+- Activity extension points live in src/openclaw/platform/activityRegistry.ts and src/openclaw/activityRuntime.ts
+- Orchestrator query, transport, audit, snapshot, and command-family handlers live under scripts/orchestrator/*
+- Control-side command building and transport helpers live in src/openclaw/control.ts
+- Terminal ASCII watch assembly lives in src/openclaw/asciiOverview.ts
+- Local bootstrap defaults live in src/openclaw/localPlatformConfig.ts
 
 Important boundary rules:
 
-- Generic platform code must not hardcode The Fool stage IDs, room IDs, or score annotation keys.
-- The Fool remains the first built-in activity, but only via explicit local bootstrap config.
-- \`bootstrap.world\` is initialization-only; runtime truth comes from the authority projection.
-- \`--activity-package-id\` remains a bootstrap/dev fallback for room aliases, not a hidden runtime default.
-- \`scripts/openclaw-orchestrator.ts\` should stay as bootstrap / routing / journal glue, while command-family behavior lives in \`scripts/orchestrator/commands/*\`.
+- Generic runtime code must not hardcode The Fool stage ids, room ids, or score annotation keys.
+- The Fool remains the first built-in activity only via explicit local bootstrap config.
+- bootstrap.world is initialization-only; running world truth comes from the authority projection.
+- --activity-package-id remains a bootstrap and dev fallback for room aliases, not a hidden runtime default.
+- External CLI, HTTP, and WebSocket contracts should stay stable while internal modules are refactored.
 
 ## Scripts
 
@@ -60,41 +60,41 @@ bun run openclaw:control -- lock-submission activity-run-01 submission-01 --conf
 bun run openclaw:control -- finish activity-run-01 team team-1 --note "authoritative finale" --confirm "FINISH activity-run-01 team:team-1"
 ~~~
 
-The CLI/query contract is intentionally kept stable while the internal structure is made more generic.
+The CLI and query contract is intentionally kept stable while the internal structure is made more generic.
 
 Current verification baseline for this worktree:
 
-- \`bun run build\`
-- \`bun run lint\`
-- \`bun test\`
+- bun run build
+- bun run lint
+- bun test
 
 ## Authoritative ASCII Watch
 
-The primary operator-facing runtime view is now terminal-first.
+The primary operator-facing runtime view is terminal-first.
 
-- \`openclaw-control ascii\` verifies that \`OPENCLAW_ORCHESTRATOR_URL\` really points at this repo's authoritative orchestrator before it renders anything
-- the screen is built from real \`/api/orchestrator/snapshot\`, \`/api/orchestrator/events\`, and \`/api/orchestrator/replay\`
+- openclaw-control ascii verifies that OPENCLAW_ORCHESTRATOR_URL really points at this repo authoritative orchestrator before it renders anything
+- the screen is built from real /api/orchestrator/snapshot, /api/orchestrator/events, and /api/orchestrator/replay
 - the console is intended to show The Fool as a whole live run, not just a single stage
 
 The watch currently prioritizes:
 
-- current activity run / template / status / current stage
+- current activity run, template, status, and current stage
 - full room occupancy
 - all teams and members
 - current contestant room placement
 - timers, submissions, lock state, scores, awards
-- authoritative social snapshot aggregates: \`audience_heat\`, \`bet_heat\`, reaction totals, vote summary, bet settlements
+- authoritative social snapshot aggregates: audience_heat, bet_heat, reaction totals, vote summary, bet settlements
 - recent authoritative event flow
-- live social events now backed by real authority events: \`talk\`, \`broadcast\`, \`reaction\`, \`bet\`, \`vote\`
-- finished-run visibility via authoritative \`activity.finished\`
+- live social events backed by real authority events: talk, broadcast, reaction, bet, vote
+- finished-run visibility via authoritative activity.finished
 
-Verified authority-side command/query surface in this worktree currently includes:
+Verified authority-side command and query surface in this worktree currently includes:
 
-- queries: \`snapshot\`, \`events\`, \`replay\`, \`audit\`, \`scores\`
-- control mutations: \`stage\`, \`start-timer\`, \`move-entity\`, \`assign-team\`
-- submission loop: \`open-submission\`, \`submit\`, \`update-submission\`, \`lock-submission\`
-- scoring loop: \`submit-score\`, \`grant-award\`, \`finish\`
-- authority-backed social loop: \`talk\`, \`broadcast\`, \`reaction\`, \`bet\`, \`vote\`
+- queries: snapshot, events, replay, audit, scores
+- control mutations: stage, start-timer, move-entity, assign-team
+- submission loop: open-submission, submit, update-submission, lock-submission
+- scoring loop: submit-score, grant-award, finish
+- authority-backed social loop: talk, broadcast, reaction, bet, vote
 
 Typical local run:
 
@@ -106,20 +106,20 @@ bun run openclaw:control -- ascii activity-run-01 --limit 20 --watch 0.5
 
 Current config boundary:
 
-- runtime/debug entrypoints in this worktree only recognize \`OPENCLAW_*\` env names
-- old browser/Vite-era \`VITE_OPENCLAW_*\` fallbacks are no longer supported here
-- if a future renderer is rebuilt, it should live as a separate consumer of the same authority/query contracts
+- runtime and debug entrypoints in this worktree only recognize OPENCLAW_* env names
+- old browser and Vite-era VITE_OPENCLAW_* fallbacks are no longer supported here
+- if a future renderer is rebuilt, it should live as a separate consumer of the same authority and query contracts
 
 ## Local Bootstrap
 
-Local startup defaults now live in \`src/openclaw/localPlatformConfig.ts\`.
+Local startup defaults now live in src/openclaw/localPlatformConfig.ts.
 
 By default the worktree boots:
 
-- \`defaultActivityRunId = activity-run-01\`
-- \`defaultTemplateId = the-fool-v1\`
+- defaultActivityRunId = activity-run-01
+- defaultTemplateId = the-fool-v1
 
-You can override the template/run at startup with:
+You can override the template or run at startup with:
 
 ~~~bash
 OPENCLAW_ACTIVITY_RUN_ID=<run-id>
@@ -132,15 +132,15 @@ or:
 OPENCLAW_ACTIVITY_TEMPLATE_ID=<template-id>
 ~~~
 
-If the configured template is not registered, the orchestrator now fails immediately instead of silently borrowing a hidden reference activity.
+If the configured template is not registered, the orchestrator fails immediately instead of silently borrowing a hidden reference activity.
 
 ## Current Limits
 
 The current worktree is intentionally small and backend-first:
 
-- `scripts/openclaw-orchestrator.ts` is still a single-process local authority, not a full platform deployment
+- scripts/openclaw-orchestrator.ts is still a single-process local authority, not a full platform deployment
 - only The Fool is wired as a built-in activity package today
-- the live surface is CLI + ASCII only; any future renderer should be a separate consumer of the same authority/query contracts
-- audience/viewer-side native input channels are still operator/CLI-driven today and are not yet merged into a dedicated authoritative social ingress
-- audience vote endgame follow-through still needs more authority-side work for winner aggregation beyond the current snapshot/replay output
-- when checking behavior, prefer real `/api/orchestrator/*` queries and `openclaw-control ascii` over documentation assumptions
+- the live surface is CLI and ASCII only; any future renderer should be a separate consumer of the same authority and query contracts
+- audience and viewer-side native input channels are still operator and CLI-driven today and are not yet merged into a dedicated authoritative social ingress
+- audience vote endgame follow-through still needs more authority-side work for winner aggregation beyond the current snapshot and replay output
+- when checking behavior, prefer real /api/orchestrator/* queries and openclaw-control ascii over documentation assumptions
