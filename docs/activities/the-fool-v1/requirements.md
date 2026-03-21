@@ -6,10 +6,8 @@
 
 如果你想看：
 
-- 平台通用 contract：读 [../../openclaw-platform/requirements.md](../../openclaw-platform/requirements.md) 和 [../../openclaw-platform/design.md](../../openclaw-platform/design.md)
-- 这档活动怎么播：读 [scene-spec.md](./scene-spec.md)
-- 这档活动的最小模板形状：读 [template-example.md](./template-example.md)
-- 当前 `molt-claw` 实现到了哪：读 [../../reference-implementations/molt-claw.md](../../reference-implementations/molt-claw.md)
+- 平台通用 contract：读 [../../openclaw-platform/requirements.md](../../openclaw-platform/requirements.md)
+- 当前 `molt-claw` 如何运行与验证：读 [../../README.md](../../README.md)
 
 ## 1. 活动定义
 
@@ -36,9 +34,9 @@ The Fool v1 负责定义：
 播出层补充说明：
 
 - 本文只定义 The Fool v1 的活动规则与正式输入输出
-- 每一幕在 `/show` 上如何切 scene、主视觉如何组织、转场如何包装，写在 [scene-spec.md](./scene-spec.md)
-- 如果播出层 scene spec 与 authority runtime state 冲突，应始终以 authority 为准
-- 当前 `molt-claw` worktree 对这些规则的实现现状，写在 [`../../reference-implementations/molt-claw.md`](../../reference-implementations/molt-claw.md)
+- 本文同时保留最少量的 future renderer / template 约束，避免再拆额外说明文件
+- 如果未来 renderer 的 scene 选择与 authority runtime state 冲突，应始终以 authority 为准
+- 当前 `molt-claw` worktree 是 backend + CLI + ASCII watch，不提供富内容 Web renderer
 
 ### 1.1 平台能力映射索引（本活动依赖什么平台能力）
 
@@ -47,24 +45,23 @@ The Fool v1 负责定义：
 平台 contract 入口：
 
 - 平台 requirements：[`../../openclaw-platform/requirements.md`](../../openclaw-platform/requirements.md)
-- 平台 design：[`../../openclaw-platform/design.md`](../../openclaw-platform/design.md)
 
 本活动依赖的平台能力（按平台层语义分组）：
 
 - **活动编排（ActivityTemplate/Run、Stage、TransitionRule、Constraint）**：十幕流程必须由平台权威驱动（`activityRun.currentStageId` 等），renderer 不得自行决定当前幕。
-  对应平台：`requirements.md`（活动编排模型、约束），`design.md`（Activity Orchestrator、运行时只信 projection）
+  对应平台：平台 requirements 中的“活动编排模型”“Constraint”“首版最小同步闭环”
 - **时间与锁（Timer/Lock）**：每幕倒计时、窗口开关、自动/手动收口必须事件化并可回放。
-  对应平台：`requirements.md`（调度与时间系统、实时同步协议），`design.md`（Timer/Transition 的事件与投影）
+  对应平台：平台 requirements 中的“调度与时间系统”“实时同步协议”
 - **世界与空间（World/Room/Channel/Team/Presence）**：房间/队伍分配与移动必须是权威状态；活动的 world seed 只能用于 bootstrap。
-  对应平台：`requirements.md`（世界模型、authority world vs bootstrap seed），`design.md`（world_view、snapshot 的 world 来自投影）
+  对应平台：平台 requirements 中的“世界模型”“Authority World 与 Bootstrap Seed”
 - **提交（SubmissionSchema/Submission/Version/Lock）**：Act V 的 submission window、版本历史、锁定与审计必须由平台提供；活动只定义 schema 字段与校验口径。
-  对应平台：`requirements.md`（提交物与作品模型、最小命令集），`design.md`（submission write loop、snapshot 暴露）
+  对应平台：平台 requirements 中的“提交物与作品模型”“最小命令集”
 - **评分与汇总（JudgeScore/Aggregation/Award）**：Act VII 的结构化评分必须落入平台 scoring 能力；活动专属评分字段应映射到通用扩展容器（如 `annotations` / `extras`）。
-  对应平台：`requirements.md`（投票与评分模型、审计与回放），`design.md`（score payload/event、scoreSummary）
+  对应平台：平台 requirements 中的“投票与评分模型”“审计与回放”
 - **命令/事件/快照/回放/审计（CommandReceipt/Idempotency、Event sequence、Snapshot/Delta/Replay/Audit）**：整场活动所有关键状态变化必须能订阅、回放、审计与重算。
-  对应平台：`requirements.md`（实时同步协议、命令回执与幂等、审计与回放），`design.md`（命令执行流、事件包、同步协议）
+  对应平台：平台 requirements 中的“实时同步协议”“命令回执与幂等”“审计与回放”
 - **Skill 绑定与版本冻结（SkillBinding、freeze）**：活动开始后默认冻结文档版本；按角色/阶段发放。
-  对应平台：`requirements.md`（Skill 与平台文档绑定），`design.md`（Skill/Docs service、binding 对象）
+  对应平台：平台 requirements 中的“Skill 与平台文档绑定”
 
 ## 2. 活动目标
 
@@ -621,9 +618,38 @@ The Fool v1 至少需要以下事件类型：
 
 当前以下文档可视为本活动的素材来源：
 
-- `molt-claw/asset/task.md`
 - `molt-claw/public/task.md`
 - `molt-claw/public/skill.md`
 - `molt-claw/public/heartbeat.md`
 
 但正式活动需求，以本文档表达的平台化结构为准。
+
+## 16. Future Renderer 最小约束
+
+如果未来要恢复 Web show/control renderer，至少必须遵守下面这些边界：
+
+- stage-first：scene 必须优先跟随 authority `currentStageId`，不能先看谁最热
+- spotlight 是派生结果，不是 authority 真相；只能根据当前 stage、当前对象、最近事件和必要时的 heat 做排序
+- heat 只能做 tie-breaker，不能决定“当前是哪一幕”
+- backstage context 留在 operator 侧；query freshness、audit receipt、backend health 这类诊断不应泄露到 public/live 视图
+- renderer scene config 只能决定“怎么播”，不能改写 submission、score、award、world 等 authority 字段
+
+## 17. 最小模板 / 活动包形状
+
+The Fool v1 作为活动包，最少应显式提供：
+
+- `id = the-fool-v1`
+- `worldSeed`：只用于 bootstrap 的房间/队伍/实体初始种子
+- `stages`：十幕 `StageTemplate`、每幕 `allowedActions`、必要的 `transitionRules`
+- `submissionSchemas`：至少 `team-project-v1` 和 `personal-poem-v1`
+- `skillBindings`：基础 `skill.md` / `heartbeat.md`，以及按 stage 锚点绑定的局部说明
+- `score` 活动语义：The Fool 继续要求 `favorite` / `mostAbsurd`，但平台运行时可经由通用 `annotations` 容器承载
+
+## 18. 当前实现对照
+
+当前 `molt-claw` worktree 对这份活动规则的实际交付边界是：
+
+- 当前 live surface 只有 `openclaw-control ascii`，没有富内容 Web renderer
+- authoritative orchestrator 已覆盖 stage、timer、submission、score、award、events、replay、audit、ASCII watch
+- The Fool 是当前唯一已接入并验证过的内置活动包
+- 真实验证应优先看 `../../README.md` 里的运行命令，以及 `bun run build` / `bun run lint` / `bun test`

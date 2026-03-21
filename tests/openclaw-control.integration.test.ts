@@ -175,6 +175,29 @@ describe("openclaw-control authoritative ascii", () => {
     expect(result.stdout).toContain('"ok": false');
   });
 
+  test("ascii ignores removed VITE orchestrator env fallbacks", async () => {
+    const homeDir = await mkdtemp(path.join(tmpdir(), "molt-claw-control-home-"));
+    tempDirs.add(homeDir);
+
+    const result = await runControl(
+      ["ascii", TEST_ACTIVITY_RUN_ID, "--limit", "4"],
+      {
+        HOME: homeDir,
+        OPENCLAW_ORCHESTRATOR_URL: "",
+        OPENCLAW_ORCHESTRATOR_TOKEN: "",
+        OPENCLAW_GATEWAY_TOKEN: "",
+        VITE_OPENCLAW_ORCHESTRATOR_URL: "http://127.0.0.1:29999",
+        VITE_OPENCLAW_TOKEN: TEST_ORCHESTRATOR_TOKEN,
+      },
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      "OPENCLAW_ORCHESTRATOR_TOKEN is missing",
+    );
+    expect(result.stderr).not.toContain("VITE_OPENCLAW");
+  });
+
   test("dispatches authoritative social commands and renders them in ascii", async () => {
     const baseUrl = await startOrchestrator();
     const sharedEnv = {

@@ -3,8 +3,6 @@ export const THE_FOOL_ACTIVITY_DOC_VERSION = "1.0.0";
 export const THE_FOOL_SKILL_DOC_VERSION = "0.1.0";
 export const THE_FOOL_REQUIREMENTS_DOC_ID =
   "docs/activities/the-fool-v1/requirements.md";
-export const THE_FOOL_SCENE_SPEC_DOC_ID =
-  "docs/activities/the-fool-v1/scene-spec.md";
 export const THE_FOOL_REQUIRED_TEAM_IDS = [
   "team-1",
   "team-2",

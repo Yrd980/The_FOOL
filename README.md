@@ -2,7 +2,7 @@
 
 Backend-first OpenClaw local platform worktree.
 
-\`molt-claw\` no longer ships the old rich \`/show\` and \`/control\` experience. The browser has been reduced to a small read-only status shell, while the real product surface is now:
+\`molt-claw\` no longer ships the old rich \`/show\` and \`/control\` experience. This worktree now exposes only backend and terminal-facing surfaces:
 
 - \`scripts/openclaw-orchestrator.ts\`: local authoritative backend
 - \`scripts/openclaw-control.ts\`: operator CLI
@@ -14,8 +14,7 @@ Formal truth still lives in \`docs/*\`; this repo is an implementation of those 
 
 ## Documentation
 
-- [docs/README.md](./docs/README.md): doc entrypoint
-- [docs/reference-implementations/molt-claw.md](./docs/reference-implementations/molt-claw.md): current implementation snapshot
+- [docs/README.md](./docs/README.md): formal doc entrypoint
 
 Public operational handoff files remain under \`public/\`:
 
@@ -28,8 +27,7 @@ Public operational handoff files remain under \`public/\`:
 This worktree is now intentionally split into:
 
 - Generic backend/runtime code in \`src/openclaw/platform/*\`
-- Generic gateway/query consumers in \`src/openclaw/gateway/*\`, \`src/openclaw/useGatewayOverview.ts\`, and \`src/openclaw/control.ts\`
-- Browser overview assembly split between the thin hook \`src/openclaw/useGatewayOverview.ts\` and pure helpers in \`src/openclaw/overview/runtime.ts\`
+- Generic gateway/query types plus CLI/orchestrator URL helpers in \`src/openclaw/gateway/*\`, \`src/openclaw/control.ts\`, and \`src/openclaw/orchestratorQueryClient.ts\`
 - Orchestrator query / transport / audit / snapshot / command execution split under \`scripts/orchestrator/*\` and \`scripts/orchestrator/commands/*\`
 - Terminal ASCII watch assembly split into \`src/openclaw/asciiOverview.ts\` plus authoritative orchestrator queries in \`src/openclaw/orchestratorQueryClient.ts\`
 - Explicit local bootstrap configuration in \`src/openclaw/localPlatformConfig.ts\`
@@ -94,6 +92,12 @@ OPENCLAW_ORCHESTRATOR_TOKEN=<local-token> \
 bun run openclaw:control -- ascii activity-run-01 --limit 20 --watch 0.5
 ~~~
 
+Current config boundary:
+
+- runtime/debug entrypoints in this worktree only recognize \`OPENCLAW_*\` env names
+- old browser/Vite-era \`VITE_OPENCLAW_*\` fallbacks are no longer supported here
+- if a future renderer is rebuilt, it should live as a separate consumer of the same authority/query contracts
+
 ## Local Bootstrap
 
 Local startup defaults now live in \`src/openclaw/localPlatformConfig.ts\`.
@@ -118,14 +122,12 @@ OPENCLAW_ACTIVITY_TEMPLATE_ID=<template-id>
 
 If the configured template is not registered, the orchestrator now fails immediately instead of silently borrowing a hidden reference activity.
 
-## Browser Shell
+## Current Limits
 
-The browser intentionally does less now:
+The current worktree is intentionally small and backend-first:
 
-- reports gateway connectivity
-- reports authoritative query health
-- reports current activity/template/stage/timer
-- reports authority world summaries and recent audit activity
-- points operators back to CLI/docs
-
-It does not own stage composition, scene presets, director workflows, or activity-specific UI copy anymore.
+- `scripts/openclaw-orchestrator.ts` is still a single-process local authority, not a full platform deployment
+- only The Fool is wired as a built-in activity package today
+- the live surface is CLI + ASCII only; any future renderer should be a separate consumer of the same authority/query contracts
+- audience/viewer-side native input flows and aggregate projections such as `audience_heat` / `bet_heat` still need more authority-side work
+- when checking behavior, prefer real `/api/orchestrator/*` queries and `openclaw-control ascii` over documentation assumptions

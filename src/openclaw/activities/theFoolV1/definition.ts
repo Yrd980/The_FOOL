@@ -8,7 +8,6 @@ import {
   THE_FOOL_ACTIVITY_DOC_VERSION,
   THE_FOOL_REQUIRED_TEAM_IDS,
   THE_FOOL_REQUIREMENTS_DOC_ID,
-  THE_FOOL_SCENE_SPEC_DOC_ID,
   THE_FOOL_SKILL_DOC_VERSION,
 } from "./constants";
 
@@ -205,7 +204,7 @@ export const theFoolSkillBindings: SkillBinding[] = [
   ...theFoolStageTemplates.map((stageTemplate) => ({
     role: "host",
     stageId: stageTemplate.id,
-    docId: `${THE_FOOL_SCENE_SPEC_DOC_ID}#${stageTemplate.id}`,
+    docId: `${THE_FOOL_REQUIREMENTS_DOC_ID}#${stageTemplate.id}`,
     version: THE_FOOL_ACTIVITY_DOC_VERSION,
   })),
   {

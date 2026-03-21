@@ -19,9 +19,6 @@ export type { CommandEnvelope };
 
 const DIRECT_GATEWAY_URL = "ws://127.0.0.1:18789";
 export const DEFAULT_ORCHESTRATOR_HTTP_URL = "http://127.0.0.1:18791";
-const LOCAL_PROXY_HOSTS = new Set(["localhost", "127.0.0.1"]);
-const LOCAL_PROXY_PATH = "/ws";
-const LOCAL_PROXY_PORTS = new Set(["4173", "5173"]);
 const DEFAULT_COMMAND_PARAM_KEY = "command";
 const KNOWN_ORCHESTRATION_EVENT_PREFIXES = [
   "activity.",
@@ -39,8 +36,8 @@ const KNOWN_ORCHESTRATION_EVENT_PREFIXES = [
   "bet.",
 ] as const;
 
-export const GATEWAY_CONNECT_CLIENT_ID = "gateway-client";
-export const GATEWAY_CONNECT_CLIENT_MODE = "ui";
+export const GATEWAY_CONNECT_CLIENT_ID = "openclaw-control";
+export const GATEWAY_CONNECT_CLIENT_MODE = "operator";
 export const GATEWAY_OPERATOR_READ_SCOPE = "operator.read";
 
 export type ControlActorRole = PlatformActorRole;
@@ -487,31 +484,21 @@ export const getRoomLabel = (
 export const normalizeControlGatewayUrl = (
   configuredUrl: string | undefined,
 ): string => {
-  const raw = configuredUrl?.trim();
-  if (!raw) {
+  const normalized = normalizeControlConfigValue(configuredUrl);
+  if (!normalized) {
     return DIRECT_GATEWAY_URL;
   }
 
   try {
-    const parsed = new URL(raw);
-    const isLocalProxyUrl =
-      (parsed.protocol === "ws:" || parsed.protocol === "wss:") &&
-      LOCAL_PROXY_HOSTS.has(parsed.hostname) &&
-      parsed.pathname === LOCAL_PROXY_PATH &&
-      LOCAL_PROXY_PORTS.has(parsed.port);
-
-    if (isLocalProxyUrl) {
-      return DIRECT_GATEWAY_URL;
-    }
-
+    const parsed = new URL(normalized);
     if ((parsed.protocol === "ws:" || parsed.protocol === "wss:") && parsed.pathname === "/") {
       return `${parsed.protocol}//${parsed.host}`;
     }
   } catch {
-    return raw;
+    return normalized;
   }
 
-  return raw;
+  return normalized;
 };
 
 export const normalizeOrchestratorBaseUrl = (

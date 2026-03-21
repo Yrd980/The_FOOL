@@ -105,7 +105,6 @@ const port = Number.parseInt(
 );
 const authToken =
   process.env.OPENCLAW_ORCHESTRATOR_TOKEN?.trim() ||
-  process.env.VITE_OPENCLAW_TOKEN?.trim() ||
   "molt-claw-local-dev";
 
 ensureActivityPackagesRegistered();

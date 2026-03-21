@@ -310,18 +310,13 @@ Dangerous orchestrator mutations require --confirm <challenge> when they are act
 
 const resolveGatewayToken = (): string | undefined =>
   resolveConfigValue("OPENCLAW_GATEWAY_TOKEN") ??
-  resolveConfigValue("VITE_OPENCLAW_TOKEN") ??
   openClawGatewayToken;
 
 const resolveOrchestratorBaseUrl = (): string =>
-  normalizeOrchestratorBaseUrl(
-    resolveConfigValue("OPENCLAW_ORCHESTRATOR_URL") ??
-      resolveConfigValue("VITE_OPENCLAW_ORCHESTRATOR_URL"),
-  );
+  normalizeOrchestratorBaseUrl(resolveConfigValue("OPENCLAW_ORCHESTRATOR_URL"));
 
 const resolveOrchestratorToken = (): string | undefined =>
   resolveConfigValue("OPENCLAW_ORCHESTRATOR_TOKEN") ??
-  resolveConfigValue("VITE_OPENCLAW_TOKEN") ??
   resolveConfigValue("OPENCLAW_GATEWAY_TOKEN") ??
   openClawGatewayToken;
 
@@ -932,21 +927,16 @@ const dispatchOrPreview = async ({
   envelope: CommandEnvelope;
   summary: string;
 }): Promise<void> => {
-  const configuredOrchestratorUrl =
-    resolveConfigValue("OPENCLAW_ORCHESTRATOR_URL") ??
-    resolveConfigValue("VITE_OPENCLAW_ORCHESTRATOR_URL");
+  const configuredOrchestratorUrl = resolveConfigValue("OPENCLAW_ORCHESTRATOR_URL");
   const orchestratorBaseUrl = resolveOrchestratorBaseUrl();
   const hasLocalOrchestratorUrl = Boolean(
     normalizeControlConfigValue(configuredOrchestratorUrl),
   );
   const dispatchMethod = normalizeControlDispatchMethod(
-    resolveConfigValue("OPENCLAW_COMMAND_METHOD") ??
-      resolveConfigValue("VITE_OPENCLAW_COMMAND_METHOD"),
+    resolveConfigValue("OPENCLAW_COMMAND_METHOD"),
   );
   const commandParamKey = resolveConfigValue("OPENCLAW_COMMAND_PARAM_KEY");
-  const gatewayUrl =
-    resolveConfigValue("OPENCLAW_GATEWAY_URL") ??
-    resolveConfigValue("VITE_OPENCLAW_URL");
+  const gatewayUrl = resolveConfigValue("OPENCLAW_GATEWAY_URL");
   const token = resolveGatewayToken();
 
   console.log(`[openclaw-control] ${summary}`);
@@ -1054,7 +1044,7 @@ const dispatchOrPreview = async ({
 
   if (!token) {
     fail(
-      "Missing OpenClaw token. Set OPENCLAW_GATEWAY_TOKEN / VITE_OPENCLAW_TOKEN, or make sure ~/.openclaw/openclaw.json contains gateway.auth.token.",
+      "Missing OpenClaw token. Set OPENCLAW_GATEWAY_TOKEN, or make sure ~/.openclaw/openclaw.json contains gateway.auth.token.",
     );
   }
 
@@ -1142,7 +1132,7 @@ const resolveLocalOrchestratorAuth = (): {
   const resolvedToken = resolveOrchestratorToken();
   if (!resolvedToken) {
     return fail(
-      "Missing local orchestrator token. Set OPENCLAW_ORCHESTRATOR_TOKEN or VITE_OPENCLAW_TOKEN.",
+      "Missing local orchestrator token. Set OPENCLAW_ORCHESTRATOR_TOKEN or OPENCLAW_GATEWAY_TOKEN.",
     );
   }
 
@@ -1297,9 +1287,7 @@ const resolveAgentCommandActivityContext = async ({
     };
   }
 
-  const configuredOrchestratorUrl =
-    resolveConfigValue("OPENCLAW_ORCHESTRATOR_URL") ??
-    resolveConfigValue("VITE_OPENCLAW_ORCHESTRATOR_URL");
+  const configuredOrchestratorUrl = resolveConfigValue("OPENCLAW_ORCHESTRATOR_URL");
   if (!normalizeControlConfigValue(configuredOrchestratorUrl)) {
     return {
       activityPackageId: null,
@@ -1833,14 +1821,11 @@ const resolveActorId = (): string =>
   resolveConfigValue("OPENCLAW_COMMAND_ACTOR_ID") ?? "molt-claw";
 
 const runProbe = async (): Promise<never> => {
-  const gatewayUrl =
-    resolveConfigValue("OPENCLAW_GATEWAY_URL") ??
-    resolveConfigValue("VITE_OPENCLAW_URL");
+  const gatewayUrl = resolveConfigValue("OPENCLAW_GATEWAY_URL");
   const resolvedToken = resolveGatewayToken();
   const activityRunId = resolveLocalPlatformBootstrapConfig().defaultActivityRunId;
   const dispatchMethod = normalizeControlDispatchMethod(
-    resolveConfigValue("OPENCLAW_COMMAND_METHOD") ??
-      resolveConfigValue("VITE_OPENCLAW_COMMAND_METHOD"),
+    resolveConfigValue("OPENCLAW_COMMAND_METHOD"),
   );
   const gatewayProbe = resolvedToken
     ? await probeGatewaySession({
@@ -1870,7 +1855,7 @@ const runProbe = async (): Promise<never> => {
         hello: null,
         rawStatus: null,
         note:
-          "Missing OpenClaw gateway token. Set OPENCLAW_GATEWAY_TOKEN / VITE_OPENCLAW_TOKEN, or make sure ~/.openclaw/openclaw.json contains gateway.auth.token.",
+          "Missing OpenClaw gateway token. Set OPENCLAW_GATEWAY_TOKEN, or make sure ~/.openclaw/openclaw.json contains gateway.auth.token.",
       };
   const contract = summarizeGatewayOrchestrationContract({
     capabilities: {
@@ -1994,13 +1979,11 @@ if (normalizedCommand === "move" || normalizedCommand === "say") {
   const token = resolveGatewayToken();
   if (!token) {
     fail(
-      "Missing OpenClaw token. Set OPENCLAW_GATEWAY_TOKEN / VITE_OPENCLAW_TOKEN, or make sure ~/.openclaw/openclaw.json contains gateway.auth.token.",
+      "Missing OpenClaw token. Set OPENCLAW_GATEWAY_TOKEN, or make sure ~/.openclaw/openclaw.json contains gateway.auth.token.",
     );
   }
 
-  const gatewayUrl =
-    resolveConfigValue("OPENCLAW_GATEWAY_URL") ??
-    resolveConfigValue("VITE_OPENCLAW_URL");
+  const gatewayUrl = resolveConfigValue("OPENCLAW_GATEWAY_URL");
   const roomId = resolveControlRoomId(
     room,
     activityContext.activityPackageId ?? undefined,

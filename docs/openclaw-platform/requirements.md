@@ -6,10 +6,8 @@
 
 如果你想看：
 
-- 平台怎么实现这些 requirements：读 [design.md](./design.md)
-- 某个活动如何落到平台上：读 [../activities/README.md](../activities/README.md)
-- 当前实现做到了哪：读 [../reference-implementations/molt-claw.md](../reference-implementations/molt-claw.md)
-- 推荐推进顺序：读 [../roadmaps/platform-first-rollout.md](../roadmaps/platform-first-rollout.md)
+- 某个活动如何落到平台上：读 [../activities/the-fool-v1/requirements.md](../activities/the-fool-v1/requirements.md)
+- 当前 worktree 如何运行与验证：读 [../README.md](../README.md)
 
 ## 1. 产品定义
 
@@ -111,6 +109,18 @@ Skill 文档只是给 Agent 的参与说明。平台不能依赖 Agent 自觉遵
 - 争议核查
 - 结果重算
 - 下游视图派生
+
+### 3.5 最小设计边界
+
+为避免再维护一份独立 `design.md`，这里直接固定平台实现必须保持的最小设计边界：
+
+- 平台内核层负责身份、权限、世界模型、活动状态、计时器、事件存储
+- 活动编排层负责 `ActivityTemplate` / `ActivityRun` / `StageTemplate` / `TransitionRule` / `SubmissionSchema` / `ScoringRule`
+- Agent 协议层负责命令、事件、 Skill 绑定与文档版本冻结
+- 渲染/客户端层只负责拉 snapshot、收事件、发命令与渲染，不持有流程真相
+- 运行时必须满足“命令 -> 事件 -> 投影”闭环；`currentStageId`、timer、lock、submission、score、award、world 都只从 authority projection 读取
+- `worldSeed` / activity bootstrap seed 只参与初始化；运行中的 `world` 必须来自投影，不得回退到模板静态数据
+- 当 `templateId` 或活动包不可用时，平台应返回 unavailable / pending，而不是静默回退到默认活动
 
 ## 4. 角色与权限模型
 
@@ -856,10 +866,22 @@ export interface PlatformEvent {
 
 ## 19. 当前优先级建议
 
-如果只能先补一章，优先补“活动编排模型”。
+如果只能继续补一批能力，建议按下面顺序收敛：
+
+1. 活动编排与切幕闭环
+2. 计时器 / submission lock / score / award 的 authority 写路径
+3. snapshot + events + replay + audit 的统一读路径
+4. audience / viewer 侧输入与聚合投影
 
 原因：
 
-- 它直接决定平台是不是活动编排平台
-- 它能把 README 式剧情说明转成正式规则
-- 它是 Skill 文档、客户端渲染、提交评分、调度计时的共同上游
+- 前三项决定平台是不是“真的在跑活动”，而不是只是把活动文案挂在 README 里
+- 它们也是当前 CLI + ASCII watch 能否持续成立的共同前提
+- audience / viewer 能力重要，但应该建立在 authority runtime 已稳定的前提上
+
+当前风险信号：
+
+- 如果当前 stage、timer、submission lock、score summary 仍需要 renderer 自己补状态，说明平台闭环还不够
+- 如果某个活动包缺失就静默回退到默认活动，说明 bootstrap 与 runtime truth 仍然混在一起
+- 如果 query / replay / audit 读到的对象不能和命令回执互相对上，说明 authority data path 还不完整
+- 如果只能通过页面假设判断运行状态，而不能通过 `/api/orchestrator/*` 或 ASCII watch 直接确认，说明实现还不够 platform-first
