@@ -11,6 +11,7 @@ import {
   GATEWAY_OPERATOR_READ_SCOPE,
   buildCommandEnvelope,
   buildCommandConfirmation,
+  buildFinishActivityEnvelope,
   buildGrantAwardEnvelope,
   buildGatewayAgentCallArgs,
   buildGatewayDispatchCommandArgs,
@@ -34,6 +35,7 @@ import {
   buildTalkEnvelope,
   buildTransitionStageEnvelope,
   buildUpdateSubmissionEnvelope,
+  buildVoteEnvelope,
   normalizeControlConfigValue,
   normalizeControlDispatchMethod,
   normalizeControlGatewayUrl,
@@ -71,7 +73,9 @@ type CommandName =
   | "broadcast"
   | "reaction"
   | "bet"
+  | "vote"
   | "stage"
+  | "finish"
   | "start-timer"
   | "open-submission"
   | "submit"
@@ -267,7 +271,9 @@ const USAGE = `Usage:
   bun run openclaw:control -- broadcast <activity-run-id> <message...> [--room-id <room-id>] [--team-id <team-id>] [--audience-scope <room|team|global>]
   bun run openclaw:control -- reaction <activity-run-id> <reaction> [note...] [--room-id <room-id>] [--target-entity-id <entity-id>] [--target-team-id <team-id>]
   bun run openclaw:control -- bet <activity-run-id> <team|entity|submission> <target-id> [--amount <n>] [--odds <n>] [--stance <text>] [--note <text>] [--room-id <room-id>]
+  bun run openclaw:control -- vote <activity-run-id> <team|entity|submission> <target-id> [--value <n>] [--note <text>] [--room-id <room-id>]
   bun run openclaw:control -- stage <activity-run-id> <target-stage-id>
+  bun run openclaw:control -- finish <activity-run-id> <team|entity|submission|push> [target-id] [--note <text>]
   bun run openclaw:control -- start-timer <activity-run-id> <stage-id> <duration-sec>
   bun run openclaw:control -- open-submission <activity-run-id> <submission-id>
   bun run openclaw:control -- submit <activity-run-id> <submission-id> <payload-json>
@@ -303,6 +309,7 @@ Optional env for command dispatch:
 
 Dangerous orchestrator mutations require --confirm <challenge> when they are actually dispatched:
   stage -> --confirm "PROMOTE <target-stage-id>"
+  finish -> --confirm "FINISH <activity-run-id> <target-type>:<target-id>" or --confirm "FINISH <activity-run-id> push"
   lock-submission -> --confirm "LOCK <submission-id>"
   grant-award -> --confirm "AWARD <award-id> <entity-id>"
   move-entity -> --confirm "MOVE <entity-id> <to-room-id>"
@@ -1817,6 +1824,89 @@ const parseBetArgs = (
   };
 };
 
+const parseVoteArgs = (
+  rawArgs: string[],
+): {
+  activityRunId: string;
+  targetType: "team" | "entity" | "submission";
+  targetId: string;
+  roomId?: string;
+  value?: number;
+  note?: string;
+} => {
+  const { positional, options } = parseLongOptions(rawArgs);
+  const [activityRunId, targetTypeInput, targetId] = positional;
+  if (!activityRunId || !targetTypeInput || !targetId) {
+    fail(USAGE);
+  }
+
+  const targetType = normalizeControlConfigValue(targetTypeInput);
+  if (
+    targetType !== "team" &&
+    targetType !== "entity" &&
+    targetType !== "submission"
+  ) {
+    fail("vote requires <team|entity|submission> as the target type.");
+  }
+
+  return {
+    activityRunId,
+    targetType: targetType as "team" | "entity" | "submission",
+    targetId,
+    roomId: normalizeControlConfigValue(options["room-id"]),
+    value: readOptionInteger(options, "value"),
+    note: normalizeControlConfigValue(options.note),
+  };
+};
+
+const parseFinishArgs = (
+  rawArgs: string[],
+): {
+  activityRunId: string;
+  settlementMode: "winner" | "push";
+  winningTargetType?: "team" | "entity" | "submission";
+  winningTargetId?: string;
+  note?: string;
+  confirmation?: CommandEnvelope["confirmation"];
+} => {
+  const { positional, options } = parseLongOptions(rawArgs);
+  const [activityRunId, targetTypeInput, targetId] = positional;
+  if (!activityRunId || !targetTypeInput) {
+    fail(USAGE);
+  }
+
+  const normalizedTargetType = normalizeControlConfigValue(targetTypeInput);
+  if (normalizedTargetType === "push") {
+    return {
+      activityRunId,
+      settlementMode: "push",
+      note: normalizeControlConfigValue(options.note),
+      confirmation: readCommandConfirmationOption(options),
+    };
+  }
+
+  if (
+    normalizedTargetType !== "team" &&
+    normalizedTargetType !== "entity" &&
+    normalizedTargetType !== "submission"
+  ) {
+    fail("finish requires <team|entity|submission|push> as the settlement target.");
+  }
+
+  if (!targetId) {
+    fail("finish requires a target id unless the settlement mode is push.");
+  }
+
+  return {
+    activityRunId,
+    settlementMode: "winner",
+    winningTargetType: normalizedTargetType as "team" | "entity" | "submission",
+    winningTargetId: targetId,
+    note: normalizeControlConfigValue(options.note),
+    confirmation: readCommandConfirmationOption(options),
+  };
+};
+
 const resolveActorId = (): string =>
   resolveConfigValue("OPENCLAW_COMMAND_ACTOR_ID") ?? "molt-claw";
 
@@ -2085,6 +2175,24 @@ if (normalizedCommand === "bet") {
   });
 }
 
+if (normalizedCommand === "vote") {
+  const vote = parseVoteArgs(args);
+  await dispatchOrPreview({
+    envelope: buildVoteEnvelope({
+      actorId: resolveActorId(),
+      actorRole: resolveActorRole(),
+      activityRunId: vote.activityRunId,
+      targetType: vote.targetType,
+      targetId: vote.targetId,
+      roomId: vote.roomId,
+      value: vote.value,
+      note: vote.note,
+      idempotencyKey: `vote-${vote.activityRunId}-${vote.targetType}-${vote.targetId}-${Date.now()}`,
+    }),
+    summary: `vote ${vote.activityRunId} / ${vote.targetType}:${vote.targetId}`,
+  });
+}
+
 if (normalizedCommand === "stage") {
   const { positional, options } = parseLongOptions(args);
   const [activityRunId, targetStageId] = positional;
@@ -2101,6 +2209,26 @@ if (normalizedCommand === "stage") {
       confirmation: readCommandConfirmationOption(options),
     }),
     summary: `transition_stage ${activityRunId} -> ${targetStageId}`,
+  });
+}
+
+if (normalizedCommand === "finish") {
+  const finish = parseFinishArgs(args);
+  await dispatchOrPreview({
+    envelope: buildFinishActivityEnvelope({
+      actorId: resolveActorId(),
+      activityRunId: finish.activityRunId,
+      settlementMode: finish.settlementMode,
+      winningTargetType: finish.winningTargetType,
+      winningTargetId: finish.winningTargetId,
+      note: finish.note,
+      idempotencyKey: `finish-${finish.activityRunId}-${Date.now()}`,
+      confirmation: finish.confirmation,
+    }),
+    summary:
+      finish.settlementMode === "push"
+        ? `finish ${finish.activityRunId} / push`
+        : `finish ${finish.activityRunId} / ${finish.winningTargetType}:${finish.winningTargetId}`,
   });
 }
 

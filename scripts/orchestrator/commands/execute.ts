@@ -18,8 +18,10 @@ import {
   handleBroadcastCommand,
   handleReactionCommand,
   handleTalkCommand,
+  handleVoteCommand,
 } from "./social";
 import {
+  handleFinishActivityCommand,
   handleStartTimerCommand,
   handleTransitionStageCommand,
 } from "./stageTimer";
@@ -93,7 +95,8 @@ const requireCommandRole = (
   if (
     command.type === "talk" ||
     command.type === "reaction" ||
-    command.type === "bet"
+    command.type === "bet" ||
+    command.type === "vote"
   ) {
     context.requireParticipantRole(command, handledAt);
     return;
@@ -164,6 +167,10 @@ const dispatchCommand = ({
     return handleBetCommand(command, handledAt, commandHandlerContext);
   }
 
+  if (command.type === "vote") {
+    return handleVoteCommand(command, handledAt, commandHandlerContext);
+  }
+
   if (command.type === "grant_award") {
     return handleGrantAwardCommand(command, handledAt, commandHandlerContext);
   }
@@ -178,6 +185,10 @@ const dispatchCommand = ({
 
   if (command.type === "assign_team") {
     return handleAssignTeamCommand(command, handledAt, commandHandlerContext);
+  }
+
+  if (command.type === "finish_activity") {
+    return handleFinishActivityCommand(command, handledAt, commandHandlerContext);
   }
 
   throw context.createCommandError(
@@ -200,6 +211,18 @@ export const executeFreshCommand = (
   requireCommandRole(command, handledAt, context);
 
   const commandHandlerContext = context.createCommandHandlerContext(command);
+  if (
+    commandHandlerContext.getProjection().activityRun.status === "finished" &&
+    command.type !== "finish_activity"
+  ) {
+    throw context.createCommandError(
+      command,
+      handledAt,
+      "ACTIVITY_FINISHED",
+      "Activity is already finished.",
+      409,
+    );
+  }
   const result = dispatchCommand({
     command,
     handledAt,

@@ -9,14 +9,18 @@ import {
   buildBetEnvelope,
   buildBroadcastEnvelope,
   buildCommandConfirmation,
+  buildFinishActivityConfirmationChallenge,
+  buildFinishActivityEnvelope,
   buildLockSubmissionEnvelope,
   buildOpenSubmissionEnvelope,
   buildReactionEnvelope,
+  buildStartTimerEnvelope,
   buildSubmitEnvelope,
   buildSubmitScoreEnvelope,
   buildTalkEnvelope,
   buildTransitionStageConfirmationChallenge,
   buildTransitionStageEnvelope,
+  buildVoteEnvelope,
 } from "../src/openclaw/control";
 import type { CommandEnvelope, CommandReceipt } from "../src/openclaw/platform/contracts";
 
@@ -64,7 +68,9 @@ interface SnapshotResponse {
   snapshot: {
     snapshotId?: string;
     activityRun: {
+      status: string;
       currentStageId: string | null;
+      endedAt?: number;
     };
     world: {
       teams: Array<{
@@ -81,6 +87,37 @@ interface SnapshotResponse {
       teamId?: string;
       locked: boolean;
     }>;
+    social: {
+      audienceHeat: Array<{
+        scope: string;
+        targetId: string;
+        value: number;
+      }>;
+      betHeat: Array<{
+        scope: string;
+        targetId: string;
+        value: number;
+      }>;
+      reactionTotals: Array<{
+        scope: string;
+        targetId: string;
+        total: number;
+        reactions: Record<string, number>;
+      }>;
+      voteSummary: Array<{
+        targetType: string;
+        targetId: string;
+        count: number;
+        totalValue: number;
+      }>;
+      betSettlements: Array<{
+        targetType: string;
+        targetId: string;
+        result: string;
+        winningTargetType?: string;
+        winningTargetId?: string;
+      }>;
+    };
   };
 }
 
@@ -585,7 +622,7 @@ describe("openclaw orchestrator command chain", () => {
     expect(events.events.filter((event) => event.type === "entity.moved")).toHaveLength(2);
   });
 
-  test("emits authoritative social events for talk, reaction, bet, and broadcast", async () => {
+  test("emits authoritative social events plus social snapshot aggregates for talk, reaction, bet, vote, and broadcast", async () => {
     const harness = await startHarness();
 
     await expectAcceptedCommand(
@@ -620,6 +657,19 @@ describe("openclaw orchestrator command chain", () => {
       }),
     );
 
+    await expectAcceptedCommand(
+      harness,
+      buildVoteEnvelope({
+        actorId: "viewer-01",
+        actorRole: "viewer",
+        activityRunId: TEST_ACTIVITY_RUN_ID,
+        targetType: "team",
+        targetId: "team-1",
+        value: 2,
+        note: "crowd favorite",
+      }),
+    );
+
     await transitionStage(harness, "act-3-assignment");
 
     await expectAcceptedCommand(
@@ -638,6 +688,7 @@ describe("openclaw orchestrator command chain", () => {
         "agent.talked",
         "reaction.added",
         "bet.placed",
+        "vote.cast",
         "broadcast.sent",
       ]),
     );
@@ -662,6 +713,122 @@ describe("openclaw orchestrator command chain", () => {
       audienceScope: "global",
       stageId: "act-3-assignment",
     });
+
+    const snapshot = await harness.snapshot();
+    expect(snapshot.snapshot.social.reactionTotals).toEqual([
+      expect.objectContaining({
+        scope: "entity",
+        targetId: "contestant-01",
+        total: 1,
+      }),
+    ]);
+    expect(snapshot.snapshot.social.betHeat).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "team",
+          targetId: "team-1",
+          value: 3,
+        }),
+      ]),
+    );
+    expect(snapshot.snapshot.social.voteSummary).toEqual([
+      expect.objectContaining({
+        targetType: "team",
+        targetId: "team-1",
+        count: 1,
+        totalValue: 2,
+      }),
+    ]);
+    expect(snapshot.snapshot.social.audienceHeat).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "global",
+          targetId: "global",
+          value: 1,
+        }),
+      ]),
+    );
+  });
+
+  test("finishes the activity, settles bets, and rejects further mutations", async () => {
+    const harness = await startHarness();
+
+    await expectAcceptedCommand(
+      harness,
+      buildStartTimerEnvelope({
+        actorId: TEST_HOST_ACTOR,
+        activityRunId: TEST_ACTIVITY_RUN_ID,
+        stageId: "act-1-intro",
+        durationSec: 60,
+      }),
+    );
+
+    await expectAcceptedCommand(
+      harness,
+      buildBetEnvelope({
+        actorId: "viewer-02",
+        actorRole: "viewer",
+        activityRunId: TEST_ACTIVITY_RUN_ID,
+        targetType: "team",
+        targetId: "team-1",
+        amount: 5,
+        odds: 2,
+        stance: "all-in",
+      }),
+    );
+
+    const finishReceipt = await expectAcceptedCommand(
+      harness,
+      buildFinishActivityEnvelope({
+        actorId: TEST_HOST_ACTOR,
+        activityRunId: TEST_ACTIVITY_RUN_ID,
+        winningTargetType: "team",
+        winningTargetId: "team-1",
+        note: "authoritative finale",
+        confirmation: buildCommandConfirmation(
+          buildFinishActivityConfirmationChallenge({
+            activityRunId: TEST_ACTIVITY_RUN_ID,
+            winningTargetType: "team",
+            winningTargetId: "team-1",
+          }),
+          Date.now(),
+        ),
+      }),
+    );
+
+    expect(finishReceipt.eventIds.length).toBeGreaterThanOrEqual(2);
+
+    const snapshot = await harness.snapshot();
+    expect(snapshot.snapshot.activityRun.status).toBe("finished");
+    expect(snapshot.snapshot.activityRun.endedAt).toBeDefined();
+    expect(snapshot.snapshot.social.betSettlements).toEqual([
+      expect.objectContaining({
+        targetType: "team",
+        targetId: "team-1",
+        result: "won",
+        winningTargetType: "team",
+        winningTargetId: "team-1",
+      }),
+    ]);
+
+    const replay = await harness.replay(20);
+    expect(replay.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["timer.ended", "activity.finished"]),
+    );
+
+    const rejectedAfterFinish = await harness.command(
+      buildTalkEnvelope({
+        actorId: "contestant-01",
+        activityRunId: TEST_ACTIVITY_RUN_ID,
+        message: "too late",
+      }),
+    );
+    expect(rejectedAfterFinish.status).toBe(409);
+    expect(rejectedAfterFinish.body.ok).toBe(false);
+    if (rejectedAfterFinish.body.ok) {
+      throw new Error("Expected finished activity rejection.");
+    }
+    expect(rejectedAfterFinish.body.error.code).toBe("ACTIVITY_FINISHED");
   });
 
   test("auto-transitions from act-5 to act-6 only after all required team submissions lock", async () => {

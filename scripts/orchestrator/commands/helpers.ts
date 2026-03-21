@@ -96,7 +96,10 @@ export const createCommandHelpers = ({
   const buildDangerousCommandConfirmationStatus = ({
     command,
   }: {
-    command: Pick<CommandEnvelope, "type" | "payload" | "confirmation">;
+    command: Pick<
+      CommandEnvelope,
+      "type" | "payload" | "confirmation" | "activityRunId"
+    >;
   }): CommandConfirmationStatus | null => {
     const requirement = resolveDangerousCommandConfirmationRequirement(command);
     if (!requirement) {
@@ -174,6 +177,16 @@ export const createCommandHelpers = ({
     action: string;
   }): void => {
     const projection = getProjection();
+    if (projection.activityRun.status === "finished") {
+      throw createCommandError(
+        command,
+        handledAt,
+        "ACTIVITY_FINISHED",
+        "Activity is already finished.",
+        409,
+      );
+    }
+
     const currentStageId = projection.activityRun.currentStageId;
     if (!currentStageId) {
       throw createCommandError(

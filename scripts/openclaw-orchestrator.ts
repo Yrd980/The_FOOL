@@ -14,16 +14,23 @@ import {
 } from "../src/openclaw/platform/activityRegistry";
 import type {
   AwardProjection,
+  BetProjection,
+  BetSettlementItem,
   CommandConfirmationStatus,
   CommandEnvelope,
   EventCommandContext,
   EventEnvelope,
+  ReactionProjection,
   ScoreAnnotations,
   ScoreProjection,
+  SocialHeatEntry,
+  SocialSnapshot,
   SubmissionProjection,
   SubmissionVersionRecord,
   TimerProjection,
   TimerStatus,
+  TalkProjection,
+  VoteProjection,
 } from "../src/openclaw/platform/contracts";
 import { resolveLocalPlatformBootstrapConfig } from "../src/openclaw/localPlatformConfig";
 import {
@@ -137,6 +144,7 @@ const supportedRpcMethods = [
 ];
 const supportedEvents = [
   "activity.started",
+  "activity.finished",
   "stage.changed",
   "timer.started",
   "timer.paused",
@@ -153,6 +161,7 @@ const supportedEvents = [
   "broadcast.sent",
   "reaction.added",
   "bet.placed",
+  "vote.cast",
 ];
 
 const timerHandles = new Map<string, ReturnType<typeof setTimeout>>();
@@ -160,7 +169,7 @@ const clients = new Set<ServerWebSocket<WebSocketSessionData>>();
 const sessions = new Map<string, SessionProjection>();
 
 const buildSeedProjection = (now = Date.now()): ProjectionState => ({
-  version: 6,
+  version: 7,
   snapshotId: `snapshot-${now}`,
   activityRun: {
     id: localBootstrapConfig.defaultActivityRunId,
@@ -177,6 +186,18 @@ const buildSeedProjection = (now = Date.now()): ProjectionState => ({
   submissions: [],
   scores: [],
   awards: [],
+  talks: [],
+  reactions: [],
+  bets: [],
+  votes: [],
+  social: {
+    audienceHeat: [],
+    betHeat: [],
+    reactionTotals: [],
+    betSummary: [],
+    voteSummary: [],
+    betSettlements: [],
+  },
   lastSequence: 0,
 });
 
@@ -331,6 +352,319 @@ const buildScoreSummary = (
       return right.lastSubmittedAt - left.lastSubmittedAt;
     });
 
+const buildHeatKey = (
+  scope: SocialHeatEntry["scope"],
+  targetId: string,
+): string => `${scope}:${targetId}`;
+
+const recordHeat = (
+  entries: Map<string, SocialHeatEntry>,
+  scope: SocialHeatEntry["scope"],
+  targetId: string,
+  delta: number,
+  timestamp: number,
+): void => {
+  if (!Number.isFinite(delta) || delta <= 0) {
+    return;
+  }
+
+  const key = buildHeatKey(scope, targetId);
+  const existing = entries.get(key);
+  if (existing) {
+    existing.value += delta;
+    existing.lastUpdatedAt = Math.max(existing.lastUpdatedAt, timestamp);
+    return;
+  }
+
+  entries.set(key, {
+    scope,
+    targetId,
+    value: delta,
+    lastUpdatedAt: timestamp,
+  });
+};
+
+const sortHeatEntries = (entries: SocialHeatEntry[]): SocialHeatEntry[] =>
+  [...entries].sort((left, right) => {
+    if (right.value !== left.value) {
+      return right.value - left.value;
+    }
+    if (right.lastUpdatedAt !== left.lastUpdatedAt) {
+      return right.lastUpdatedAt - left.lastUpdatedAt;
+    }
+    if (left.scope !== right.scope) {
+      return left.scope.localeCompare(right.scope);
+    }
+    return left.targetId.localeCompare(right.targetId);
+  });
+
+const sortBetSettlements = (items: BetSettlementItem[]): BetSettlementItem[] =>
+  [...items].sort((left, right) => {
+    if (right.settledAt !== left.settledAt) {
+      return right.settledAt - left.settledAt;
+    }
+    return left.betId.localeCompare(right.betId);
+  });
+
+const buildSocialSnapshot = ({
+  talks,
+  reactions,
+  bets,
+  votes,
+  betSettlements = [],
+}: {
+  talks: TalkProjection[];
+  reactions: ReactionProjection[];
+  bets: BetProjection[];
+  votes: VoteProjection[];
+  betSettlements?: BetSettlementItem[];
+}): SocialSnapshot => {
+  const audienceHeat = new Map<string, SocialHeatEntry>();
+  const betHeat = new Map<string, SocialHeatEntry>();
+  const reactionTotals = new Map<
+    string,
+    SocialSnapshot["reactionTotals"][number]
+  >();
+  const betSummary = new Map<string, SocialSnapshot["betSummary"][number]>();
+  const voteSummary = new Map<string, SocialSnapshot["voteSummary"][number]>();
+
+  for (const talk of talks) {
+    if (talk.actorRole !== "viewer") {
+      continue;
+    }
+
+    recordHeat(audienceHeat, "global", "global", 1, talk.submittedAt);
+    if (talk.targetEntityId) {
+      recordHeat(
+        audienceHeat,
+        "entity",
+        talk.targetEntityId,
+        1,
+        talk.submittedAt,
+      );
+    } else if (talk.roomId) {
+      recordHeat(audienceHeat, "room", talk.roomId, 1, talk.submittedAt);
+    }
+  }
+
+  for (const reaction of reactions) {
+    const scope = reaction.targetEntityId
+      ? "entity"
+      : reaction.targetTeamId
+        ? "team"
+        : reaction.roomId
+          ? "room"
+          : "global";
+    const targetId =
+      reaction.targetEntityId ??
+      reaction.targetTeamId ??
+      reaction.roomId ??
+      "global";
+    const key = buildHeatKey(scope, targetId);
+    const existing = reactionTotals.get(key);
+    if (existing) {
+      existing.total += 1;
+      existing.reactions[reaction.reaction] =
+        (existing.reactions[reaction.reaction] ?? 0) + 1;
+      existing.lastUpdatedAt = Math.max(
+        existing.lastUpdatedAt,
+        reaction.submittedAt,
+      );
+    } else {
+      reactionTotals.set(key, {
+        scope,
+        targetId,
+        total: 1,
+        reactions: {
+          [reaction.reaction]: 1,
+        },
+        lastUpdatedAt: reaction.submittedAt,
+      });
+    }
+
+    if (reaction.actorRole === "viewer") {
+      recordHeat(audienceHeat, "global", "global", 1, reaction.submittedAt);
+      recordHeat(audienceHeat, scope, targetId, 1, reaction.submittedAt);
+    }
+  }
+
+  for (const bet of bets) {
+    const weight = bet.amount ?? 1;
+    recordHeat(betHeat, "global", "global", weight, bet.placedAt);
+    recordHeat(betHeat, bet.targetType, bet.targetId, weight, bet.placedAt);
+
+    const betKey = `${bet.targetType}:${bet.targetId}`;
+    const existing = betSummary.get(betKey);
+    if (existing) {
+      existing.count += 1;
+      existing.totalAmount += bet.amount ?? 0;
+      existing.lastPlacedAt = Math.max(existing.lastPlacedAt, bet.placedAt);
+    } else {
+      betSummary.set(betKey, {
+        targetType: bet.targetType,
+        targetId: bet.targetId,
+        count: 1,
+        totalAmount: bet.amount ?? 0,
+        lastPlacedAt: bet.placedAt,
+      });
+    }
+
+    if (bet.actorRole === "viewer") {
+      recordHeat(audienceHeat, "global", "global", 1, bet.placedAt);
+      recordHeat(audienceHeat, bet.targetType, bet.targetId, 1, bet.placedAt);
+    }
+  }
+
+  for (const vote of votes) {
+    const voteKey = `${vote.targetType}:${vote.targetId}`;
+    const existing = voteSummary.get(voteKey);
+    if (existing) {
+      existing.count += 1;
+      existing.totalValue += vote.value;
+      existing.averageValue = Number(
+        (existing.totalValue / existing.count).toFixed(2),
+      );
+      existing.lastSubmittedAt = Math.max(
+        existing.lastSubmittedAt,
+        vote.submittedAt,
+      );
+    } else {
+      voteSummary.set(voteKey, {
+        targetType: vote.targetType,
+        targetId: vote.targetId,
+        count: 1,
+        totalValue: vote.value,
+        averageValue: vote.value,
+        lastSubmittedAt: vote.submittedAt,
+      });
+    }
+
+    if (vote.voterRole === "viewer") {
+      recordHeat(audienceHeat, "global", "global", 1, vote.submittedAt);
+      recordHeat(
+        audienceHeat,
+        vote.targetType,
+        vote.targetId,
+        1,
+        vote.submittedAt,
+      );
+    }
+  }
+
+  return {
+    audienceHeat: sortHeatEntries([...audienceHeat.values()]),
+    betHeat: sortHeatEntries([...betHeat.values()]),
+    reactionTotals: [...reactionTotals.values()].sort((left, right) => {
+      if (right.total !== left.total) {
+        return right.total - left.total;
+      }
+      if (right.lastUpdatedAt !== left.lastUpdatedAt) {
+        return right.lastUpdatedAt - left.lastUpdatedAt;
+      }
+      return left.targetId.localeCompare(right.targetId);
+    }),
+    betSummary: [...betSummary.values()].sort((left, right) => {
+      if (right.totalAmount !== left.totalAmount) {
+        return right.totalAmount - left.totalAmount;
+      }
+      if (right.count !== left.count) {
+        return right.count - left.count;
+      }
+      return left.targetId.localeCompare(right.targetId);
+    }),
+    voteSummary: [...voteSummary.values()].sort((left, right) => {
+      if (right.totalValue !== left.totalValue) {
+        return right.totalValue - left.totalValue;
+      }
+      if (right.count !== left.count) {
+        return right.count - left.count;
+      }
+      return left.targetId.localeCompare(right.targetId);
+    }),
+    betSettlements: sortBetSettlements(betSettlements),
+  };
+};
+
+const readBetSettlementItems = (value: unknown): BetSettlementItem[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry): BetSettlementItem | null => {
+      if (!isRecord(entry)) {
+        return null;
+      }
+
+      const result =
+        entry.result === "won" || entry.result === "lost" || entry.result === "push"
+          ? entry.result
+          : null;
+      const targetType =
+        entry.targetType === "team" ||
+        entry.targetType === "entity" ||
+        entry.targetType === "submission"
+          ? entry.targetType
+          : null;
+      const actorRole =
+        entry.actorRole === "agent" ||
+        entry.actorRole === "host" ||
+        entry.actorRole === "judge" ||
+        entry.actorRole === "viewer" ||
+        entry.actorRole === "admin"
+          ? entry.actorRole
+          : null;
+      const winningTargetType =
+        entry.winningTargetType === "team" ||
+        entry.winningTargetType === "entity" ||
+        entry.winningTargetType === "submission"
+          ? entry.winningTargetType
+          : undefined;
+
+      if (
+        typeof entry.betId !== "string" ||
+        typeof entry.actorId !== "string" ||
+        !actorRole ||
+        !targetType ||
+        typeof entry.targetId !== "string" ||
+        !result ||
+        typeof entry.settledAt !== "number"
+      ) {
+        return null;
+      }
+
+      return {
+        betId: entry.betId,
+        actorId: entry.actorId,
+        actorRole,
+        targetType,
+        targetId: entry.targetId,
+        amount:
+          typeof entry.amount === "number" && Number.isFinite(entry.amount)
+            ? entry.amount
+            : undefined,
+        odds:
+          typeof entry.odds === "number" && Number.isFinite(entry.odds)
+            ? entry.odds
+            : undefined,
+        stance:
+          typeof entry.stance === "string" ? entry.stance : undefined,
+        result,
+        payout:
+          typeof entry.payout === "number" && Number.isFinite(entry.payout)
+            ? entry.payout
+            : undefined,
+        settledAt: entry.settledAt,
+        winningTargetType,
+        winningTargetId:
+          typeof entry.winningTargetId === "string"
+            ? entry.winningTargetId
+            : undefined,
+      };
+    })
+    .filter((entry): entry is BetSettlementItem => entry !== null);
+};
+
 const applyEventToProjection = (
   current: ProjectionState,
   event: EventEnvelope,
@@ -359,6 +693,26 @@ const applyEventToProjection = (
             ? payload.startedAt
             : next.activityRun.startedAt ?? event.timestamp,
       },
+    };
+  }
+
+  if (event.type === "activity.finished") {
+    const endedAt =
+      typeof payload.endedAt === "number" ? payload.endedAt : event.timestamp;
+    next = {
+      ...next,
+      activityRun: {
+        ...next.activityRun,
+        status: "finished",
+        endedAt,
+      },
+      social: buildSocialSnapshot({
+        talks: next.talks,
+        reactions: next.reactions,
+        bets: next.bets,
+        votes: next.votes,
+        betSettlements: readBetSettlementItems(payload.betSettlements),
+      }),
     };
   }
 
@@ -704,6 +1058,194 @@ const applyEventToProjection = (
             typeof rawAward.grantedAt === "number"
               ? rawAward.grantedAt
               : event.timestamp,
+        }),
+      };
+    }
+  }
+
+  if (event.type === "agent.talked") {
+    const message =
+      typeof payload.message === "string" ? payload.message.trim() : "";
+    if (message && typeof event.actorId === "string" && isRole(event.actorRole)) {
+      next = {
+        ...next,
+        talks: [
+          ...next.talks,
+          {
+            actorId: event.actorId,
+            actorRole: event.actorRole,
+            stageId:
+              typeof payload.stageId === "string" ? payload.stageId : undefined,
+            message,
+            roomId:
+              typeof payload.roomId === "string" ? payload.roomId : undefined,
+            targetEntityId:
+              typeof payload.targetEntityId === "string"
+                ? payload.targetEntityId
+                : undefined,
+            audienceScope:
+              payload.audienceScope === "room" ||
+              payload.audienceScope === "team" ||
+              payload.audienceScope === "global"
+                ? payload.audienceScope
+                : undefined,
+            submittedAt: event.timestamp,
+          },
+        ],
+      };
+      next = {
+        ...next,
+        social: buildSocialSnapshot({
+          talks: next.talks,
+          reactions: next.reactions,
+          bets: next.bets,
+          votes: next.votes,
+          betSettlements: next.social.betSettlements,
+        }),
+      };
+    }
+  }
+
+  if (event.type === "reaction.added") {
+    const reaction =
+      typeof payload.reaction === "string" ? payload.reaction.trim() : "";
+    if (reaction && typeof event.actorId === "string" && isRole(event.actorRole)) {
+      next = {
+        ...next,
+        reactions: [
+          ...next.reactions,
+          {
+            actorId: event.actorId,
+            actorRole: event.actorRole,
+            stageId:
+              typeof payload.stageId === "string" ? payload.stageId : undefined,
+            reaction,
+            roomId:
+              typeof payload.roomId === "string" ? payload.roomId : undefined,
+            targetEntityId:
+              typeof payload.targetEntityId === "string"
+                ? payload.targetEntityId
+                : undefined,
+            targetTeamId:
+              typeof payload.targetTeamId === "string"
+                ? payload.targetTeamId
+                : undefined,
+            note: typeof payload.note === "string" ? payload.note : undefined,
+            submittedAt: event.timestamp,
+          },
+        ],
+      };
+      next = {
+        ...next,
+        social: buildSocialSnapshot({
+          talks: next.talks,
+          reactions: next.reactions,
+          bets: next.bets,
+          votes: next.votes,
+          betSettlements: next.social.betSettlements,
+        }),
+      };
+    }
+  }
+
+  if (event.type === "bet.placed") {
+    const targetType =
+      payload.targetType === "team" ||
+      payload.targetType === "entity" ||
+      payload.targetType === "submission"
+        ? payload.targetType
+        : null;
+    const targetId =
+      typeof payload.targetId === "string" ? payload.targetId : null;
+    if (
+      targetType &&
+      targetId &&
+      typeof event.actorId === "string" &&
+      isRole(event.actorRole)
+    ) {
+      next = {
+        ...next,
+        bets: upsertById(next.bets, {
+          id: event.id,
+          activityRunId: event.activityRunId ?? next.activityRun.id,
+          actorId: event.actorId,
+          actorRole: event.actorRole,
+          stageId:
+            typeof payload.stageId === "string" ? payload.stageId : undefined,
+          targetType,
+          targetId,
+          roomId:
+            typeof payload.roomId === "string" ? payload.roomId : undefined,
+          amount:
+            typeof payload.amount === "number" && Number.isFinite(payload.amount)
+              ? payload.amount
+              : undefined,
+          odds:
+            typeof payload.odds === "number" && Number.isFinite(payload.odds)
+              ? payload.odds
+              : undefined,
+          stance: typeof payload.stance === "string" ? payload.stance : undefined,
+          note: typeof payload.note === "string" ? payload.note : undefined,
+          placedAt: event.timestamp,
+        }),
+      };
+      next = {
+        ...next,
+        social: buildSocialSnapshot({
+          talks: next.talks,
+          reactions: next.reactions,
+          bets: next.bets,
+          votes: next.votes,
+          betSettlements: next.social.betSettlements,
+        }),
+      };
+    }
+  }
+
+  if (event.type === "vote.cast") {
+    const targetType =
+      payload.targetType === "team" ||
+      payload.targetType === "entity" ||
+      payload.targetType === "submission"
+        ? payload.targetType
+        : null;
+    const targetId =
+      typeof payload.targetId === "string" ? payload.targetId : null;
+    if (
+      targetType &&
+      targetId &&
+      typeof event.actorId === "string" &&
+      isRole(event.actorRole)
+    ) {
+      next = {
+        ...next,
+        votes: upsertById(next.votes, {
+          id: event.id,
+          activityRunId: event.activityRunId ?? next.activityRun.id,
+          voterId: event.actorId,
+          voterRole: event.actorRole,
+          stageId:
+            typeof payload.stageId === "string" ? payload.stageId : undefined,
+          targetType,
+          targetId,
+          roomId:
+            typeof payload.roomId === "string" ? payload.roomId : undefined,
+          value:
+            typeof payload.value === "number" && Number.isFinite(payload.value)
+              ? Math.max(1, Math.round(payload.value))
+              : 1,
+          note: typeof payload.note === "string" ? payload.note : undefined,
+          submittedAt: event.timestamp,
+        }),
+      };
+      next = {
+        ...next,
+        social: buildSocialSnapshot({
+          talks: next.talks,
+          reactions: next.reactions,
+          bets: next.bets,
+          votes: next.votes,
+          betSettlements: next.social.betSettlements,
         }),
       };
     }

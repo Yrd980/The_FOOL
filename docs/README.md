@@ -34,6 +34,7 @@
 - 当前 worktree 已不再提供 Web 展示面；操作与展示主入口是终端 CLI + ASCII watch
 - 当前实现运行时只认 `OPENCLAW_*` 配置；旧的 `VITE_OPENCLAW_*` 前端兼容变量不再属于这份 worktree
 - 终端 `openclaw-control ascii` 已经成为查看 The Fool authoritative 全幕运行态的主入口
+- 当前 ASCII watch 还会展示 authoritative social snapshot，以及 `vote` / `activity.finished` 等真实事件回放
 
 ### 4. 你想知道“下一步该优先收什么”
 

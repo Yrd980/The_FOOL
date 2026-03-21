@@ -453,6 +453,67 @@ const describeEvent = (event: GatewayEventEnvelope): DescribedEvent => {
     };
   }
 
+  if (event.type === "vote.cast") {
+    const targetType = readString(payload, "targetType") ?? "target";
+    const targetId = readString(payload, "targetId") ?? "unknown";
+    const roomId = readString(payload, "roomId");
+    const stageId = readString(payload, "stageId");
+    const value = readNumber(payload, "value");
+    const note = readString(payload, "note");
+    const voteBits = [
+      value === null ? null : `value=${value}`,
+      note ? `note=${note}` : null,
+    ]
+      .filter((entry): entry is string => entry !== null)
+      .join(" ");
+    return {
+      type: event.type,
+      sequence,
+      timestamp,
+      timestampLabel,
+      actorId,
+      summary: `vote ${targetType}:${targetId}${voteBits ? ` ${voteBits}` : ""}`,
+      teamIds: targetType === "team" ? [targetId] : [],
+      entityIds: targetType === "entity" ? [targetId] : [],
+      roomIds: roomId ? [roomId] : [],
+      stageIds: stageId ? [stageId] : [],
+      submissionId: targetType === "submission" ? targetId : null,
+      scoreValue: value,
+    };
+  }
+
+  if (event.type === "activity.finished") {
+    const settlementMode = readString(payload, "settlementMode");
+    const winningTargetType = readString(payload, "winningTargetType");
+    const winningTargetId = readString(payload, "winningTargetId");
+    const note = readString(payload, "note");
+    const winnerLabel =
+      winningTargetType && winningTargetId
+        ? ` -> ${winningTargetType}:${winningTargetId}`
+        : settlementMode
+          ? ` [${settlementMode}]`
+          : "";
+    return {
+      type: event.type,
+      sequence,
+      timestamp,
+      timestampLabel,
+      actorId,
+      summary: `activity finished${winnerLabel}${note ? ` (${note})` : ""}`,
+      teamIds:
+        winningTargetType === "team" && winningTargetId ? [winningTargetId] : [],
+      entityIds:
+        winningTargetType === "entity" && winningTargetId
+          ? [winningTargetId]
+          : [],
+      roomIds: [],
+      stageIds: [],
+      submissionId:
+        winningTargetType === "submission" ? winningTargetId ?? null : null,
+      scoreValue: null,
+    };
+  }
+
   if (event.type.startsWith("timer.")) {
     const rawTimer = isRecord(payload.timer) ? payload.timer : payload;
     const stageId = readString(rawTimer, "stageId") ?? readString(payload, "stageId");
@@ -795,6 +856,138 @@ const renderAwards = (
   );
 };
 
+const renderSocialSnapshot = (
+  social: OrchestratorSnapshotResponse["snapshot"]["social"] | undefined,
+): string[] => {
+  if (!social) {
+    return ["(no authoritative social snapshot yet)"];
+  }
+
+  const lines: string[] = [];
+  const pushBucket = (title: string, content: string[]) => {
+    if (lines.length > 0) {
+      lines.push("");
+    }
+    lines.push(title);
+    lines.push(...content);
+  };
+
+  pushBucket(
+    "audience_heat",
+    social.audienceHeat.length > 0
+      ? [...social.audienceHeat]
+          .sort((left, right) => {
+            if (right.value !== left.value) {
+              return right.value - left.value;
+            }
+            return `${left.scope}:${left.targetId}`.localeCompare(
+              `${right.scope}:${right.targetId}`,
+            );
+          })
+          .map(
+            (entry) =>
+              `|-- ${entry.scope}:${entry.targetId} value=${entry.value} last=${formatClockLabel(entry.lastUpdatedAt)}`,
+          )
+      : ["(none)"],
+  );
+
+  pushBucket(
+    "bet_heat",
+    social.betHeat.length > 0
+      ? [...social.betHeat]
+          .sort((left, right) => {
+            if (right.value !== left.value) {
+              return right.value - left.value;
+            }
+            return `${left.scope}:${left.targetId}`.localeCompare(
+              `${right.scope}:${right.targetId}`,
+            );
+          })
+          .map(
+            (entry) =>
+              `|-- ${entry.scope}:${entry.targetId} value=${entry.value} last=${formatClockLabel(entry.lastUpdatedAt)}`,
+          )
+      : ["(none)"],
+  );
+
+  pushBucket(
+    "reaction_totals",
+    social.reactionTotals.length > 0
+      ? [...social.reactionTotals]
+          .sort((left, right) => {
+            if (right.total !== left.total) {
+              return right.total - left.total;
+            }
+            return `${left.scope}:${left.targetId}`.localeCompare(
+              `${right.scope}:${right.targetId}`,
+            );
+          })
+          .map((entry) => {
+            const reactions = Object.entries(entry.reactions)
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([reaction, total]) => `${reaction}=${total}`)
+              .join(" ");
+            return `|-- ${entry.scope}:${entry.targetId} total=${entry.total}${reactions ? ` ${reactions}` : ""} last=${formatClockLabel(entry.lastUpdatedAt)}`;
+          })
+      : ["(none)"],
+  );
+
+  pushBucket(
+    "bet_summary",
+    social.betSummary.length > 0
+      ? [...social.betSummary]
+          .sort((left, right) => {
+            if (right.totalAmount !== left.totalAmount) {
+              return right.totalAmount - left.totalAmount;
+            }
+            return `${left.targetType}:${left.targetId}`.localeCompare(
+              `${right.targetType}:${right.targetId}`,
+            );
+          })
+          .map(
+            (entry) =>
+              `|-- ${entry.targetType}:${entry.targetId} count=${entry.count} total=${entry.totalAmount} last=${formatClockLabel(entry.lastPlacedAt)}`,
+          )
+      : ["(none)"],
+  );
+
+  pushBucket(
+    "vote_summary",
+    social.voteSummary.length > 0
+      ? [...social.voteSummary]
+          .sort((left, right) => {
+            if (right.totalValue !== left.totalValue) {
+              return right.totalValue - left.totalValue;
+            }
+            return `${left.targetType}:${left.targetId}`.localeCompare(
+              `${right.targetType}:${right.targetId}`,
+            );
+          })
+          .map(
+            (entry) =>
+              `|-- ${entry.targetType}:${entry.targetId} count=${entry.count} total=${entry.totalValue} avg=${entry.averageValue.toFixed(2)} last=${formatClockLabel(entry.lastSubmittedAt)}`,
+          )
+      : ["(none)"],
+  );
+
+  pushBucket(
+    "bet_settlements",
+    social.betSettlements.length > 0
+      ? [...social.betSettlements]
+          .sort((left, right) => right.settledAt - left.settledAt)
+          .map((entry) => {
+            const payout =
+              typeof entry.payout === "number" && Number.isFinite(entry.payout)
+                ? ` payout=${entry.payout}`
+                : "";
+            return `|-- ${entry.actorId} ${entry.targetType}:${entry.targetId} -> ${entry.result}${payout} at=${formatClockLabel(entry.settledAt)}`;
+          })
+      : ["(none)"],
+  );
+
+  return lines;
+};
+
 const renderRecentEvents = ({
   events,
   eventLimit,
@@ -817,6 +1010,7 @@ const SOCIAL_EVENT_TYPES = new Set([
   "broadcast.sent",
   "reaction.added",
   "bet.placed",
+  "vote.cast",
 ]);
 
 const renderSocialFeed = ({
@@ -893,6 +1087,9 @@ export const buildOpenClawAsciiOverview = ({
     `template : ${activityRun?.templateId ?? "unknown-template"}`,
     `status   : ${activityRun?.status ?? "unknown"}`,
     `stage    : ${formatStageLabel(activityRun?.currentStageId ?? null, stageTemplate)}`,
+    ...(typeof activityRun?.endedAt === "number" && Number.isFinite(activityRun.endedAt)
+      ? [`ended    : ${formatDateTimeLabel(activityRun.endedAt)}`]
+      : []),
     `sequence : ${snapshotResponse.snapshot.lastSequence ?? 0}`,
     `health   : ${formatDateTimeLabel(snapshotResponse.snapshot.health?.ts)}`,
     `updated  : ${formatDateTimeLabel(now)}`,
@@ -954,6 +1151,11 @@ export const buildOpenClawAsciiOverview = ({
     renderScoreSummary(snapshotResponse.snapshot.scoreSummary ?? []),
   );
   renderSection(lines, "AWARDS", renderAwards(snapshotResponse.snapshot.awards ?? []));
+  renderSection(
+    lines,
+    "SOCIAL SNAPSHOT",
+    renderSocialSnapshot(snapshotResponse.snapshot.social),
+  );
   renderSection(
     lines,
     "LIVE SOCIAL",

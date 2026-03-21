@@ -1,5 +1,8 @@
 import type { ControlActorRole } from "../control";
-import type { ScoreAnnotations } from "../platform/contracts";
+import type {
+  ScoreAnnotations,
+  SocialSnapshot,
+} from "../platform/contracts";
 
 export type ConnectionState =
   | "idle"
@@ -73,6 +76,8 @@ export interface GatewayActivityRunSnapshot {
   templateId: string | null;
   status: string;
   currentStageId: string | null;
+  startedAt?: number;
+  endedAt?: number;
 }
 
 export interface GatewayWorldSnapshot {
@@ -177,6 +182,7 @@ export interface GatewaySnapshotEnvelope {
     reason?: string;
     grantedAt?: number;
   }>;
+  social?: SocialSnapshot;
   lastSequence?: number;
   health?: GatewayHealthSnapshot;
 }

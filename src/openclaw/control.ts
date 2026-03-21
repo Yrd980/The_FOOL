@@ -8,11 +8,14 @@ import type {
   BroadcastPayload,
   CommandConfirmation,
   CommandEnvelope,
+  FinishActivityPayload,
   MessageAudienceScope,
   ReactionPayload,
   ScoreAnnotations,
   SubmissionData,
   TalkPayload,
+  VotePayload,
+  VoteTargetType,
 } from "./platform/contracts";
 
 export type { CommandEnvelope };
@@ -34,6 +37,7 @@ const KNOWN_ORCHESTRATION_EVENT_PREFIXES = [
   "broadcast.",
   "reaction.",
   "bet.",
+  "vote.",
 ] as const;
 
 export const GATEWAY_CONNECT_CLIENT_ID = "openclaw-control";
@@ -239,6 +243,46 @@ export const buildAssignTeamConfirmationChallenge = (
   return normalizeCommandConfirmationChallenge(`ASSIGN ${normalizedTeamId}`);
 };
 
+export const buildFinishActivityConfirmationChallenge = ({
+  activityRunId,
+  settlementMode = "winner",
+  winningTargetType,
+  winningTargetId,
+}: {
+  activityRunId: string;
+  settlementMode?: "winner" | "push";
+  winningTargetType?: VoteTargetType;
+  winningTargetId?: string;
+}): string => {
+  const normalizedActivityRunId = activityRunId.trim();
+  if (!normalizedActivityRunId) {
+    throw new Error("Activity run id is required.");
+  }
+
+  if (settlementMode === "push") {
+    return normalizeCommandConfirmationChallenge(
+      `FINISH ${normalizedActivityRunId} push`,
+    );
+  }
+
+  const normalizedTargetType = winningTargetType?.trim();
+  const normalizedTargetId = winningTargetId?.trim();
+  if (
+    (normalizedTargetType !== "team" &&
+      normalizedTargetType !== "entity" &&
+      normalizedTargetType !== "submission") ||
+    !normalizedTargetId
+  ) {
+    throw new Error(
+      "Winner target type and target id are required for finish confirmation.",
+    );
+  }
+
+  return normalizeCommandConfirmationChallenge(
+    `FINISH ${normalizedActivityRunId} ${normalizedTargetType}:${normalizedTargetId}`,
+  );
+};
+
 const readNonEmptyPayloadString = (
   payload: Record<string, unknown>,
   key: string,
@@ -250,7 +294,7 @@ const readNonEmptyPayloadString = (
 };
 
 export const resolveDangerousCommandConfirmationRequirement = (
-  command: Pick<CommandEnvelope, "type" | "payload">,
+  command: Pick<CommandEnvelope, "type" | "payload" | "activityRunId">,
 ): DangerousCommandConfirmationRequirement | null => {
   if (command.type === "transition_stage") {
     const targetStageId = readNonEmptyPayloadString(command.payload, "targetStageId");
@@ -307,6 +351,41 @@ export const resolveDangerousCommandConfirmationRequirement = (
           reason: "rewriting authority world team membership/room state",
         }
       : null;
+  }
+
+  if (command.type === "finish_activity") {
+    const activityRunId =
+      command.activityRunId?.trim() ||
+      readNonEmptyPayloadString(command.payload, "activityRunId") ||
+      readNonEmptyPayloadString(command.payload, "runId") ||
+      "activity-run";
+    const settlementMode =
+      readNonEmptyPayloadString(command.payload, "settlementMode") === "push"
+        ? "push"
+        : "winner";
+    const winningTargetType = readNonEmptyPayloadString(
+      command.payload,
+      "winningTargetType",
+    );
+    const winningTargetId = readNonEmptyPayloadString(
+      command.payload,
+      "winningTargetId",
+    );
+    return {
+      commandType: command.type,
+      challenge: buildFinishActivityConfirmationChallenge({
+        activityRunId,
+        settlementMode,
+        winningTargetType:
+          winningTargetType === "team" ||
+          winningTargetType === "entity" ||
+          winningTargetType === "submission"
+            ? winningTargetType
+            : undefined,
+        winningTargetId: winningTargetId ?? undefined,
+      }),
+      reason: "closing the authoritative activity runtime and settling bets",
+    };
   }
 
   return null;
@@ -1046,6 +1125,123 @@ export const buildBetEnvelope = ({
       ...(normalizedOdds !== undefined ? { odds: normalizedOdds } : {}),
       ...(normalizeOptionalText(stance) ? { stance: normalizeOptionalText(stance) } : {}),
       ...(normalizeOptionalText(note) ? { note: normalizeOptionalText(note) } : {}),
+    },
+    idempotencyKey,
+    confirmation,
+  });
+};
+
+export const buildVoteEnvelope = ({
+  actorId,
+  actorRole = "viewer",
+  activityRunId,
+  targetType,
+  targetId,
+  roomId,
+  value = 1,
+  note,
+  idempotencyKey,
+  confirmation,
+}: {
+  actorId: string;
+  actorRole?: ControlActorRole;
+  activityRunId: string;
+  targetType: VoteTargetType;
+  targetId: string;
+  roomId?: string;
+  value?: number;
+  note?: string;
+  idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
+}): CommandEnvelope<VotePayload> => {
+  if (
+    targetType !== "team" &&
+    targetType !== "entity" &&
+    targetType !== "submission"
+  ) {
+    throw new Error("Vote target type must be team, entity, or submission.");
+  }
+
+  const normalizedValue =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.max(1, Math.round(value))
+      : 1;
+
+  return buildCommandEnvelope({
+    actorId,
+    actorRole,
+    activityRunId,
+    type: "vote",
+    payload: {
+      targetType,
+      targetId: normalizeRequiredText(targetId, "Vote target id"),
+      ...(normalizeOptionalText(roomId)
+        ? { roomId: normalizeOptionalText(roomId) }
+        : {}),
+      value: normalizedValue,
+      ...(normalizeOptionalText(note) ? { note: normalizeOptionalText(note) } : {}),
+    },
+    idempotencyKey,
+    confirmation,
+  });
+};
+
+export const buildFinishActivityEnvelope = ({
+  actorId,
+  activityRunId,
+  settlementMode = "winner",
+  winningTargetType,
+  winningTargetId,
+  note,
+  endedAt,
+  idempotencyKey,
+  confirmation,
+}: {
+  actorId: string;
+  activityRunId: string;
+  settlementMode?: "winner" | "push";
+  winningTargetType?: VoteTargetType;
+  winningTargetId?: string;
+  note?: string;
+  endedAt?: number;
+  idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
+}): CommandEnvelope<FinishActivityPayload> => {
+  const normalizedSettlementMode =
+    settlementMode === "push" ? "push" : "winner";
+  const normalizedWinningTargetType =
+    winningTargetType === "team" ||
+    winningTargetType === "entity" ||
+    winningTargetType === "submission"
+      ? winningTargetType
+      : undefined;
+  const normalizedWinningTargetId = normalizeOptionalText(winningTargetId);
+  if (
+    normalizedSettlementMode !== "push" &&
+    (!normalizedWinningTargetType || !normalizedWinningTargetId)
+  ) {
+    throw new Error(
+      "finish_activity requires a winning target or settlementMode=push.",
+    );
+  }
+
+  return buildCommandEnvelope({
+    actorId,
+    actorRole: "host",
+    activityRunId,
+    type: "finish_activity",
+    payload: {
+      settlementMode: normalizedSettlementMode,
+      ...(normalizedWinningTargetType
+        ? { winningTargetType: normalizedWinningTargetType }
+        : {}),
+      ...(normalizedWinningTargetId
+        ? { winningTargetId: normalizedWinningTargetId }
+        : {}),
+      ...(normalizeOptionalText(note) ? { note: normalizeOptionalText(note) } : {}),
+      ...(typeof endedAt === "number" && Number.isFinite(endedAt)
+        ? { endedAt: Math.round(endedAt) }
+        : {}),
     },
     idempotencyKey,
     confirmation,

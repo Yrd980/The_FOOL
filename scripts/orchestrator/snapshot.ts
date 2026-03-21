@@ -82,10 +82,10 @@ export const buildSnapshotEnvelope = ({
     reason: award.reason,
     grantedAt: award.grantedAt,
   })),
+  social: projection.social,
   lastSequence: projection.lastSequence,
   health: {
     agents: buildHealthAgents(sessions),
     ts: now,
   },
 });
-

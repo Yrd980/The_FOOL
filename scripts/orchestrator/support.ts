@@ -10,16 +10,21 @@ import type {
   ActivityRunState,
   ActorRole,
   AwardProjection,
+  BetProjection,
   CommandConfirmationStatus,
   CommandEnvelope,
   EventEnvelope,
+  ReactionProjection,
   ScoreProjection,
   ScoreSummaryItem,
   SkillBinding,
+  SocialSnapshot,
   StageTemplate,
   SubmissionProjection,
   SubmissionSchema,
   TimerProjection,
+  TalkProjection,
+  VoteProjection,
   WorldProjection,
 } from "../../src/openclaw/platform/contracts";
 
@@ -64,7 +69,7 @@ export interface StableErrorBody {
 }
 
 export interface ProjectionState {
-  version: 6;
+  version: 7;
   snapshotId: string;
   activityRun: ActivityRunState;
   stageTemplates: StageTemplate[];
@@ -75,6 +80,11 @@ export interface ProjectionState {
   submissions: SubmissionProjection[];
   scores: ScoreProjection[];
   awards: AwardProjection[];
+  talks: TalkProjection[];
+  reactions: ReactionProjection[];
+  bets: BetProjection[];
+  votes: VoteProjection[];
+  social: SocialSnapshot;
   lastSequence: number;
 }
 

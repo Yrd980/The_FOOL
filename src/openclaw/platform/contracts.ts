@@ -5,6 +5,13 @@ export type TimerStatus = "idle" | "running" | "paused" | "ended";
 export type ScoreTargetType = "team" | "submission";
 export type MessageAudienceScope = "room" | "team" | "global";
 export type BetTargetType = "team" | "entity" | "submission";
+export type VoteTargetType = BetTargetType;
+export type SocialTargetScope =
+  | "global"
+  | "room"
+  | "team"
+  | "entity"
+  | "submission";
 
 export type SubmissionData = Record<string, unknown>;
 
@@ -44,6 +51,23 @@ export interface BetPayload extends Record<string, unknown> {
   odds?: number;
   stance?: string;
   note?: string;
+}
+
+export interface VotePayload extends Record<string, unknown> {
+  targetType: VoteTargetType;
+  targetId: string;
+  roomId?: string;
+  stageId?: string;
+  value?: number;
+  note?: string;
+}
+
+export interface FinishActivityPayload extends Record<string, unknown> {
+  settlementMode?: "winner" | "push";
+  winningTargetType?: BetTargetType;
+  winningTargetId?: string;
+  note?: string;
+  endedAt?: number;
 }
 
 export interface TransitionRule {
@@ -196,6 +220,116 @@ export interface ScoreSummaryItem {
   totalScore: number;
   averageScore: number;
   lastSubmittedAt: number;
+}
+
+export interface TalkProjection {
+  actorId: string;
+  actorRole: ActorRole;
+  stageId?: string;
+  message: string;
+  roomId?: string;
+  targetEntityId?: string;
+  audienceScope?: MessageAudienceScope;
+  submittedAt: number;
+}
+
+export interface ReactionProjection {
+  actorId: string;
+  actorRole: ActorRole;
+  stageId?: string;
+  reaction: string;
+  roomId?: string;
+  targetEntityId?: string;
+  targetTeamId?: string;
+  note?: string;
+  submittedAt: number;
+}
+
+export interface BetProjection {
+  id: string;
+  activityRunId: string;
+  actorId: string;
+  actorRole: ActorRole;
+  stageId?: string;
+  targetType: BetTargetType;
+  targetId: string;
+  roomId?: string;
+  amount?: number;
+  odds?: number;
+  stance?: string;
+  note?: string;
+  placedAt: number;
+}
+
+export interface VoteProjection {
+  id: string;
+  activityRunId: string;
+  voterId: string;
+  voterRole: ActorRole;
+  stageId?: string;
+  targetType: VoteTargetType;
+  targetId: string;
+  roomId?: string;
+  value: number;
+  note?: string;
+  submittedAt: number;
+}
+
+export interface SocialHeatEntry {
+  scope: SocialTargetScope;
+  targetId: string;
+  value: number;
+  lastUpdatedAt: number;
+}
+
+export interface ReactionTotalEntry {
+  scope: Extract<SocialTargetScope, "global" | "room" | "team" | "entity">;
+  targetId: string;
+  total: number;
+  reactions: Record<string, number>;
+  lastUpdatedAt: number;
+}
+
+export interface BetSummaryItem {
+  targetType: BetTargetType;
+  targetId: string;
+  count: number;
+  totalAmount: number;
+  lastPlacedAt: number;
+}
+
+export interface VoteSummaryItem {
+  targetType: VoteTargetType;
+  targetId: string;
+  count: number;
+  totalValue: number;
+  averageValue: number;
+  lastSubmittedAt: number;
+}
+
+export interface BetSettlementItem {
+  betId: string;
+  actorId: string;
+  actorRole: ActorRole;
+  targetType: BetTargetType;
+  targetId: string;
+  amount?: number;
+  odds?: number;
+  stance?: string;
+  result: "won" | "lost" | "push";
+  payout?: number;
+  settledAt: number;
+  winningTargetType?: BetTargetType;
+  winningTargetId?: string;
+}
+
+export interface SocialSnapshot {
+  audienceHeat: SocialHeatEntry[];
+  betHeat: SocialHeatEntry[];
+  reactionTotals: ReactionTotalEntry[];
+  betSummary: BetSummaryItem[];
+  voteSummary: VoteSummaryItem[];
+  betSettlements: BetSettlementItem[];
 }
 
 export interface CommandConfirmation {

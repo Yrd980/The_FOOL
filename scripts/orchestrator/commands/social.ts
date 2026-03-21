@@ -393,3 +393,113 @@ export const handleBetCommand = (
     ],
   };
 };
+
+export const handleVoteCommand = (
+  command: CommandEnvelope,
+  handledAt: number,
+  context: CommandHandlerContext,
+): CommandHandlerResult => {
+  context.requireStageActionAllowed({
+    command,
+    handledAt,
+    action: "vote",
+  });
+
+  const projection = context.getProjection();
+  const payload = command.payload;
+  const targetId =
+    typeof payload.targetId === "string" ? payload.targetId.trim() : "";
+  const targetType = payload.targetType;
+  const roomId =
+    typeof payload.roomId === "string" && payload.roomId.trim().length > 0
+      ? payload.roomId.trim()
+      : resolveActorRoomId(context, command.actorId);
+  const value =
+    typeof payload.value === "number" && Number.isFinite(payload.value)
+      ? Math.max(1, Math.round(payload.value))
+      : 1;
+  const note =
+    typeof payload.note === "string" && payload.note.trim().length > 0
+      ? payload.note.trim()
+      : undefined;
+
+  if (!targetId) {
+    throw context.createCommandError(
+      command,
+      handledAt,
+      "INVALID_COMMAND",
+      "vote requires payload.targetId.",
+    );
+  }
+
+  if (
+    targetType !== "team" &&
+    targetType !== "entity" &&
+    targetType !== "submission"
+  ) {
+    throw context.createCommandError(
+      command,
+      handledAt,
+      "INVALID_COMMAND",
+      "vote requires payload.targetType as team, entity, or submission.",
+    );
+  }
+
+  requireKnownRoom({ context, command, handledAt, roomId });
+
+  if (
+    targetType === "team" &&
+    !projection.world.teams.some((team) => team.id === targetId)
+  ) {
+    throw context.createCommandError(
+      command,
+      handledAt,
+      "UNKNOWN_TEAM",
+      `Unknown team ${targetId}.`,
+      404,
+    );
+  }
+
+  if (
+    targetType === "entity" &&
+    !findEntity(projection.world.entities, targetId)
+  ) {
+    throw context.createCommandError(
+      command,
+      handledAt,
+      "UNKNOWN_ENTITY",
+      `Unknown entity ${targetId}.`,
+      404,
+    );
+  }
+
+  if (
+    targetType === "submission" &&
+    !projection.submissions.some((submission) => submission.id === targetId)
+  ) {
+    throw context.createCommandError(
+      command,
+      handledAt,
+      "SUBMISSION_NOT_FOUND",
+      `Submission ${targetId} does not exist.`,
+      404,
+    );
+  }
+
+  return {
+    events: [
+      context.queueEvent(
+        "vote.cast",
+        {
+          stageId: projection.activityRun.currentStageId,
+          targetType,
+          targetId,
+          value,
+          ...(roomId ? { roomId } : {}),
+          ...(note ? { note } : {}),
+        },
+        handledAt,
+      ),
+    ],
+  };
+};

@@ -53,9 +53,11 @@ bun run openclaw:control -- ascii activity-run-01 --limit 20 --watch 0.5
 bun run openclaw:control -- talk activity-run-01 "I contain multitudes."
 bun run openclaw:control -- reaction activity-run-01 clap "wild opener" --target-entity-id contestant-01
 bun run openclaw:control -- bet activity-run-01 team team-1 --amount 3 --stance upset-pick
+bun run openclaw:control -- vote activity-run-01 team team-1 --value 2 --note "crowd choice"
 bun run openclaw:control -- broadcast activity-run-01 "Team draft is now authoritative."
 bun run openclaw:control -- stage activity-run-01 act-5-submission --confirm "PROMOTE act-5-submission"
 bun run openclaw:control -- lock-submission activity-run-01 submission-01 --confirm "LOCK submission-01"
+bun run openclaw:control -- finish activity-run-01 team team-1 --note "authoritative finale" --confirm "FINISH activity-run-01 team:team-1"
 ~~~
 
 The CLI/query contract is intentionally kept stable while the internal structure is made more generic.
@@ -81,8 +83,18 @@ The watch currently prioritizes:
 - all teams and members
 - current contestant room placement
 - timers, submissions, lock state, scores, awards
+- authoritative social snapshot aggregates: \`audience_heat\`, \`bet_heat\`, reaction totals, vote summary, bet settlements
 - recent authoritative event flow
-- live social events now backed by real authority events: \`talk\`, \`broadcast\`, \`reaction\`, \`bet\`
+- live social events now backed by real authority events: \`talk\`, \`broadcast\`, \`reaction\`, \`bet\`, \`vote\`
+- finished-run visibility via authoritative \`activity.finished\`
+
+Verified authority-side command/query surface in this worktree currently includes:
+
+- queries: \`snapshot\`, \`events\`, \`replay\`, \`audit\`, \`scores\`
+- control mutations: \`stage\`, \`start-timer\`, \`move-entity\`, \`assign-team\`
+- submission loop: \`open-submission\`, \`submit\`, \`update-submission\`, \`lock-submission\`
+- scoring loop: \`submit-score\`, \`grant-award\`, \`finish\`
+- authority-backed social loop: \`talk\`, \`broadcast\`, \`reaction\`, \`bet\`, \`vote\`
 
 Typical local run:
 
@@ -129,5 +141,6 @@ The current worktree is intentionally small and backend-first:
 - `scripts/openclaw-orchestrator.ts` is still a single-process local authority, not a full platform deployment
 - only The Fool is wired as a built-in activity package today
 - the live surface is CLI + ASCII only; any future renderer should be a separate consumer of the same authority/query contracts
-- audience/viewer-side native input flows and aggregate projections such as `audience_heat` / `bet_heat` still need more authority-side work
+- audience/viewer-side native input channels are still operator/CLI-driven today and are not yet merged into a dedicated authoritative social ingress
+- audience vote endgame follow-through still needs more authority-side work for winner aggregation beyond the current snapshot/replay output
 - when checking behavior, prefer real `/api/orchestrator/*` queries and `openclaw-control ascii` over documentation assumptions

@@ -16,7 +16,7 @@ export const theFoolStageTemplates: StageTemplate[] = [
     id: "act-1-intro",
     name: "自我介绍",
     durationSec: 300,
-    allowedActions: ["talk", "reaction", "bet", "query"],
+    allowedActions: ["talk", "reaction", "bet", "vote", "query"],
     transitionRules: [
       { id: "act-1-manual", sourceStageId: "act-1-intro", targetStageId: "act-2-preference", type: "manual", config: {} },
     ],
@@ -77,7 +77,7 @@ export const theFoolStageTemplates: StageTemplate[] = [
     id: "act-6-human-review",
     name: "人类观赛点评",
     durationSec: 480,
-    allowedActions: ["broadcast", "talk", "reaction", "bet"],
+    allowedActions: ["broadcast", "talk", "reaction", "bet", "vote"],
     transitionRules: [
       { id: "act-6-manual", sourceStageId: "act-6-human-review", targetStageId: "act-7-ai-judging", type: "manual", config: {} },
     ],
@@ -105,7 +105,7 @@ export const theFoolStageTemplates: StageTemplate[] = [
     id: "act-8-awards",
     name: "颁奖",
     durationSec: 240,
-    allowedActions: ["broadcast", "grant_award", "query"],
+    allowedActions: ["broadcast", "grant_award", "vote", "query"],
     transitionRules: [
       { id: "act-8-manual", sourceStageId: "act-8-awards", targetStageId: "act-9-co-creation", type: "manual", config: {} },
     ],

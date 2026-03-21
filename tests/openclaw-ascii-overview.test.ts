@@ -91,6 +91,70 @@ const snapshotResponse: OrchestratorSnapshotResponse = {
         grantedAt: 1_742_520_480_000,
       },
     ],
+    social: {
+      audienceHeat: [
+        {
+          scope: "global",
+          targetId: "global",
+          value: 5,
+          lastUpdatedAt: 1_742_520_505_000,
+        },
+      ],
+      betHeat: [
+        {
+          scope: "team",
+          targetId: "team-1",
+          value: 8,
+          lastUpdatedAt: 1_742_520_500_000,
+        },
+      ],
+      reactionTotals: [
+        {
+          scope: "entity",
+          targetId: "contestant-01",
+          total: 2,
+          reactions: {
+            clap: 2,
+          },
+          lastUpdatedAt: 1_742_520_495_000,
+        },
+      ],
+      betSummary: [
+        {
+          targetType: "team",
+          targetId: "team-1",
+          count: 2,
+          totalAmount: 8,
+          lastPlacedAt: 1_742_520_500_000,
+        },
+      ],
+      voteSummary: [
+        {
+          targetType: "team",
+          targetId: "team-1",
+          count: 3,
+          totalValue: 5,
+          averageValue: 1.67,
+          lastSubmittedAt: 1_742_520_505_000,
+        },
+      ],
+      betSettlements: [
+        {
+          betId: "evt-15",
+          actorId: "viewer-03",
+          actorRole: "viewer",
+          targetType: "team",
+          targetId: "team-1",
+          amount: 3,
+          odds: 2,
+          result: "won",
+          payout: 6,
+          settledAt: 1_742_520_510_000,
+          winningTargetType: "team",
+          winningTargetId: "team-1",
+        },
+      ],
+    },
     lastSequence: 12,
     health: {
       ts: 1_742_520_500_000,
@@ -353,24 +417,31 @@ describe("buildOpenClawAsciiOverview", () => {
     expect(output).toContain("|-- submission-1 team=team-1 judges=3 avg=8.67 total=26");
     expect(output).toContain("AWARDS");
     expect(output).toContain("|-- most-absurd label=Most Absurd entity=contestant-03");
+    expect(output).toContain("SOCIAL SNAPSHOT");
+    expect(output).toContain("audience_heat");
+    expect(output).toContain("|-- global:global value=5");
+    expect(output).toContain("vote_summary");
+    expect(output).toContain("|-- team:team-1 count=3 total=5 avg=1.67");
+    expect(output).toContain("bet_settlements");
+    expect(output).toContain("|-- viewer-03 team:team-1 -> won payout=6");
     expect(output).toContain("RECENT AUTHORITATIVE EVENTS");
     expect(output).toContain("#0012 ");
     expect(output).toContain("host-01 :: award Most Absurd -> contestant-03");
   });
 
-  test("renders authoritative social feed from talk, reaction, bet, and broadcast events", () => {
+  test("renders authoritative social feed from talk, reaction, bet, vote, and broadcast events", () => {
     const output = buildOpenClawAsciiOverview({
       snapshotResponse: {
         ...snapshotResponse,
         snapshot: {
           ...snapshotResponse.snapshot,
-          lastSequence: 16,
+          lastSequence: 17,
         },
       },
       replayPage: {
         ...replayPage,
-        lastSequence: 16,
-        toSequence: 16,
+        lastSequence: 17,
+        toSequence: 17,
         events: [
           ...replayPage.events,
           {
@@ -421,6 +492,22 @@ describe("buildOpenClawAsciiOverview", () => {
           {
             id: "evt-16",
             sequence: 16,
+            type: "vote.cast",
+            activityRunId: "activity-run-01",
+            actorId: "viewer-03",
+            actorRole: "viewer",
+            timestamp: 1_742_520_503_000,
+            payload: {
+              stageId: "act-8-awards",
+              targetType: "team",
+              targetId: "team-1",
+              value: 2,
+              note: "crowd choice",
+            },
+          },
+          {
+            id: "evt-17",
+            sequence: 17,
             type: "broadcast.sent",
             activityRunId: "activity-run-01",
             actorId: "host-01",
@@ -438,8 +525,8 @@ describe("buildOpenClawAsciiOverview", () => {
         ok: true,
         activityRunId: "activity-run-01",
         fromSequence: 13,
-        toSequence: 16,
-        lastSequence: 16,
+        toSequence: 17,
+        lastSequence: 17,
         hasMore: false,
         events: [
           {
@@ -490,6 +577,22 @@ describe("buildOpenClawAsciiOverview", () => {
           {
             id: "evt-16",
             sequence: 16,
+            type: "vote.cast",
+            activityRunId: "activity-run-01",
+            actorId: "viewer-03",
+            actorRole: "viewer",
+            timestamp: 1_742_520_503_000,
+            payload: {
+              stageId: "act-8-awards",
+              targetType: "team",
+              targetId: "team-1",
+              value: 2,
+              note: "crowd choice",
+            },
+          },
+          {
+            id: "evt-17",
+            sequence: 17,
             type: "broadcast.sent",
             activityRunId: "activity-run-01",
             actorId: "host-01",
@@ -511,6 +614,81 @@ describe("buildOpenClawAsciiOverview", () => {
     expect(output).toContain("contestant-01 :: talk @ main-stage: Absurdity is a feature, not a bug.");
     expect(output).toContain("contestant-02 :: react clap -> contestant-01: hard agree");
     expect(output).toContain("contestant-03 :: bet team:team-1 amount=3 stance=upset-pick");
+    expect(output).toContain("viewer-03 :: vote team:team-1 value=2 note=crowd choice");
     expect(output).toContain("host-01 :: broadcast global: Awards are now live.");
+  });
+
+  test("renders finished activity metadata and finished event summary", () => {
+    const output = buildOpenClawAsciiOverview({
+      snapshotResponse: {
+        ...snapshotResponse,
+        snapshot: {
+          ...snapshotResponse.snapshot,
+          activityRun: {
+            id: snapshotResponse.snapshot.activityRun!.id,
+            templateId: snapshotResponse.snapshot.activityRun!.templateId,
+            status: "finished",
+            currentStageId: snapshotResponse.snapshot.activityRun!.currentStageId,
+            startedAt: snapshotResponse.snapshot.activityRun!.startedAt,
+            endedAt: 1_742_520_510_000,
+          },
+          lastSequence: 13,
+        },
+      },
+      replayPage: {
+        ...replayPage,
+        lastSequence: 13,
+        toSequence: 13,
+        events: [
+          ...replayPage.events,
+          {
+            id: "evt-13",
+            sequence: 13,
+            type: "activity.finished",
+            activityRunId: "activity-run-01",
+            actorId: "host-01",
+            actorRole: "host",
+            timestamp: 1_742_520_510_000,
+            payload: {
+              settlementMode: "winner",
+              winningTargetType: "team",
+              winningTargetId: "team-1",
+              note: "authoritative finale",
+            },
+          },
+        ],
+      },
+      eventsPage: {
+        ok: true,
+        activityRunId: "activity-run-01",
+        fromSequence: 13,
+        toSequence: 13,
+        lastSequence: 13,
+        hasMore: false,
+        events: [
+          {
+            id: "evt-13",
+            sequence: 13,
+            type: "activity.finished",
+            activityRunId: "activity-run-01",
+            actorId: "host-01",
+            actorRole: "host",
+            timestamp: 1_742_520_510_000,
+            payload: {
+              settlementMode: "winner",
+              winningTargetType: "team",
+              winningTargetId: "team-1",
+              note: "authoritative finale",
+            },
+          },
+        ],
+      },
+      eventLimit: 4,
+      now: 1_742_520_540_000,
+    });
+
+    expect(output).toContain("status   : finished");
+    expect(output).toContain("ended    : 03-21 01:28:30");
+    expect(output).toContain("host-01 :: activity finished -> team:team-1 (authoritative finale)");
   });
 });
