@@ -6,6 +6,7 @@ Backend-first OpenClaw local platform worktree.
 
 - \`scripts/openclaw-orchestrator.ts\`: local authoritative backend
 - \`scripts/openclaw-control.ts\`: operator CLI
+- \`src/openclaw/asciiOverview.ts\`: terminal ASCII live console built from authoritative \`snapshot + events + replay\`
 - \`src/openclaw/platform/*\`: generic platform contracts and activity registry
 - \`src/openclaw/activities/theFoolV1/*\`: the first configured activity package
 
@@ -30,6 +31,7 @@ This worktree is now intentionally split into:
 - Generic gateway/query consumers in \`src/openclaw/gateway/*\`, \`src/openclaw/useGatewayOverview.ts\`, and \`src/openclaw/control.ts\`
 - Browser overview assembly split between the thin hook \`src/openclaw/useGatewayOverview.ts\` and pure helpers in \`src/openclaw/overview/runtime.ts\`
 - Orchestrator query / transport / audit / snapshot / command execution split under \`scripts/orchestrator/*\` and \`scripts/orchestrator/commands/*\`
+- Terminal ASCII watch assembly split into \`src/openclaw/asciiOverview.ts\` plus authoritative orchestrator queries in \`src/openclaw/orchestratorQueryClient.ts\`
 - Explicit local bootstrap configuration in \`src/openclaw/localPlatformConfig.ts\`
 - Activity-local rules, schemas, score compatibility, and bootstrap seed in \`src/openclaw/activities/theFoolV1/*\`
 
@@ -49,6 +51,11 @@ bun run openclaw:orchestrator
 bun run openclaw:control -- probe
 bun run openclaw:control -- snapshot activity-run-01
 bun run openclaw:control -- events activity-run-01 --limit 10
+bun run openclaw:control -- ascii activity-run-01 --limit 20 --watch 0.5
+bun run openclaw:control -- talk activity-run-01 "I contain multitudes."
+bun run openclaw:control -- reaction activity-run-01 clap "wild opener" --target-entity-id contestant-01
+bun run openclaw:control -- bet activity-run-01 team team-1 --amount 3 --stance upset-pick
+bun run openclaw:control -- broadcast activity-run-01 "Team draft is now authoritative."
 bun run openclaw:control -- stage activity-run-01 act-5-submission --confirm "PROMOTE act-5-submission"
 bun run openclaw:control -- lock-submission activity-run-01 submission-01 --confirm "LOCK submission-01"
 ~~~
@@ -59,6 +66,33 @@ Current verification baseline for this worktree:
 
 - \`bun run build\`
 - \`bun run lint\`
+- \`bun test\`
+
+## Authoritative ASCII Watch
+
+The primary operator-facing runtime view is now terminal-first.
+
+- \`openclaw-control ascii\` verifies that \`OPENCLAW_ORCHESTRATOR_URL\` really points at this repo's authoritative orchestrator before it renders anything
+- the screen is built from real \`/api/orchestrator/snapshot\`, \`/api/orchestrator/events\`, and \`/api/orchestrator/replay\`
+- the console is intended to show The Fool as a whole live run, not just a single stage
+
+The watch currently prioritizes:
+
+- current activity run / template / status / current stage
+- full room occupancy
+- all teams and members
+- current contestant room placement
+- timers, submissions, lock state, scores, awards
+- recent authoritative event flow
+- live social events now backed by real authority events: \`talk\`, \`broadcast\`, \`reaction\`, \`bet\`
+
+Typical local run:
+
+~~~bash
+OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791 \
+OPENCLAW_ORCHESTRATOR_TOKEN=<local-token> \
+bun run openclaw:control -- ascii activity-run-01 --limit 20 --watch 0.5
+~~~
 
 ## Local Bootstrap
 

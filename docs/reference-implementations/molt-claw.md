@@ -42,8 +42,13 @@
 - submission lifecycle
 - score projection / score summary
 - award state
+- terminal ASCII live watch built from authoritative query data
 - command receipt / error / idempotency
 - event log / replay / audit query
+- \`talk\`
+- \`broadcast\`
+- \`reaction\`
+- \`bet\`
 - \`transition_stage\`
 - \`start_timer\`
 - \`open_submission\`
@@ -60,6 +65,7 @@
 - \`GET /api/orchestrator/events\`
 - \`GET /api/orchestrator/replay\`
 - \`GET /api/orchestrator/audit\`
+- \`bun run openclaw:control -- ascii <activity-run-id> --watch <seconds>\`
 
 ## 4. 现在的边界
 
@@ -108,6 +114,13 @@ The Fool 仍然是第一份内置活动，但现在它是“显式配置的首�
 - \`src/openclaw/overview/runtime.ts\` 主要负责纯 overview/runtime 归一化、summary 组装、事件应用与格式化
 - \`src/openclaw/overviewSharedState.ts\` 继续负责 authority world / skill 相关共享摘要
 
+真正的 operator-facing live console 现在主要在终端：
+
+- \`scripts/openclaw-control.ts\` 的 \`ascii\` 子命令会先验证本地 authority，再拉取 \`snapshot + events + replay\`
+- \`src/openclaw/asciiOverview.ts\` 负责把真实 authority 数据渲染成持续刷新的 ASCII 直播控制台
+- 该视图默认按 The Fool 的 6 个 contestant / 3 队去展示全幕运行状态，而不是只盯单一 stage
+- 当前已覆盖的 authoritative social feed 包括 \`agent.talked\`、\`broadcast.sent\`、\`reaction.added\`、\`bet.placed\`
+
 它不再负责：
 
 - 节目叙事编排
@@ -131,7 +144,9 @@ The Fool 仍然是第一份内置活动，但现在它是“显式配置的首�
 
 - \`bun run build\`
 - \`bun run lint\`
+- \`bun test\`
 - 在需要确认 command 语义时，优先走真实 \`/api/orchestrator/commands\` 与 query endpoint 做最小命令链验证
+- 在需要确认全幕运行视图时，优先走真实 \`bun run openclaw:control -- ascii <run> --watch 0.5\`
 
 ## 9. 已知剩余事项
 
@@ -141,3 +156,5 @@ The Fool 仍然是第一份内置活动，但现在它是“显式配置的首�
 - 只有 The Fool 这一份 built-in activity 真正接入并验证过
 - 浏览器壳层虽然还会消费 authority/query summaries，但这层已经不再尝试成为通用活动前端
 - 更多活动接入时，需要继续验证 registry/bootstrapping 是否足够通用
+- audience/viewer 侧真实输入通道还没并入这条 authoritative social runtime
+- \`audience_heat\` / \`bet_heat\` / reaction totals 之类的聚合 snapshot 还没有落成独立权威投影
