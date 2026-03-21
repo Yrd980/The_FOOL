@@ -3,10 +3,16 @@ import {
 } from "./activityRuntime";
 import type {
   ActorRole as PlatformActorRole,
+  BetPayload,
+  BetTargetType,
+  BroadcastPayload,
   CommandConfirmation,
   CommandEnvelope,
+  MessageAudienceScope,
+  ReactionPayload,
   ScoreAnnotations,
   SubmissionData,
+  TalkPayload,
 } from "./platform/contracts";
 
 export type { CommandEnvelope };
@@ -24,6 +30,13 @@ const KNOWN_ORCHESTRATION_EVENT_PREFIXES = [
   "submission.",
   "judge.",
   "award.",
+  "entity.",
+  "team.",
+  "draw.",
+  "agent.",
+  "broadcast.",
+  "reaction.",
+  "bet.",
 ] as const;
 
 export const GATEWAY_CONNECT_CLIENT_ID = "gateway-client";
@@ -32,7 +45,7 @@ export const GATEWAY_OPERATOR_READ_SCOPE = "operator.read";
 
 export type ControlActorRole = PlatformActorRole;
 
-export interface SubmissionCommandPayload {
+export interface SubmissionCommandPayload extends Record<string, unknown> {
   submissionId: string;
   data: Record<string, unknown>;
 }
@@ -67,7 +80,7 @@ export const ORCHESTRATOR_HTTP_QUERY_PATHS = {
   audit: "/api/orchestrator/audit",
 } as const;
 
-export interface SubmitScorePayload {
+export interface SubmitScorePayload extends Record<string, unknown> {
   submissionId: string;
   teamId?: string;
   score: number;
@@ -108,6 +121,33 @@ const hasWrappingQuotes = (value: string): boolean =>
   value.length >= 2 &&
   ((value.startsWith('"') && value.endsWith('"')) ||
     (value.startsWith("'") && value.endsWith("'")));
+
+const normalizeRequiredText = (value: string, label: string): string => {
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error(`${label} is required.`);
+  }
+  return normalized;
+};
+
+const normalizeOptionalText = (value?: string): string | undefined => {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+};
+
+const normalizeAudienceScope = (
+  value: MessageAudienceScope | undefined,
+): MessageAudienceScope | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === "room" || value === "team" || value === "global") {
+    return value;
+  }
+
+  throw new Error("Audience scope must be room, team, or global.");
+};
 
 export const normalizeCommandConfirmationChallenge = (
   value: string,
@@ -840,6 +880,190 @@ export const buildAssignTeamEnvelope = ({
     idempotencyKey,
     confirmation,
   });
+
+export const buildTalkEnvelope = ({
+  actorId,
+  actorRole = "agent",
+  activityRunId,
+  message,
+  roomId,
+  targetEntityId,
+  audienceScope,
+  idempotencyKey,
+  confirmation,
+}: {
+  actorId: string;
+  actorRole?: ControlActorRole;
+  activityRunId: string;
+  message: string;
+  roomId?: string;
+  targetEntityId?: string;
+  audienceScope?: MessageAudienceScope;
+  idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
+}): CommandEnvelope<TalkPayload> =>
+  buildCommandEnvelope({
+    actorId,
+    actorRole,
+    activityRunId,
+    type: "talk",
+    payload: {
+      message: normalizeRequiredText(message, "Talk message"),
+      ...(normalizeOptionalText(roomId) ? { roomId: normalizeOptionalText(roomId) } : {}),
+      ...(normalizeOptionalText(targetEntityId)
+        ? { targetEntityId: normalizeOptionalText(targetEntityId) }
+        : {}),
+      ...(normalizeAudienceScope(audienceScope)
+        ? { audienceScope: normalizeAudienceScope(audienceScope) }
+        : {}),
+    },
+    idempotencyKey,
+    confirmation,
+  });
+
+export const buildBroadcastEnvelope = ({
+  actorId,
+  actorRole = "host",
+  activityRunId,
+  message,
+  roomId,
+  teamId,
+  audienceScope,
+  idempotencyKey,
+  confirmation,
+}: {
+  actorId: string;
+  actorRole?: ControlActorRole;
+  activityRunId: string;
+  message: string;
+  roomId?: string;
+  teamId?: string;
+  audienceScope?: MessageAudienceScope;
+  idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
+}): CommandEnvelope<BroadcastPayload> =>
+  buildCommandEnvelope({
+    actorId,
+    actorRole,
+    activityRunId,
+    type: "broadcast",
+    payload: {
+      message: normalizeRequiredText(message, "Broadcast message"),
+      ...(normalizeOptionalText(roomId) ? { roomId: normalizeOptionalText(roomId) } : {}),
+      ...(normalizeOptionalText(teamId) ? { teamId: normalizeOptionalText(teamId) } : {}),
+      ...(normalizeAudienceScope(audienceScope)
+        ? { audienceScope: normalizeAudienceScope(audienceScope) }
+        : {}),
+    },
+    idempotencyKey,
+    confirmation,
+  });
+
+export const buildReactionEnvelope = ({
+  actorId,
+  actorRole = "agent",
+  activityRunId,
+  reaction,
+  roomId,
+  targetEntityId,
+  targetTeamId,
+  note,
+  idempotencyKey,
+  confirmation,
+}: {
+  actorId: string;
+  actorRole?: ControlActorRole;
+  activityRunId: string;
+  reaction: string;
+  roomId?: string;
+  targetEntityId?: string;
+  targetTeamId?: string;
+  note?: string;
+  idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
+}): CommandEnvelope<ReactionPayload> =>
+  buildCommandEnvelope({
+    actorId,
+    actorRole,
+    activityRunId,
+    type: "reaction",
+    payload: {
+      reaction: normalizeRequiredText(reaction, "Reaction"),
+      ...(normalizeOptionalText(roomId) ? { roomId: normalizeOptionalText(roomId) } : {}),
+      ...(normalizeOptionalText(targetEntityId)
+        ? { targetEntityId: normalizeOptionalText(targetEntityId) }
+        : {}),
+      ...(normalizeOptionalText(targetTeamId)
+        ? { targetTeamId: normalizeOptionalText(targetTeamId) }
+        : {}),
+      ...(normalizeOptionalText(note) ? { note: normalizeOptionalText(note) } : {}),
+    },
+    idempotencyKey,
+    confirmation,
+  });
+
+export const buildBetEnvelope = ({
+  actorId,
+  actorRole = "agent",
+  activityRunId,
+  targetType,
+  targetId,
+  roomId,
+  amount,
+  odds,
+  stance,
+  note,
+  idempotencyKey,
+  confirmation,
+}: {
+  actorId: string;
+  actorRole?: ControlActorRole;
+  activityRunId: string;
+  targetType: BetTargetType;
+  targetId: string;
+  roomId?: string;
+  amount?: number;
+  odds?: number;
+  stance?: string;
+  note?: string;
+  idempotencyKey?: string;
+  confirmation?: CommandConfirmation;
+}): CommandEnvelope<BetPayload> => {
+  if (
+    targetType !== "team" &&
+    targetType !== "entity" &&
+    targetType !== "submission"
+  ) {
+    throw new Error("Bet target type must be team, entity, or submission.");
+  }
+
+  const normalizedAmount =
+    typeof amount === "number" && Number.isFinite(amount)
+      ? Math.max(1, Math.round(amount))
+      : undefined;
+  const normalizedOdds =
+    typeof odds === "number" && Number.isFinite(odds) && odds > 0
+      ? Number(odds.toFixed(2))
+      : undefined;
+
+  return buildCommandEnvelope({
+    actorId,
+    actorRole,
+    activityRunId,
+    type: "bet",
+    payload: {
+      targetType,
+      targetId: normalizeRequiredText(targetId, "Bet target id"),
+      ...(normalizeOptionalText(roomId) ? { roomId: normalizeOptionalText(roomId) } : {}),
+      ...(normalizedAmount !== undefined ? { amount: normalizedAmount } : {}),
+      ...(normalizedOdds !== undefined ? { odds: normalizedOdds } : {}),
+      ...(normalizeOptionalText(stance) ? { stance: normalizeOptionalText(stance) } : {}),
+      ...(normalizeOptionalText(note) ? { note: normalizeOptionalText(note) } : {}),
+    },
+    idempotencyKey,
+    confirmation,
+  });
+};
 
 export const buildSubmitScoreEnvelope = ({
   actorId,

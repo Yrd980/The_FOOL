@@ -1,4 +1,7 @@
-import type { CommandEnvelope } from "../../../src/openclaw/platform/contracts";
+import type {
+  CommandEnvelope,
+  EventEnvelope,
+} from "../../../src/openclaw/platform/contracts";
 import type { CommandHandlerContext, CommandHandlerResult } from "./support";
 
 export const handleAssignTeamCommand = (
@@ -6,6 +9,7 @@ export const handleAssignTeamCommand = (
   handledAt: number,
   context: CommandHandlerContext,
 ): CommandHandlerResult => {
+  const projection = context.getProjection();
   const payload = command.payload;
   const teamId =
     typeof payload.teamId === "string" ? payload.teamId.trim() : "";
@@ -29,25 +33,84 @@ export const handleAssignTeamCommand = (
     );
   }
 
+  const existingTeam = projection.world.teams.find((team) => team.id === teamId);
+  const resolvedMemberIds =
+    memberIds.length > 0
+      ? [...new Set(memberIds)]
+      : existingTeam?.memberIds ?? [];
+
+  if (
+    roomId &&
+    !projection.world.rooms.some((room) => room.id === roomId)
+  ) {
+    throw context.createCommandError(
+      command,
+      handledAt,
+      "UNKNOWN_ROOM",
+      `Unknown room ${roomId}.`,
+      404,
+    );
+  }
+
+  const unknownMemberIds = resolvedMemberIds.filter(
+    (memberId) =>
+      !projection.world.entities.some((entity) => entity.id === memberId),
+  );
+  if (unknownMemberIds.length > 0) {
+    throw context.createCommandError(
+      command,
+      handledAt,
+      "UNKNOWN_ENTITY",
+      `Unknown team members: ${unknownMemberIds.join(", ")}.`,
+      404,
+    );
+  }
+
   const confirmation = context.requireDangerousCommandConfirmation(
     command,
     handledAt,
   );
 
+  const events: EventEnvelope[] = [
+    context.queueEvent(
+      "team.assigned",
+      {
+        team: {
+          id: teamId,
+          memberIds: resolvedMemberIds,
+          roomId,
+        },
+      },
+      handledAt,
+    ),
+  ];
+
+  if (roomId) {
+    for (const memberId of resolvedMemberIds) {
+      const entity = projection.world.entities.find(
+        (entry) => entry.id === memberId,
+      );
+      if (!entity || entity.roomId === roomId) {
+        continue;
+      }
+
+      events.push(
+        context.queueEvent(
+          "entity.moved",
+          {
+            entityId: memberId,
+            toRoomId: roomId,
+            kind: entity.kind,
+            fromRoomId: entity.roomId ?? null,
+          },
+          handledAt,
+        ),
+      );
+    }
+  }
+
   return {
     confirmation,
-    events: [
-      context.queueEvent(
-        "team.assigned",
-        {
-          team: {
-            id: teamId,
-            memberIds,
-            roomId,
-          },
-        },
-        handledAt,
-      ),
-    ],
+    events,
   };
 };

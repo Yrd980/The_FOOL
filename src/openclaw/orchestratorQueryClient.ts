@@ -4,8 +4,6 @@ import {
   buildOrchestratorReplayUrl,
   buildOrchestratorScoresUrl,
   buildOrchestratorSnapshotUrl,
-  normalizeControlConfigValue,
-  normalizeOrchestratorBaseUrl,
   type ControlActorRole,
   type OrchestratorEventQuery,
 } from "./control";
@@ -17,8 +15,6 @@ import type {
 } from "./gateway/types";
 
 const DEFAULT_PAGE_LIMIT = 20;
-const LOCAL_ORCHESTRATOR_HOSTS = new Set(["127.0.0.1", "localhost"]);
-const LOCAL_ORCHESTRATOR_PORT = "18791";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -132,79 +128,6 @@ export interface OrchestratorQueryClientConfig {
   baseUrl: string;
   token: string;
 }
-
-export interface OrchestratorBrowserQueryConfigOptions {
-  orchestratorBaseUrl?: string;
-  gatewayUrl?: string;
-  orchestratorToken?: string;
-  gatewayToken?: string;
-}
-
-export interface ResolvedOrchestratorBrowserQueryConfig
-  extends OrchestratorQueryClientConfig {
-  source: "explicit-orchestrator-url" | "derived-local-orchestrator-url";
-  note: string | null;
-}
-
-const normalizeBrowserOrchestratorBaseUrl = (value: string): string => {
-  const parsed = new URL(normalizeOrchestratorBaseUrl(value));
-  if (parsed.pathname === "/ws") {
-    parsed.pathname = "";
-  }
-  return parsed.toString().replace(/\/$/, "");
-};
-
-export const resolveBrowserOrchestratorQueryConfig = ({
-  orchestratorBaseUrl,
-  gatewayUrl,
-  orchestratorToken,
-  gatewayToken,
-}: OrchestratorBrowserQueryConfigOptions): ResolvedOrchestratorBrowserQueryConfig | null => {
-  const token =
-    normalizeControlConfigValue(orchestratorToken) ??
-    normalizeControlConfigValue(gatewayToken);
-
-  if (!token) {
-    return null;
-  }
-
-  const explicitBaseUrl = normalizeControlConfigValue(orchestratorBaseUrl);
-  if (explicitBaseUrl) {
-    return {
-      baseUrl: normalizeBrowserOrchestratorBaseUrl(explicitBaseUrl),
-      token,
-      source: "explicit-orchestrator-url",
-      note: "Browser authoritative queries are pinned to VITE_OPENCLAW_ORCHESTRATOR_URL.",
-    };
-  }
-
-  const normalizedGatewayUrl = normalizeControlConfigValue(gatewayUrl);
-  if (!normalizedGatewayUrl) {
-    return null;
-  }
-
-  try {
-    const parsed = new URL(normalizedGatewayUrl);
-    const isLocalOrchestratorGateway =
-      (parsed.protocol === "ws:" || parsed.protocol === "wss:") &&
-      LOCAL_ORCHESTRATOR_HOSTS.has(parsed.hostname) &&
-      parsed.port === LOCAL_ORCHESTRATOR_PORT;
-
-    if (!isLocalOrchestratorGateway) {
-      return null;
-    }
-
-    return {
-      baseUrl: normalizeBrowserOrchestratorBaseUrl(normalizedGatewayUrl),
-      token,
-      source: "derived-local-orchestrator-url",
-      note:
-        "Browser authoritative queries are derived from the local orchestrator websocket URL.",
-    };
-  } catch {
-    return null;
-  }
-};
 
 export class OrchestratorQueryClient {
   private readonly config: OrchestratorQueryClientConfig;

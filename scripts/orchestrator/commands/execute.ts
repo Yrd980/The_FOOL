@@ -14,6 +14,12 @@ import {
 } from "./entity";
 import { handleSubmitScoreCommand } from "./score";
 import {
+  handleBetCommand,
+  handleBroadcastCommand,
+  handleReactionCommand,
+  handleTalkCommand,
+} from "./social";
+import {
   handleStartTimerCommand,
   handleTransitionStageCommand,
 } from "./stageTimer";
@@ -31,6 +37,7 @@ import { handleAssignTeamCommand } from "./team";
 export interface FreshCommandExecutionContext {
   resolveRequestedActivityRunId: (activityRunId?: string) => string;
   requireHostRole: (command: CommandEnvelope, handledAt: number) => void;
+  requireParticipantRole: (command: CommandEnvelope, handledAt: number) => void;
   requireScoreRole: (command: CommandEnvelope, handledAt: number) => void;
   requireSubmissionRole: (command: CommandEnvelope, handledAt: number) => void;
   createCommandHandlerContext: (
@@ -83,6 +90,15 @@ const requireCommandRole = (
     return;
   }
 
+  if (
+    command.type === "talk" ||
+    command.type === "reaction" ||
+    command.type === "bet"
+  ) {
+    context.requireParticipantRole(command, handledAt);
+    return;
+  }
+
   context.requireHostRole(command, handledAt);
 };
 
@@ -130,6 +146,22 @@ const dispatchCommand = ({
 
   if (command.type === "submit_score") {
     return handleSubmitScoreCommand(command, handledAt, commandHandlerContext);
+  }
+
+  if (command.type === "talk") {
+    return handleTalkCommand(command, handledAt, commandHandlerContext);
+  }
+
+  if (command.type === "broadcast") {
+    return handleBroadcastCommand(command, handledAt, commandHandlerContext);
+  }
+
+  if (command.type === "reaction") {
+    return handleReactionCommand(command, handledAt, commandHandlerContext);
+  }
+
+  if (command.type === "bet") {
+    return handleBetCommand(command, handledAt, commandHandlerContext);
   }
 
   if (command.type === "grant_award") {

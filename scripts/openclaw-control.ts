@@ -25,9 +25,13 @@ import {
   buildOrchestratorSnapshotUrl,
   buildSubmitEnvelope,
   buildAssignTeamEnvelope,
+  buildBetEnvelope,
+  buildBroadcastEnvelope,
   buildMoveEntityEnvelope,
+  buildReactionEnvelope,
   buildSubmitScoreEnvelope,
   buildStartTimerEnvelope,
+  buildTalkEnvelope,
   buildTransitionStageEnvelope,
   buildUpdateSubmissionEnvelope,
   normalizeControlConfigValue,
@@ -51,13 +55,22 @@ import {
   tryResolveActivityPackageId,
   type ActivityRoomCatalog,
 } from "../src/openclaw/activityRuntime";
+import { buildOpenClawAsciiOverview } from "../src/openclaw/asciiOverview";
 import { resolveLocalPlatformBootstrapConfig } from "../src/openclaw/localPlatformConfig";
 import type { WorldProjection } from "../src/openclaw/platform/contracts";
+import type {
+  OrchestratorEventPage,
+  OrchestratorSnapshotResponse,
+} from "../src/openclaw/orchestratorQueryClient";
 
 type CommandName =
   | "probe"
   | "move"
   | "say"
+  | "talk"
+  | "broadcast"
+  | "reaction"
+  | "bet"
   | "stage"
   | "start-timer"
   | "open-submission"
@@ -69,6 +82,7 @@ type CommandName =
   | "draw"
   | "move-entity"
   | "assign-team"
+  | "ascii"
   | "snapshot"
   | "scores"
   | "events"
@@ -144,6 +158,23 @@ interface PairedCliProbeSummary {
   configPlugins: ConfigPluginSummary;
   loadedPlugins: LoadedPluginSummary[];
   runtimeInference: string;
+}
+
+interface LocalOrchestratorProbeSummary {
+  baseUrl: string;
+  activityRunId: string;
+  status:
+    | "available"
+    | "auth-missing"
+    | "http-error"
+    | "wrong-service"
+    | "unreachable";
+  httpStatus: number | null;
+  note: string;
+  snapshotKeys: string[];
+  templateId: string | null;
+  currentStageId: string | null;
+  snapshotResponse: OrchestratorSnapshotResponse | null;
 }
 
 interface AgentCommandActivityContext {
@@ -232,6 +263,10 @@ const USAGE = `Usage:
   bun run openclaw:control -- probe
   bun run openclaw:control -- move <agent-id> <room> [--activity-run-id <id>] [--activity-package-id <id>]
   bun run openclaw:control -- say <agent-id> <room> <message> [--activity-run-id <id>] [--activity-package-id <id>]
+  bun run openclaw:control -- talk <activity-run-id> <message...> [--room-id <room-id>] [--target-entity-id <entity-id>] [--audience-scope <room|team|global>]
+  bun run openclaw:control -- broadcast <activity-run-id> <message...> [--room-id <room-id>] [--team-id <team-id>] [--audience-scope <room|team|global>]
+  bun run openclaw:control -- reaction <activity-run-id> <reaction> [note...] [--room-id <room-id>] [--target-entity-id <entity-id>] [--target-team-id <team-id>]
+  bun run openclaw:control -- bet <activity-run-id> <team|entity|submission> <target-id> [--amount <n>] [--odds <n>] [--stance <text>] [--note <text>] [--room-id <room-id>]
   bun run openclaw:control -- stage <activity-run-id> <target-stage-id>
   bun run openclaw:control -- start-timer <activity-run-id> <stage-id> <duration-sec>
   bun run openclaw:control -- open-submission <activity-run-id> <submission-id>
@@ -243,6 +278,7 @@ const USAGE = `Usage:
   bun run openclaw:control -- draw <activity-run-id> <entity-id> <draw-data-json>
   bun run openclaw:control -- move-entity <activity-run-id> <entity-id> <to-room-id> [kind]
   bun run openclaw:control -- assign-team <activity-run-id> <team-id> [--members <id,id,...>] [--room-id <room-id>]
+  bun run openclaw:control -- ascii <activity-run-id> [--limit <n>] [--watch <seconds>]
   bun run openclaw:control -- snapshot <activity-run-id>
   bun run openclaw:control -- scores <activity-run-id> [--after-sequence <n>] [--from-sequence <n>] [--to-sequence <n>] [--limit <n>]
   bun run openclaw:control -- events <activity-run-id> [--after-sequence <n>] [--from-sequence <n>] [--to-sequence <n>] [--limit <n>]
@@ -302,6 +338,24 @@ const isWorldProjection = (value: unknown): value is WorldProjection =>
   Array.isArray(value.rooms) &&
   Array.isArray(value.teams) &&
   Array.isArray(value.entities);
+
+const isOrchestratorSnapshotResponse = (
+  value: unknown,
+): value is OrchestratorSnapshotResponse => {
+  if (!isRecord(value) || value.ok !== true || !isRecord(value.snapshot)) {
+    return false;
+  }
+
+  const activityRun = isRecord(value.snapshot.activityRun)
+    ? value.snapshot.activityRun
+    : null;
+
+  return (
+    activityRun !== null &&
+    typeof activityRun.id === "string" &&
+    typeof activityRun.status === "string"
+  );
+};
 
 const readString = (
   record: Record<string, unknown> | undefined,
@@ -386,6 +440,25 @@ const requestLocalOrchestrator = async ({
   }
 
   return responseBody;
+};
+
+const buildLocalOrchestratorFailureNote = ({
+  baseUrl,
+  activityRunId,
+  httpStatus,
+  reason,
+}: {
+  baseUrl: string;
+  activityRunId: string;
+  httpStatus?: number | null;
+  reason: string;
+}): string => {
+  const httpLabel =
+    typeof httpStatus === "number" ? ` (HTTP ${httpStatus})` : "";
+  return (
+    `OPENCLAW_ORCHESTRATOR_URL ${baseUrl} did not provide molt-claw's authoritative /api/orchestrator/snapshot for ${activityRunId}${httpLabel}. ` +
+    `${reason} Start this repo's scripts/openclaw-orchestrator.ts on a free port and point OPENCLAW_ORCHESTRATOR_URL at that server.`
+  );
 };
 
 const runOpenClaw = (args: string[]): never => {
@@ -858,7 +931,7 @@ const dispatchOrPreview = async ({
 }: {
   envelope: CommandEnvelope;
   summary: string;
-}): Promise<never> => {
+}): Promise<void> => {
   const configuredOrchestratorUrl =
     resolveConfigValue("OPENCLAW_ORCHESTRATOR_URL") ??
     resolveConfigValue("VITE_OPENCLAW_ORCHESTRATOR_URL");
@@ -994,18 +1067,18 @@ const dispatchOrPreview = async ({
     commandParamKey,
   });
 
-  runOpenClaw(args);
+  return runOpenClaw(args);
 };
 
 const parsePayloadJson = (source: string): Record<string, unknown> => {
   try {
     const parsed = JSON.parse(source);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      fail("Payload JSON must be an object.");
+      return fail("Payload JSON must be an object.");
     }
     return parsed as Record<string, unknown>;
   } catch (error) {
-    fail(`Invalid payload JSON: ${(error as Error).message}`);
+    return fail(`Invalid payload JSON: ${(error as Error).message}`);
   }
 };
 
@@ -1066,17 +1139,139 @@ const resolveLocalOrchestratorAuth = (): {
   baseUrl: string;
   token: string;
 } => {
-  const token = resolveOrchestratorToken();
-  if (!token) {
-    fail(
+  const resolvedToken = resolveOrchestratorToken();
+  if (!resolvedToken) {
+    return fail(
       "Missing local orchestrator token. Set OPENCLAW_ORCHESTRATOR_TOKEN or VITE_OPENCLAW_TOKEN.",
     );
   }
 
   return {
     baseUrl: resolveOrchestratorBaseUrl(),
-    token,
+    token: resolvedToken,
   };
+};
+
+const probeLocalOrchestrator = async (
+  activityRunId: string,
+): Promise<LocalOrchestratorProbeSummary> => {
+  const baseUrl = resolveOrchestratorBaseUrl();
+  const token = resolveOrchestratorToken();
+  const url = buildOrchestratorSnapshotUrl({
+    baseUrl,
+    activityRunId,
+  });
+
+  if (!token) {
+    return {
+      baseUrl,
+      activityRunId,
+      status: "auth-missing",
+      httpStatus: null,
+      note:
+        `OPENCLAW_ORCHESTRATOR_TOKEN is missing, so molt-claw's authoritative snapshot cannot be verified at ${baseUrl}.`,
+      snapshotKeys: [],
+      templateId: null,
+      currentStageId: null,
+      snapshotResponse: null,
+    };
+  }
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    });
+
+    let responseBody: unknown = null;
+    try {
+      responseBody = await response.json();
+    } catch {
+      responseBody = null;
+    }
+
+    if (!response.ok) {
+      return {
+        baseUrl,
+        activityRunId,
+        status: response.status === 404 ? "wrong-service" : "http-error",
+        httpStatus: response.status,
+        note: buildLocalOrchestratorFailureNote({
+          baseUrl,
+          activityRunId,
+          httpStatus: response.status,
+          reason:
+            response.status === 404
+              ? "The URL appears to point at another OpenClaw service or proxy instead of the authoritative orchestrator."
+              : formatOrchestratorError(
+                  responseBody,
+                  "Authoritative snapshot query failed.",
+                ),
+        }),
+        snapshotKeys: [],
+        templateId: null,
+        currentStageId: null,
+        snapshotResponse: null,
+      };
+    }
+
+    if (!isOrchestratorSnapshotResponse(responseBody)) {
+      return {
+        baseUrl,
+        activityRunId,
+        status: "wrong-service",
+        httpStatus: response.status,
+        note: buildLocalOrchestratorFailureNote({
+          baseUrl,
+          activityRunId,
+          httpStatus: response.status,
+          reason:
+            "The endpoint returned JSON, but it does not match the authoritative orchestrator snapshot shape.",
+        }),
+        snapshotKeys: [],
+        templateId: null,
+        currentStageId: null,
+        snapshotResponse: null,
+      };
+    }
+
+    return {
+      baseUrl,
+      activityRunId,
+      status: "available",
+      httpStatus: response.status,
+      note: `Authoritative orchestrator snapshot is available at ${baseUrl} for ${activityRunId}.`,
+      snapshotKeys: Object.keys(responseBody.snapshot),
+      templateId: responseBody.snapshot.activityRun?.templateId ?? null,
+      currentStageId: responseBody.snapshot.activityRun?.currentStageId ?? null,
+      snapshotResponse: responseBody,
+    };
+  } catch (error) {
+    return {
+      baseUrl,
+      activityRunId,
+      status: "unreachable",
+      httpStatus: null,
+      note:
+        `Unable to reach molt-claw's authoritative orchestrator at ${baseUrl}: ${(error as Error).message}. ` +
+        "Start this repo's scripts/openclaw-orchestrator.ts on a free port and point OPENCLAW_ORCHESTRATOR_URL at that server.",
+      snapshotKeys: [],
+      templateId: null,
+      currentStageId: null,
+      snapshotResponse: null,
+    };
+  }
+};
+
+const requireLocalOrchestrator = async (
+  activityRunId: string,
+): Promise<LocalOrchestratorProbeSummary> => {
+  const probe = await probeLocalOrchestrator(activityRunId);
+  if (probe.status !== "available" || !probe.snapshotResponse) {
+    fail(`[openclaw-control] ${probe.note}`);
+  }
+  return probe;
 };
 
 const resolveAgentCommandActivityContext = async ({
@@ -1124,20 +1319,21 @@ const resolveAgentCommandActivityContext = async ({
   }
 
   try {
-    const responseBody = await requestLocalOrchestrator({
-      url: buildOrchestratorSnapshotUrl({
-        baseUrl: resolveOrchestratorBaseUrl(),
-        activityRunId,
-      }),
-      token: orchestratorToken,
-    });
-    const snapshot =
-      isRecord(responseBody) && isRecord(responseBody.snapshot)
-        ? responseBody.snapshot
-        : null;
+    const probe = await probeLocalOrchestrator(
+      activityRunId ?? resolveLocalPlatformBootstrapConfig().defaultActivityRunId,
+    );
+    if (probe.status !== "available" || !probe.snapshotResponse) {
+      return {
+        activityPackageId: null,
+        roomCatalog: null,
+        note: probe.note,
+      };
+    }
+
+    const snapshot = probe.snapshotResponse.snapshot;
     const activityRun =
       snapshot && isRecord(snapshot.activityRun) ? snapshot.activityRun : null;
-    const templateId = readString(activityRun, "templateId");
+    const templateId = readString(activityRun ?? undefined, "templateId");
     const activityPackageId = tryResolveActivityPackageId({
       templateId,
     });
@@ -1176,17 +1372,153 @@ const resolveAgentCommandActivityContext = async ({
 const runLocalOrchestratorQuery = async ({
   label,
   url,
+  activityRunId,
+  verifiedSnapshotResponse,
 }: {
   label: string;
   url: string;
-}): Promise<never> => {
+  activityRunId: string;
+  verifiedSnapshotResponse?: OrchestratorSnapshotResponse;
+}): Promise<void> => {
+  await requireLocalOrchestrator(activityRunId);
   const { token } = resolveLocalOrchestratorAuth();
   console.log(`[openclaw-control] ${label}`);
+  if (verifiedSnapshotResponse) {
+    return printJsonAndExit(verifiedSnapshotResponse);
+  }
   const responseBody = await requestLocalOrchestrator({
     url,
     token,
   });
-  printJsonAndExit(responseBody);
+  return printJsonAndExit(responseBody);
+};
+
+const loadLocalOrchestratorJson = async <T>(url: string): Promise<T> => {
+  const { token } = resolveLocalOrchestratorAuth();
+  return (await requestLocalOrchestrator({
+    url,
+    token,
+  })) as T;
+};
+
+const readPositiveOptionNumber = (
+  options: Record<string, string>,
+  key: string,
+): number | undefined => {
+  const rawValue = options[key];
+  if (rawValue === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number.parseFloat(rawValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    fail(`--${key} must be a positive number.`);
+  }
+
+  return parsed;
+};
+
+const clearTerminalScreen = (): void => {
+  process.stdout.write("\x1bc");
+};
+
+const formatNowLabel = (): string => {
+  const now = new Date();
+  return [
+    String(now.getHours()).padStart(2, "0"),
+    String(now.getMinutes()).padStart(2, "0"),
+    String(now.getSeconds()).padStart(2, "0"),
+  ].join(":");
+};
+
+const renderAsciiOverview = async ({
+  activityRunId,
+  limit,
+}: {
+  activityRunId: string;
+  limit: number;
+}): Promise<string> => {
+  const verified = await requireLocalOrchestrator(activityRunId);
+  const { baseUrl, token } = resolveLocalOrchestratorAuth();
+  const eventsResponse = await loadLocalOrchestratorJson<OrchestratorEventPage>(
+    buildOrchestratorEventsUrl({
+      baseUrl,
+      query: {
+        activityRunId,
+        limit,
+      },
+    }),
+  );
+  const replayResponse = (await requestLocalOrchestrator({
+    url: buildOrchestratorReplayUrl({
+      baseUrl,
+      query: {
+        activityRunId,
+        limit: Math.max(limit * 4, 40),
+      },
+    }),
+    token,
+  })) as OrchestratorEventPage;
+
+  const snapshotResponse = verified.snapshotResponse;
+  if (!snapshotResponse) {
+    return fail(`[openclaw-control] ${verified.note}`);
+  }
+
+  return buildOpenClawAsciiOverview({
+    snapshotResponse,
+    eventsPage: eventsResponse,
+    replayPage: replayResponse,
+    eventLimit: limit,
+  });
+};
+
+const runAsciiOverview = async ({
+  activityRunId,
+  limit,
+  watchSeconds,
+}: {
+  activityRunId: string;
+  limit: number;
+  watchSeconds?: number;
+}): Promise<never> => {
+  const watchMs =
+    watchSeconds === undefined ? null : Math.max(250, Math.round(watchSeconds * 1000));
+
+  if (watchMs === null) {
+    console.log(
+      await renderAsciiOverview({
+        activityRunId,
+        limit,
+      }),
+    );
+    process.exit(0);
+  }
+
+  let stopping = false;
+  process.on("SIGINT", () => {
+    if (stopping) {
+      return;
+    }
+    stopping = true;
+    process.stdout.write("\n[openclaw-control] ascii watch stopped.\n");
+    process.exit(0);
+  });
+
+  while (true) {
+    const overview = await renderAsciiOverview({
+      activityRunId,
+      limit,
+    });
+    clearTerminalScreen();
+    console.log(
+      `[openclaw-control] ascii watch ${activityRunId} refresh=${(
+        watchMs / 1000
+      ).toFixed(2)}s updated=${formatNowLabel()}\n`,
+    );
+    console.log(overview);
+    await Bun.sleep(watchMs);
+  }
 };
 
 const parseEventQueryArgs = (
@@ -1226,7 +1558,6 @@ const parseEventQueryArgs = (
 };
 
 const parseSubmissionCommandArgs = (
-  commandName: "submit" | "update-submission",
   rawArgs: string[],
 ): {
   activityRunId: string;
@@ -1347,6 +1678,157 @@ const parseSubmitScoreArgs = (
   };
 };
 
+const parseAudienceScopeOption = (
+  value: string | undefined,
+): "room" | "team" | "global" | undefined => {
+  const normalized = normalizeControlConfigValue(value);
+  if (
+    normalized === undefined ||
+    normalized === "room" ||
+    normalized === "team" ||
+    normalized === "global"
+  ) {
+    return normalized;
+  }
+
+  fail("--audience-scope must be room, team, or global.");
+};
+
+const readPositiveNumericOption = (
+  options: Record<string, string>,
+  key: string,
+): number | undefined => {
+  const rawValue = options[key];
+  if (rawValue === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number.parseFloat(rawValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    fail(`--${key} must be a positive number.`);
+  }
+
+  return parsed;
+};
+
+const parseTalkArgs = (
+  rawArgs: string[],
+): {
+  activityRunId: string;
+  message: string;
+  roomId?: string;
+  targetEntityId?: string;
+  audienceScope?: "room" | "team" | "global";
+} => {
+  const { positional, options } = parseLongOptions(rawArgs);
+  const [activityRunId, ...messageParts] = positional;
+  const message = messageParts.join(" ").trim();
+  if (!activityRunId || !message) {
+    fail(USAGE);
+  }
+
+  return {
+    activityRunId,
+    message,
+    roomId: normalizeControlConfigValue(options["room-id"]),
+    targetEntityId: normalizeControlConfigValue(options["target-entity-id"]),
+    audienceScope: parseAudienceScopeOption(options["audience-scope"]),
+  };
+};
+
+const parseBroadcastArgs = (
+  rawArgs: string[],
+): {
+  activityRunId: string;
+  message: string;
+  roomId?: string;
+  teamId?: string;
+  audienceScope?: "room" | "team" | "global";
+} => {
+  const { positional, options } = parseLongOptions(rawArgs);
+  const [activityRunId, ...messageParts] = positional;
+  const message = messageParts.join(" ").trim();
+  if (!activityRunId || !message) {
+    fail(USAGE);
+  }
+
+  return {
+    activityRunId,
+    message,
+    roomId: normalizeControlConfigValue(options["room-id"]),
+    teamId: normalizeControlConfigValue(options["team-id"]),
+    audienceScope: parseAudienceScopeOption(options["audience-scope"]),
+  };
+};
+
+const parseReactionArgs = (
+  rawArgs: string[],
+): {
+  activityRunId: string;
+  reaction: string;
+  note?: string;
+  roomId?: string;
+  targetEntityId?: string;
+  targetTeamId?: string;
+} => {
+  const { positional, options } = parseLongOptions(rawArgs);
+  const [activityRunId, reaction, ...noteParts] = positional;
+  if (!activityRunId || !reaction) {
+    fail(USAGE);
+  }
+
+  const noteFromPositional = noteParts.join(" ").trim();
+  return {
+    activityRunId,
+    reaction,
+    note:
+      normalizeControlConfigValue(options.note) ??
+      (noteFromPositional || undefined),
+    roomId: normalizeControlConfigValue(options["room-id"]),
+    targetEntityId: normalizeControlConfigValue(options["target-entity-id"]),
+    targetTeamId: normalizeControlConfigValue(options["target-team-id"]),
+  };
+};
+
+const parseBetArgs = (
+  rawArgs: string[],
+): {
+  activityRunId: string;
+  targetType: "team" | "entity" | "submission";
+  targetId: string;
+  roomId?: string;
+  amount?: number;
+  odds?: number;
+  stance?: string;
+  note?: string;
+} => {
+  const { positional, options } = parseLongOptions(rawArgs);
+  const [activityRunId, targetTypeInput, targetId] = positional;
+  if (!activityRunId || !targetTypeInput || !targetId) {
+    fail(USAGE);
+  }
+
+  const targetType = normalizeControlConfigValue(targetTypeInput);
+  if (
+    targetType !== "team" &&
+    targetType !== "entity" &&
+    targetType !== "submission"
+  ) {
+    fail("bet requires <team|entity|submission> as the target type.");
+  }
+
+  return {
+    activityRunId,
+    targetType: targetType as "team" | "entity" | "submission",
+    targetId,
+    roomId: normalizeControlConfigValue(options["room-id"]),
+    amount: readOptionInteger(options, "amount"),
+    odds: readPositiveNumericOption(options, "odds"),
+    stance: normalizeControlConfigValue(options.stance),
+    note: normalizeControlConfigValue(options.note),
+  };
+};
+
 const resolveActorId = (): string =>
   resolveConfigValue("OPENCLAW_COMMAND_ACTOR_ID") ?? "molt-claw";
 
@@ -1354,27 +1836,57 @@ const runProbe = async (): Promise<never> => {
   const gatewayUrl =
     resolveConfigValue("OPENCLAW_GATEWAY_URL") ??
     resolveConfigValue("VITE_OPENCLAW_URL");
-  const token = resolveGatewayToken();
-
-  if (!token) {
-    fail(
-      "Missing OpenClaw token. Set OPENCLAW_GATEWAY_TOKEN / VITE_OPENCLAW_TOKEN, or make sure ~/.openclaw/openclaw.json contains gateway.auth.token.",
-    );
-  }
-
-  const probe = await probeGatewaySession({ gatewayUrl, token });
+  const resolvedToken = resolveGatewayToken();
+  const activityRunId = resolveLocalPlatformBootstrapConfig().defaultActivityRunId;
   const dispatchMethod = normalizeControlDispatchMethod(
     resolveConfigValue("OPENCLAW_COMMAND_METHOD") ??
       resolveConfigValue("VITE_OPENCLAW_COMMAND_METHOD"),
   );
+  const gatewayProbe = resolvedToken
+    ? await probeGatewaySession({
+        gatewayUrl,
+        token: resolvedToken,
+      })
+        .then((probe) => ({
+          ok: true as const,
+          methods: probe.methods,
+          events: probe.events,
+          hello: probe.hello,
+          rawStatus: probe.status,
+          note: null,
+        }))
+        .catch((error) => ({
+          ok: false as const,
+          methods: [] as string[],
+          events: [] as string[],
+          hello: null,
+          rawStatus: null,
+          note: (error as Error).message,
+        }))
+    : {
+        ok: false as const,
+        methods: [] as string[],
+        events: [] as string[],
+        hello: null,
+        rawStatus: null,
+        note:
+          "Missing OpenClaw gateway token. Set OPENCLAW_GATEWAY_TOKEN / VITE_OPENCLAW_TOKEN, or make sure ~/.openclaw/openclaw.json contains gateway.auth.token.",
+      };
   const contract = summarizeGatewayOrchestrationContract({
     capabilities: {
-      methods: probe.methods,
-      events: probe.events,
+      methods: gatewayProbe.methods,
+      events: gatewayProbe.events,
     },
     configuredDispatchMethod: dispatchMethod,
   });
-  const pairedCli = probePairedCliRuntime();
+  let pairedCli: PairedCliProbeSummary | null = null;
+  let pairedCliError: string | null = null;
+  try {
+    pairedCli = probePairedCliRuntime();
+  } catch (error) {
+    pairedCliError = (error as Error).message;
+  }
+  const orchestrator = await probeLocalOrchestrator(activityRunId);
 
   console.log(
     JSON.stringify(
@@ -1382,16 +1894,30 @@ const runProbe = async (): Promise<never> => {
         gatewayUrl: normalizeControlGatewayUrl(gatewayUrl),
         orchestrationContract: contract,
         configuredDispatchMethod: dispatchMethod ?? null,
-        hello: {
-          methods: probe.methods,
-          events: probe.events,
-          snapshotKeys: probe.hello.snapshotKeys,
-          healthKeys: probe.hello.healthKeys,
-          agentCount: probe.hello.agentCount,
-          serviceTs: probe.hello.serviceTs,
+        gatewayProbe: gatewayProbe.ok
+          ? {
+              ok: true,
+              methods: gatewayProbe.methods,
+              events: gatewayProbe.events,
+              hello: gatewayProbe.hello,
+              rawStatus: gatewayProbe.rawStatus,
+            }
+          : {
+              ok: false,
+              note: gatewayProbe.note,
+            },
+        localOrchestrator: {
+          baseUrl: orchestrator.baseUrl,
+          activityRunId: orchestrator.activityRunId,
+          status: orchestrator.status,
+          httpStatus: orchestrator.httpStatus,
+          note: orchestrator.note,
+          snapshotKeys: orchestrator.snapshotKeys,
+          templateId: orchestrator.templateId,
+          currentStageId: orchestrator.currentStageId,
         },
-        rawStatus: probe.status,
         pairedCli,
+        pairedCliError,
       },
       null,
       2,
@@ -1500,6 +2026,82 @@ if (normalizedCommand === "move" || normalizedCommand === "say") {
   runOpenClaw(openClawArgs);
 }
 
+if (normalizedCommand === "talk") {
+  const talk = parseTalkArgs(args);
+  await dispatchOrPreview({
+    envelope: buildTalkEnvelope({
+      actorId: resolveActorId(),
+      actorRole: resolveActorRole(),
+      activityRunId: talk.activityRunId,
+      message: talk.message,
+      roomId: talk.roomId,
+      targetEntityId: talk.targetEntityId,
+      audienceScope: talk.audienceScope,
+      idempotencyKey: `talk-${talk.activityRunId}-${Date.now()}`,
+    }),
+    summary: `talk ${talk.activityRunId} / ${talk.roomId ?? "auto-room"}`,
+  });
+}
+
+if (normalizedCommand === "broadcast") {
+  const broadcast = parseBroadcastArgs(args);
+  await dispatchOrPreview({
+    envelope: buildBroadcastEnvelope({
+      actorId: resolveActorId(),
+      actorRole: resolveActorRole(),
+      activityRunId: broadcast.activityRunId,
+      message: broadcast.message,
+      roomId: broadcast.roomId,
+      teamId: broadcast.teamId,
+      audienceScope: broadcast.audienceScope,
+      idempotencyKey: `broadcast-${broadcast.activityRunId}-${Date.now()}`,
+    }),
+    summary:
+      `broadcast ${broadcast.activityRunId} / ` +
+      `${broadcast.teamId ?? broadcast.roomId ?? broadcast.audienceScope ?? "global"}`,
+  });
+}
+
+if (normalizedCommand === "reaction") {
+  const reaction = parseReactionArgs(args);
+  await dispatchOrPreview({
+    envelope: buildReactionEnvelope({
+      actorId: resolveActorId(),
+      actorRole: resolveActorRole(),
+      activityRunId: reaction.activityRunId,
+      reaction: reaction.reaction,
+      roomId: reaction.roomId,
+      targetEntityId: reaction.targetEntityId,
+      targetTeamId: reaction.targetTeamId,
+      note: reaction.note,
+      idempotencyKey: `reaction-${reaction.activityRunId}-${Date.now()}`,
+    }),
+    summary:
+      `reaction ${reaction.activityRunId} / ` +
+      `${reaction.targetEntityId ?? reaction.targetTeamId ?? reaction.roomId ?? "stage"}`,
+  });
+}
+
+if (normalizedCommand === "bet") {
+  const bet = parseBetArgs(args);
+  await dispatchOrPreview({
+    envelope: buildBetEnvelope({
+      actorId: resolveActorId(),
+      actorRole: resolveActorRole(),
+      activityRunId: bet.activityRunId,
+      targetType: bet.targetType,
+      targetId: bet.targetId,
+      roomId: bet.roomId,
+      amount: bet.amount,
+      odds: bet.odds,
+      stance: bet.stance,
+      note: bet.note,
+      idempotencyKey: `bet-${bet.activityRunId}-${bet.targetType}-${bet.targetId}-${Date.now()}`,
+    }),
+    summary: `bet ${bet.activityRunId} / ${bet.targetType}:${bet.targetId}`,
+  });
+}
+
 if (normalizedCommand === "stage") {
   const { positional, options } = parseLongOptions(args);
   const [activityRunId, targetStageId] = positional;
@@ -1560,10 +2162,7 @@ if (normalizedCommand === "open-submission") {
 }
 
 if (normalizedCommand === "submit") {
-  const { activityRunId, submissionId, data } = parseSubmissionCommandArgs(
-    "submit",
-    args,
-  );
+  const { activityRunId, submissionId, data } = parseSubmissionCommandArgs(args);
   await dispatchOrPreview({
     envelope: buildSubmitEnvelope({
       actorId: resolveActorId(),
@@ -1578,10 +2177,7 @@ if (normalizedCommand === "submit") {
 }
 
 if (normalizedCommand === "update-submission") {
-  const { activityRunId, submissionId, data } = parseSubmissionCommandArgs(
-    "update-submission",
-    args,
-  );
+  const { activityRunId, submissionId, data } = parseSubmissionCommandArgs(args);
   await dispatchOrPreview({
     envelope: buildUpdateSubmissionEnvelope({
       actorId: resolveActorId(),
@@ -1719,18 +2315,41 @@ if (normalizedCommand === "assign-team") {
   });
 }
 
-if (normalizedCommand === "snapshot") {
-  const [activityRunId] = args;
+if (normalizedCommand === "ascii") {
+  const { positional, options } = parseLongOptions(args);
+  const [activityRunId] = positional;
   if (!activityRunId) {
     fail(USAGE);
   }
 
+  const limit = readOptionInteger(options, "limit") ?? 12;
+  const watchSeconds = readPositiveOptionNumber(options, "watch");
+
+  await runAsciiOverview({
+    activityRunId,
+    limit,
+    watchSeconds,
+  });
+}
+
+if (normalizedCommand === "snapshot") {
+  const [activityRunIdArgument] = args;
+  const activityRunId =
+    activityRunIdArgument ?? resolveLocalPlatformBootstrapConfig().defaultActivityRunId;
+  const verified = await requireLocalOrchestrator(activityRunId);
+  const snapshotResponse = verified.snapshotResponse;
+  if (!snapshotResponse) {
+    fail(`[openclaw-control] ${verified.note}`);
+  }
+
   await runLocalOrchestratorQuery({
     label: `snapshot ${activityRunId} via local authoritative orchestrator`,
+    activityRunId,
     url: buildOrchestratorSnapshotUrl({
       baseUrl: resolveOrchestratorBaseUrl(),
       activityRunId,
     }),
+    verifiedSnapshotResponse: snapshotResponse ?? undefined,
   });
 }
 
@@ -1738,6 +2357,7 @@ if (normalizedCommand === "events") {
   const { activityRunId, query } = parseEventQueryArgs("events", args);
   await runLocalOrchestratorQuery({
     label: `events ${activityRunId} via local authoritative orchestrator`,
+    activityRunId,
     url: buildOrchestratorEventsUrl({
       baseUrl: resolveOrchestratorBaseUrl(),
       query,
@@ -1749,6 +2369,7 @@ if (normalizedCommand === "scores") {
   const { activityRunId, query } = parseEventQueryArgs("scores", args);
   await runLocalOrchestratorQuery({
     label: `scores ${activityRunId} via local authoritative orchestrator`,
+    activityRunId,
     url: buildOrchestratorScoresUrl({
       baseUrl: resolveOrchestratorBaseUrl(),
       query,
@@ -1760,6 +2381,7 @@ if (normalizedCommand === "replay") {
   const { activityRunId, query } = parseEventQueryArgs("replay", args);
   await runLocalOrchestratorQuery({
     label: `replay ${activityRunId} via local authoritative orchestrator`,
+    activityRunId,
     url: buildOrchestratorReplayUrl({
       baseUrl: resolveOrchestratorBaseUrl(),
       query,
@@ -1769,13 +2391,13 @@ if (normalizedCommand === "replay") {
 
 if (normalizedCommand === "audit") {
   const { positional, options } = parseLongOptions(args);
-  const [activityRunId] = positional;
-  if (!activityRunId) {
-    fail(USAGE);
-  }
+  const [activityRunIdArgument] = positional;
+  const activityRunId =
+    activityRunIdArgument ?? resolveLocalPlatformBootstrapConfig().defaultActivityRunId;
 
   await runLocalOrchestratorQuery({
     label: `audit ${activityRunId} via local authoritative orchestrator`,
+    activityRunId,
     url: buildOrchestratorAuditUrl({
       baseUrl: resolveOrchestratorBaseUrl(),
       activityRunId,

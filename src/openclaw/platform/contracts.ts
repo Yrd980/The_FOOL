@@ -3,10 +3,48 @@ export type ActorRole = "agent" | "host" | "judge" | "viewer" | "admin";
 export type TimerStatus = "idle" | "running" | "paused" | "ended";
 
 export type ScoreTargetType = "team" | "submission";
+export type MessageAudienceScope = "room" | "team" | "global";
+export type BetTargetType = "team" | "entity" | "submission";
 
 export type SubmissionData = Record<string, unknown>;
 
 export type ScoreAnnotations = Record<string, string>;
+
+export interface TalkPayload extends Record<string, unknown> {
+  message: string;
+  roomId?: string;
+  stageId?: string;
+  audienceScope?: MessageAudienceScope;
+  targetEntityId?: string;
+}
+
+export interface BroadcastPayload extends Record<string, unknown> {
+  message: string;
+  roomId?: string;
+  teamId?: string;
+  stageId?: string;
+  audienceScope?: MessageAudienceScope;
+}
+
+export interface ReactionPayload extends Record<string, unknown> {
+  reaction: string;
+  roomId?: string;
+  stageId?: string;
+  targetEntityId?: string;
+  targetTeamId?: string;
+  note?: string;
+}
+
+export interface BetPayload extends Record<string, unknown> {
+  targetType: BetTargetType;
+  targetId: string;
+  roomId?: string;
+  stageId?: string;
+  amount?: number;
+  odds?: number;
+  stance?: string;
+  note?: string;
+}
 
 export interface TransitionRule {
   id: string;

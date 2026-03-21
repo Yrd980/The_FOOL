@@ -1,3 +1,4 @@
+import type { ServerWebSocket } from "bun";
 import {
   OrchestratorError,
   type StableErrorBody,

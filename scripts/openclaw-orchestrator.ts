@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import type { ServerWebSocket } from "bun";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -17,8 +18,10 @@ import type {
   CommandEnvelope,
   EventCommandContext,
   EventEnvelope,
+  ScoreAnnotations,
   ScoreProjection,
   SubmissionProjection,
+  SubmissionVersionRecord,
   TimerProjection,
   TimerStatus,
 } from "../src/openclaw/platform/contracts";
@@ -32,15 +35,14 @@ import {
   isRole,
   type AuditQueryResult,
   type AuditRecord,
+  type AuditStatus,
   type CommandJournalEntry,
   type CommandReceipt,
   type EventQueryResult,
   type ProjectionState,
-  type Role,
   type ScoreQueryResult,
   type SessionProjection,
   type StableErrorBody,
-  type SubmissionCommandType,
   type WebSocketSessionData,
 } from "./orchestrator/support";
 import {
@@ -122,7 +124,7 @@ const bootstrapActivityPackage = getActivityPackage(
 const tryResolveActivityPackageByTemplateId = (
   templateId?: string | null,
 ): ActivityPackage | undefined =>
-  templateId ? tryGetActivityPackage(templateId) : undefined;
+  templateId?.trim() ? tryGetActivityPackage(templateId) : undefined;
 
 const supportedRpcMethods = [
   "connect",
@@ -148,6 +150,10 @@ const supportedEvents = [
   "entity.moved",
   "team.assigned",
   "draw.submitted",
+  "agent.talked",
+  "broadcast.sent",
+  "reaction.added",
+  "bet.placed",
 ];
 
 const timerHandles = new Map<string, ReturnType<typeof setTimeout>>();
@@ -764,9 +770,11 @@ const loadProjection = (): ProjectionState => {
 let projection = loadProjection();
 
 const resolveActivityPackage = (
-  templateId = projection.activityRun.templateId,
+  templateId?: string | null,
 ): ActivityPackage | undefined =>
-  tryResolveActivityPackageByTemplateId(templateId);
+  tryResolveActivityPackageByTemplateId(
+    templateId ?? projection.activityRun.templateId,
+  );
 
 const rebuildCommandJournal = (records: AuditRecord[]): Map<string, CommandJournalEntry> => {
   const journal = new Map<string, CommandJournalEntry>();
@@ -1235,6 +1243,29 @@ const requireHostRole = (
   );
 };
 
+const requireParticipantRole = (
+  command: CommandEnvelope,
+  handledAt: number,
+): void => {
+  if (
+    command.actorRole === "agent" ||
+    command.actorRole === "host" ||
+    command.actorRole === "judge" ||
+    command.actorRole === "viewer" ||
+    command.actorRole === "admin"
+  ) {
+    return;
+  }
+
+  throw createCommandError(
+    command,
+    handledAt,
+    "FORBIDDEN",
+    `Command ${command.type} requires participant role.`,
+    403,
+  );
+};
+
 const requireScoreRole = (
   command: CommandEnvelope,
   handledAt: number,
@@ -1464,6 +1495,7 @@ const createCommandHandlerContext = (
 const freshCommandExecutionContext: FreshCommandExecutionContext = {
   resolveRequestedActivityRunId,
   requireHostRole,
+  requireParticipantRole,
   requireScoreRole,
   requireSubmissionRole: commandHelpers.requireSubmissionRole,
   createCommandHandlerContext,

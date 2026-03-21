@@ -44,9 +44,7 @@ Important boundary rules:
 ## Scripts
 
 ~~~bash
-bun dev
 bun run build
-bun run preview
 bun run openclaw:orchestrator
 bun run openclaw:control -- probe
 bun run openclaw:control -- snapshot activity-run-01

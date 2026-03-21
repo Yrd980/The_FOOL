@@ -114,7 +114,7 @@ export const handleSubmitCommand = (
     command,
     handledAt,
     submission: existingSubmission,
-    action: command.type,
+    action: command.type as "submit" | "update_submission",
   });
 
   if (existingSubmission.locked) {
