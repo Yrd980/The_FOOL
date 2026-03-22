@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildOpenClawAsciiOverview } from "../src/openclaw/asciiOverview";
+import { buildOpenClawAsciiReadModel } from "../src/openclaw/asciiOverviewReadModel";
 import type {
   OrchestratorEventPage,
   OrchestratorSnapshotResponse,
@@ -387,6 +388,40 @@ const eventsPage: OrchestratorEventPage = {
 };
 
 describe("buildOpenClawAsciiOverview", () => {
+  test("builds a stable read model for stage history and team activity", () => {
+    const readModel = buildOpenClawAsciiReadModel({
+      snapshotResponse,
+      eventsPage,
+      replayPage,
+      eventLimit: 6,
+      now: 1_742_520_540_000,
+    });
+
+    expect(readModel.currentStageTemplate?.id).toBe("act-8-awards");
+    expect(readModel.stageHistory).toEqual([
+      "act-1-intro",
+      "act-4-discussion",
+      "act-5-submission",
+      "act-7-ai-judging",
+      "act-8-awards",
+    ]);
+    expect(readModel.entityRoomMap.get("contestant-05")).toBe("main-stage");
+    expect(readModel.entityTeamMap.get("contestant-01")).toBe("team-1");
+    expect(
+      readModel.teamTrailById.get("team-1")?.map((entry) => entry.summary),
+    ).toEqual([
+      "score submission-1 = 9/10",
+      "lock submission-1",
+      "submit submission-1 v2",
+    ]);
+    expect(readModel.latestMemberActivityById.get("contestant-01")?.summary).toBe(
+      "submit submission-1 v2",
+    );
+    expect(
+      readModel.latestTargetedEntityActivityById.get("host-01"),
+    ).toBeUndefined();
+  });
+
   test("renders a full authoritative show-control ascii console", () => {
     const output = buildOpenClawAsciiOverview({
       snapshotResponse,
