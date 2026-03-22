@@ -2,7 +2,7 @@
 
 import { commandHandlers } from "./control/commands";
 import { fail, USAGE } from "./control/support";
-import { isCommandName } from "./control/types";
+import { isCommandName, type CommandName } from "./control/types";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -14,4 +14,5 @@ if (!isCommandName(command)) {
   fail(`Unknown command "${command}".\n\n${USAGE}`);
 }
 
-await commandHandlers[command](args);
+const commandName = command as CommandName;
+await commandHandlers[commandName](args);

@@ -44,7 +44,8 @@ These modules define semantics that should stay stable across refactors:
 
 ### Runtime and persistence
 
-- [scripts/openclaw-orchestrator.ts](./scripts/openclaw-orchestrator.ts): current entrypoint that still combines bootstrap, storage wiring, HTTP and WS routing, and runtime glue
+- [scripts/openclaw-orchestrator.ts](./scripts/openclaw-orchestrator.ts): current entrypoint that still combines bootstrap, storage wiring, authority runtime state, command execution, and server wiring
+- [scripts/orchestrator/server.ts](./scripts/orchestrator/server.ts): HTTP route and WebSocket RPC glue extracted from the entrypoint while preserving the shipped transport contract
 - [scripts/orchestrator/commands](./scripts/orchestrator/commands): command-family execution handlers
 - [scripts/orchestrator/query.ts](./scripts/orchestrator/query.ts): server-side query core for snapshot, events, replay, audit, and scores
 - [scripts/orchestrator/support.ts](./scripts/orchestrator/support.ts): storage types, projection shape, journaling, stable errors, persistence helpers
@@ -132,7 +133,7 @@ Current heavy files:
 Target direction:
 
 - split adapter, transport, and presentation concerns before changing runtime semantics
-- pull server, query, and storage glue out of scripts/openclaw-orchestrator.ts
+- keep pulling runtime wiring, query glue, and storage glue out of scripts/openclaw-orchestrator.ts now that HTTP and WebSocket route glue lives in scripts/orchestrator/server.ts
 - keep scripts/openclaw-control.ts as thin CLI glue over scripts/control/*
 - separate control DSL, confirmation policy, config normalization, and transport args inside src/openclaw/control.ts
 - keep src/openclaw/asciiOverview.ts as a stable entrypoint while its internal read-model and rendering modules stay separate

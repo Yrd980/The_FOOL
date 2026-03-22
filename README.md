@@ -29,6 +29,7 @@ Public operational handoff files remain under [public/](./public/):
 - Generic backend and runtime code lives in src/openclaw/platform/*
 - Activity extension points live in src/openclaw/platform/activityRegistry.ts and src/openclaw/activityRuntime.ts
 - Orchestrator query, transport, audit, snapshot, and command-family handlers live under scripts/orchestrator/*
+- HTTP and WebSocket route glue now lives under scripts/orchestrator/server.ts so the entrypoint can stay focused on authority state and execution
 - scripts/openclaw-control.ts now stays as the stable CLI entrypoint over scripts/control/*
 - CLI-only glue now lives under scripts/control/*, with support/config helpers in scripts/control/support.ts, command parsing in scripts/control/parse.ts, gateway and orchestrator probing in scripts/control/probe.ts, query and ASCII wiring in scripts/control/query.ts, and command-family handlers under scripts/control/commands/*
 - Control-side command helpers keep the stable entrypoint in src/openclaw/control.ts, with the implementation split across src/openclaw/control/*

@@ -108,7 +108,7 @@ export const parseEventQueryArgs = (
   rawArgs: string[],
 ): {
   activityRunId: string;
-  query: OrchestratorEventQuery;
+  query: OrchestratorEventQuery & { activityRunId: string };
 } => {
   const { positional, options } = parseLongOptions(rawArgs);
   const [activityRunId] = positional;
@@ -116,7 +116,7 @@ export const parseEventQueryArgs = (
     fail(USAGE);
   }
 
-  const query: OrchestratorEventQuery = {
+  const query: OrchestratorEventQuery & { activityRunId: string } = {
     activityRunId,
     afterSequence: readOptionInteger(options, "after-sequence"),
     fromSequence: readOptionInteger(options, "from-sequence"),
