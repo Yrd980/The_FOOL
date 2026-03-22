@@ -394,6 +394,7 @@ The Fool v1 需要启用以下公共属性：
 
 允许动作：
 
+- `move`
 - `submit`
 - `open_submission`
 - `draw`

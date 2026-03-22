@@ -93,7 +93,7 @@ describe("orchestrator runtime loop", () => {
       now: () => currentNow,
       scheduleTimeout: (callback, delay) => {
         scheduled.push({ callback, delay });
-        return { delay } as ReturnType<typeof setTimeout>;
+        return { delay } as unknown as ReturnType<typeof setTimeout>;
       },
       clearScheduledTimeout: () => {},
     });

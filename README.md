@@ -53,7 +53,10 @@ Important boundary rules:
 
 ~~~bash
 bun run build
+bun run lint
+bun test
 bun run openclaw:orchestrator
+bun run openclaw:smoke:the-fool
 bun run openclaw:control -- probe
 bun run openclaw:control -- snapshot activity-run-01
 bun run openclaw:control -- events activity-run-01 --limit 10
@@ -75,6 +78,7 @@ Current verification baseline for this worktree:
 - bun run build
 - bun run lint
 - bun test
+- bun run openclaw:smoke:the-fool
 
 ## Authoritative ASCII Watch
 
@@ -103,6 +107,13 @@ Verified authority-side command and query surface in this worktree currently inc
 - submission loop: open-submission, submit, update-submission, lock-submission
 - scoring loop: submit-score, grant-award, finish
 - authority-backed social loop: talk, broadcast, reaction, bet, vote
+- The Fool v1 real ten-act landing: act-1 through act-10 plus finish via a real local orchestrator and openclaw-control smoke
+
+Current stage-action enforcement worth knowing:
+
+- move-entity now follows stage allowedActions instead of acting as a cross-stage escape hatch
+- Act IV and Act IX explicitly allow move so room truth stays authoritative during team discussion and co-creation
+- draw remains stage-gated to Act IX only
 
 Typical local run:
 

@@ -8,6 +8,7 @@
 - external contracts are stable across CLI, HTTP, and WebSocket
 - live operator surface is CLI plus ASCII watch
 - only \`the-fool-v1\` is wired as a built-in activity package today
+- \`the-fool-v1\` now has a real ten-act smoke path through local orchestrator + openclaw-control + ascii verification
 
 ## Documentation Roles
 
@@ -24,6 +25,7 @@
 - \`src/openclaw/control.ts\` was split into narrower internal modules behind a stable barrel
 - \`src/openclaw/asciiOverview.ts\` was split into entrypoint, read-model, render, and support modules
 - \`scripts/orchestrator/server.ts\` now owns HTTP and WebSocket route glue
+- \`scripts/openclaw-smoke-the-fool.ts\` now runs a real act-1..act-10 authoritative smoke and is exposed as \`bun run openclaw:smoke:the-fool\`
 - \`scripts/openclaw-orchestrator.ts\` is now a thin composition entrypoint over:
   - \`scripts/orchestrator/bootstrap.ts\`
   - \`scripts/orchestrator/projection.ts\`
@@ -36,6 +38,7 @@
 - \`src/openclaw/orchestratorQueryClient.ts\` is client-side query adapter
 - authority truth stays in orchestrator storage and projection, not in docs or presentation layers
 - generic runtime modules should not absorb The Fool specific ids, room names, or score keys
+- \`move_entity\` is stage-gated; real room relocation is currently validated in \`act-4-discussion\` and \`act-9-co-creation\`, not as a cross-stage override
 
 ## Open Memory
 

@@ -114,7 +114,7 @@ export const theFoolStageTemplates: StageTemplate[] = [
     id: "act-9-co-creation",
     name: "全体共创艺术品",
     durationSec: 600,
-    allowedActions: ["submit", "open_submission", "draw", "talk", "query"],
+    allowedActions: ["move", "submit", "open_submission", "draw", "talk", "query"],
     submissionSchemaIds: ["personal-poem-v1"],
     transitionRules: [
       { id: "act-9-manual", sourceStageId: "act-9-co-creation", targetStageId: "act-10-open-mic", type: "manual", config: {} },

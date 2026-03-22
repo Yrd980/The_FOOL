@@ -12,6 +12,7 @@ import {
   buildFinishActivityConfirmationChallenge,
   buildFinishActivityEnvelope,
   buildLockSubmissionEnvelope,
+  buildMoveEntityEnvelope,
   buildOpenSubmissionEnvelope,
   buildReactionEnvelope,
   buildStartTimerEnvelope,
@@ -946,6 +947,74 @@ describe("openclaw orchestrator command chain", () => {
       throw new Error(drawAccepted.body.error.message);
     }
     expect(drawAccepted.body.receipt.eventIds.length).toBe(1);
+  });
+
+  test("gates move_entity by stage and accepts it during act-4 and act-9", async () => {
+    const harness = await startHarness();
+
+    const moveOutsideStage = await harness.command(
+      buildMoveEntityEnvelope({
+        actorId: TEST_HOST_ACTOR,
+        activityRunId: TEST_ACTIVITY_RUN_ID,
+        entityId: "contestant-01",
+        toRoomId: "team-room-1",
+        confirmation: buildCommandConfirmation(
+          "MOVE contestant-01 team-room-1",
+          Date.now(),
+        ),
+      }),
+    );
+
+    expect(moveOutsideStage.status).toBe(409);
+    expect(moveOutsideStage.body.ok).toBe(false);
+    if (moveOutsideStage.body.ok) {
+      throw new Error("Expected move stage gating error.");
+    }
+    expect(moveOutsideStage.body.error.code).toBe("STAGE_ACTION_NOT_ALLOWED");
+
+    await transitionStage(harness, "act-4-discussion");
+    await expectAcceptedCommand(
+      harness,
+      buildMoveEntityEnvelope({
+        actorId: TEST_HOST_ACTOR,
+        activityRunId: TEST_ACTIVITY_RUN_ID,
+        entityId: "contestant-01",
+        toRoomId: "team-room-1",
+        confirmation: buildCommandConfirmation(
+          "MOVE contestant-01 team-room-1",
+          Date.now(),
+        ),
+      }),
+    );
+
+    let snapshot = await harness.snapshot();
+    expect(
+      snapshot.snapshot.world.entities.find(
+        (entry) => entry.id === "contestant-01",
+      )?.roomId,
+    ).toBe("team-room-1");
+
+    await transitionStage(harness, "act-9-co-creation");
+    await expectAcceptedCommand(
+      harness,
+      buildMoveEntityEnvelope({
+        actorId: TEST_HOST_ACTOR,
+        activityRunId: TEST_ACTIVITY_RUN_ID,
+        entityId: "contestant-01",
+        toRoomId: "quiet-orbit",
+        confirmation: buildCommandConfirmation(
+          "MOVE contestant-01 quiet-orbit",
+          Date.now(),
+        ),
+      }),
+    );
+
+    snapshot = await harness.snapshot();
+    expect(
+      snapshot.snapshot.world.entities.find(
+        (entry) => entry.id === "contestant-01",
+      )?.roomId,
+    ).toBe("quiet-orbit");
   });
 
   test("auto-transitions from act-7 to act-8 after every locked submission receives all judge scores", async () => {

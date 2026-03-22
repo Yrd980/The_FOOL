@@ -42,6 +42,12 @@ export const handleMoveEntityCommand = (
   context: CommandHandlerContext,
 ): CommandHandlerResult => {
   const projection = context.getProjection();
+  context.requireStageActionAllowed({
+    command,
+    handledAt,
+    action: "move",
+  });
+
   const payload = command.payload;
   const entityId =
     typeof payload.entityId === "string" ? payload.entityId.trim() : "";

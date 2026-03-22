@@ -20,16 +20,10 @@ import type {
 import { resolveLocalPlatformBootstrapConfig } from "../src/openclaw/localPlatformConfig";
 import {
   OrchestratorError,
-  buildCommandFingerprint,
-  cloneJsonValue,
   createOrchestratorStorage,
   type AuditQueryResult,
-  type AuditRecord,
-  type AuditStatus,
-  type CommandJournalEntry,
   type CommandReceipt,
   type EventQueryResult,
-  type ProjectionState,
   type ScoreQueryResult,
   type SessionProjection,
   type StableErrorBody,
@@ -43,9 +37,6 @@ import {
 } from "./orchestrator/query";
 import {
   createAcceptedReceipt,
-  createAuditRecord,
-  createReplayError,
-  createReplayReceipt,
 } from "./orchestrator/audit";
 import {
   buildHealthAgents,
@@ -191,29 +182,6 @@ const buildSnapshotEnvelope = (now = Date.now()) =>
     buildScoreSummary,
   });
 
-const nextSequence = (): number => projection.lastSequence + 1;
-
-const makeEvent = <TPayload extends Record<string, unknown>>(
-  type: string,
-  payload: TPayload,
-  now = Date.now(),
-  context: EventCommandContext = {},
-): EventEnvelope<TPayload> => {
-  const sequence = nextSequence();
-  return {
-    id: `evt-${sequence}`,
-    sequence,
-    type,
-    activityRunId: projection.activityRun.id,
-    commandId: context.commandId,
-    idempotencyKey: context.idempotencyKey,
-    actorId: context.actorId,
-    actorRole: context.actorRole,
-    timestamp: now,
-    payload,
-  };
-};
-
 const createEventBuilder = (context: EventCommandContext = {}) => {
   let sequence = projection.lastSequence;
 
@@ -303,7 +271,6 @@ const { applyTransitionRuleAfterEvent, commitEvents, syncTimerSchedules } =
     appendEventRecord,
     writeProjection,
     applyEventToProjection,
-    buildEvent: makeEvent,
     computeRemainingMs,
     findStage: commandHelpers.findStage,
     isSubmissionReadyForScoring: commandHelpers.isSubmissionReadyForScoring,
