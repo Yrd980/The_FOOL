@@ -77,7 +77,7 @@ Current verification baseline for this worktree:
 
 - bun run build
 - bun run lint
-- bun test
+- bun test  # real orchestrator/control integration only
 - bun run openclaw:smoke:the-fool
 
 ## Authoritative ASCII Watch

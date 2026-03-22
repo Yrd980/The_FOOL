@@ -9,6 +9,7 @@
 - live operator surface is CLI plus ASCII watch
 - only \`the-fool-v1\` is wired as a built-in activity package today
 - \`the-fool-v1\` now has a real ten-act smoke path through local orchestrator + openclaw-control + ascii verification
+- \`bun test\` is intentionally narrowed to real integration tests; helper/read-model/runtime unit tests were removed
 
 ## Documentation Roles
 

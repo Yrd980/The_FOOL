@@ -9,7 +9,7 @@
     "openclaw:smoke:the-fool": "bun run ./scripts/openclaw-smoke-the-fool.ts",
     "build": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
-    "test": "bun test"
+    "test": "bun test tests/openclaw-orchestrator.integration.test.ts tests/openclaw-control.integration.test.ts"
   },
   "dependencies": {},
   "devDependencies": {
