@@ -1,0 +1,63 @@
+import type { CommandName, ControlCommandHandler } from "../types";
+import { handleMoveOrSay } from "./agent";
+import {
+  handleAssignTeam,
+  handleDraw,
+  handleFinish,
+  handleGrantAward,
+  handleLockSubmission,
+  handleOpenSubmission,
+  handleRawCommand,
+  handleStage,
+  handleStartTimer,
+  handleSubmit,
+  handleSubmitScore,
+  handleUpdateSubmission,
+  handleMoveEntity,
+} from "./activity";
+import {
+  handleAscii,
+  handleAudit,
+  handleEvents,
+  handleProbe,
+  handleReplay,
+  handleScores,
+  handleSnapshot,
+} from "./query";
+import {
+  handleBet,
+  handleBroadcast,
+  handleReaction,
+  handleTalk,
+  handleVote,
+} from "./social";
+
+export const commandHandlers: Record<CommandName, ControlCommandHandler> = {
+  probe: async () => handleProbe(),
+  move: async (args) => handleMoveOrSay("move", args),
+  say: async (args) => handleMoveOrSay("say", args),
+  talk: async (args) => handleTalk(args),
+  broadcast: async (args) => handleBroadcast(args),
+  reaction: async (args) => handleReaction(args),
+  bet: async (args) => handleBet(args),
+  vote: async (args) => handleVote(args),
+  stage: async (args) => handleStage(args),
+  finish: async (args) => handleFinish(args),
+  "start-timer": async (args) => handleStartTimer(args),
+  "open-submission": async (args) => handleOpenSubmission(args),
+  submit: async (args) => handleSubmit(args),
+  "update-submission": async (args) => handleUpdateSubmission(args),
+  "lock-submission": async (args) => handleLockSubmission(args),
+  "submit-score": async (args) => handleSubmitScore(args),
+  "grant-award": async (args) => handleGrantAward(args),
+  draw: async (args) => handleDraw(args),
+  "move-entity": async (args) => handleMoveEntity(args),
+  "assign-team": async (args) => handleAssignTeam(args),
+  ascii: async (args) => handleAscii(args),
+  snapshot: async (args) => handleSnapshot(args),
+  scores: async (args) => handleScores(args),
+  events: async (args) => handleEvents(args),
+  replay: async (args) => handleReplay(args),
+  audit: async (args) => handleAudit(args),
+  command: async (args) => handleRawCommand(args),
+};

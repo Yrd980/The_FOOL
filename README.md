@@ -3,7 +3,7 @@
 molt-claw is a backend-first OpenClaw worktree. It runs a local authoritative activity runtime and exposes only backend and terminal-facing surfaces:
 
 - scripts/openclaw-orchestrator.ts: local authoritative backend
-- scripts/openclaw-control.ts: operator CLI
+- scripts/openclaw-control.ts: operator CLI entrypoint
 - src/openclaw/asciiOverview.ts: terminal ASCII watch built from authority-backed queries
 - src/openclaw/platform/*: generic contracts and activity registry
 - src/openclaw/activities/theFoolV1/*: the first built-in activity package
@@ -29,8 +29,10 @@ Public operational handoff files remain under [public/](./public/):
 - Generic backend and runtime code lives in src/openclaw/platform/*
 - Activity extension points live in src/openclaw/platform/activityRegistry.ts and src/openclaw/activityRuntime.ts
 - Orchestrator query, transport, audit, snapshot, and command-family handlers live under scripts/orchestrator/*
+- scripts/openclaw-control.ts now stays as the stable CLI entrypoint over scripts/control/*
+- CLI-only glue now lives under scripts/control/*, with support/config helpers in scripts/control/support.ts, command parsing in scripts/control/parse.ts, gateway and orchestrator probing in scripts/control/probe.ts, query and ASCII wiring in scripts/control/query.ts, and command-family handlers under scripts/control/commands/*
 - Control-side command helpers keep the stable entrypoint in src/openclaw/control.ts, with the implementation split across src/openclaw/control/*
-- Terminal ASCII watch assembly lives in src/openclaw/asciiOverview.ts
+- Terminal ASCII watch keeps the stable entrypoint in src/openclaw/asciiOverview.ts, with read-model assembly in src/openclaw/asciiOverviewReadModel.ts, ASCII rendering in src/openclaw/asciiOverviewRender.ts, and shared helpers in src/openclaw/asciiOverviewSupport.ts
 - Local bootstrap defaults live in src/openclaw/localPlatformConfig.ts
 
 Important boundary rules:

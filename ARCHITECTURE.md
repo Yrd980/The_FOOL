@@ -52,9 +52,14 @@ These modules define semantics that should stay stable across refactors:
 ### Adapters and presentation
 
 - [src/openclaw/control.ts](./src/openclaw/control.ts): stable control helper barrel that re-exports the split command DSL, confirmation policy, URL and config normalization, and transport arg modules under src/openclaw/control/*
-- [scripts/openclaw-control.ts](./scripts/openclaw-control.ts): operator CLI entrypoint, orchestration commands, probe flow, ASCII watch wiring
+- [scripts/openclaw-control.ts](./scripts/openclaw-control.ts): operator CLI entrypoint that now delegates command registry, probe/query flow, and command-family handlers into scripts/control/*
+- [scripts/control/support.ts](./scripts/control/support.ts), [scripts/control/parse.ts](./scripts/control/parse.ts), [scripts/control/probe.ts](./scripts/control/probe.ts), [scripts/control/query.ts](./scripts/control/query.ts): CLI-only runtime support, parsing, authority probe, and ASCII/query glue
+- [scripts/control/commands](./scripts/control/commands): command-family handlers that keep the entrypoint thin without changing external CLI behavior
 - [src/openclaw/orchestratorQueryClient.ts](./src/openclaw/orchestratorQueryClient.ts): client-side HTTP query adapter
-- [src/openclaw/asciiOverview.ts](./src/openclaw/asciiOverview.ts): read-model formatting and ASCII layout
+- [src/openclaw/asciiOverview.ts](./src/openclaw/asciiOverview.ts): stable ASCII watch entrypoint that composes split internal read-model and rendering modules
+- [src/openclaw/asciiOverviewReadModel.ts](./src/openclaw/asciiOverviewReadModel.ts): authority-backed event normalization, history assembly, and section read-model building
+- [src/openclaw/asciiOverviewRender.ts](./src/openclaw/asciiOverviewRender.ts): ASCII layout and section rendering
+- [src/openclaw/asciiOverviewSupport.ts](./src/openclaw/asciiOverviewSupport.ts): shared formatting and payload-reading helpers for the ASCII watch
 
 Keep the distinction clear:
 
@@ -122,16 +127,15 @@ The biggest maintenance risk is not missing concepts; it is oversized entry and 
 Current heavy files:
 
 - [scripts/openclaw-orchestrator.ts](./scripts/openclaw-orchestrator.ts)
-- [scripts/openclaw-control.ts](./scripts/openclaw-control.ts)
-- [src/openclaw/control.ts](./src/openclaw/control.ts)
-- [src/openclaw/asciiOverview.ts](./src/openclaw/asciiOverview.ts)
+- [src/openclaw/control.ts](./src/openclaw/control.ts) as the remaining stable barrel over split helpers
 
 Target direction:
 
 - split adapter, transport, and presentation concerns before changing runtime semantics
 - pull server, query, and storage glue out of scripts/openclaw-orchestrator.ts
+- keep scripts/openclaw-control.ts as thin CLI glue over scripts/control/*
 - separate control DSL, confirmation policy, config normalization, and transport args inside src/openclaw/control.ts
-- split src/openclaw/asciiOverview.ts into read-model building and ASCII rendering
+- keep src/openclaw/asciiOverview.ts as a stable entrypoint while its internal read-model and rendering modules stay separate
 - keep tests as the behavior lock while those moves happen
 
 ## Documentation Rules
