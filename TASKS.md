@@ -1,40 +1,43 @@
-# Molt Claw Tasks
+# Molt Claw Project Memory
 
-This file tracks the active refactor line for this worktree. Keep it short, current, and grounded in shipped behavior.
+## Current Runtime Shape
 
-## Verification Baseline
+- backend-first single-process Bun orchestrator
+- command -> event -> projection remains the authoritative closure
+- persisted model is event log plus persisted projection, not replay-only event sourcing
+- external contracts are stable across CLI, HTTP, and WebSocket
+- live operator surface is CLI plus ASCII watch
+- only \`the-fool-v1\` is wired as a built-in activity package today
 
-- bun run build
-- bun run lint
-- bun test
+## Documentation Roles
 
-## Status
+- \`ARCHITECTURE.md\` = pure architecture description
+- \`AGENTS.md\` = guiding principles and constraints for changes
+- \`TASKS.md\` = project memory and current state snapshot
+- \`docs/\` = formal activity requirements, not repo architecture notes
+- \`public/\` = operator and participant handoff material
 
-### Done
+## Refactor Memory
 
-- Collapse repo-level docs into root entrypoints
-- Keep docs/ focused on formal activity requirements
-- Clarify that molt-claw is a backend-first authoritative runtime
-- Shrink [scripts/openclaw-control.ts](./scripts/openclaw-control.ts) into a thin CLI entrypoint over scripts/control/*
-- Split [src/openclaw/control.ts](./src/openclaw/control.ts) into narrower internal modules behind a stable barrel entrypoint
-- Split [src/openclaw/asciiOverview.ts](./src/openclaw/asciiOverview.ts) into a stable entrypoint over separate read-model, render, and helper modules while preserving the current integration test output
-- Extract HTTP and WebSocket route glue from [scripts/openclaw-orchestrator.ts](./scripts/openclaw-orchestrator.ts) into [scripts/orchestrator/server.ts](./scripts/orchestrator/server.ts) while keeping external transport contracts stable
+- repo-level docs were collapsed into root entrypoints
+- \`scripts/openclaw-control.ts\` was reduced to a thin CLI entrypoint over \`scripts/control/*\`
+- \`src/openclaw/control.ts\` was split into narrower internal modules behind a stable barrel
+- \`src/openclaw/asciiOverview.ts\` was split into entrypoint, read-model, render, and support modules
+- \`scripts/orchestrator/server.ts\` now owns HTTP and WebSocket route glue
+- \`scripts/openclaw-orchestrator.ts\` is now a thin composition entrypoint over:
+  - \`scripts/orchestrator/bootstrap.ts\`
+  - \`scripts/orchestrator/projection.ts\`
+  - \`scripts/orchestrator/runtimeLoop.ts\`
+  - \`scripts/orchestrator/commandShell.ts\`
 
-### Next
+## Verified Boundaries
 
-1. Shrink [scripts/openclaw-orchestrator.ts](./scripts/openclaw-orchestrator.ts)
-- Continue moving runtime wiring and storage and query glue into narrower modules after the route transport split is stable.
+- \`scripts/orchestrator/query.ts\` is server-side query core
+- \`src/openclaw/orchestratorQueryClient.ts\` is client-side query adapter
+- authority truth stays in orchestrator storage and projection, not in docs or presentation layers
+- generic runtime modules should not absorb The Fool specific ids, room names, or score keys
 
-2. Re-check runtime boundaries
-- Confirm scripts/orchestrator/query.ts stays server-side query core and src/openclaw/orchestratorQueryClient.ts stays a client adapter.
+## Open Memory
 
-3. Validate abstractions with a second minimal activity package
-- Do this only after the current refactor path settles.
-- Keep the second package intentionally small so it tests the runtime boundary rather than expanding the product surface.
-
-## Done Definition For Each Refactor Step
-
-- external CLI, HTTP, and WebSocket contracts stay stable
-- bun run build, bun run lint, and bun test all pass
-- no activity-specific rules leak from the-fool-v1 into generic runtime modules
-- repo entry docs still match shipped behavior
+- next architecture validation target is a second minimal real activity package
+- that package should validate the runtime boundary itself, not expand product surface

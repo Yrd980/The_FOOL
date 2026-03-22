@@ -29,7 +29,12 @@ Public operational handoff files remain under [public/](./public/):
 - Generic backend and runtime code lives in src/openclaw/platform/*
 - Activity extension points live in src/openclaw/platform/activityRegistry.ts and src/openclaw/activityRuntime.ts
 - Orchestrator query, transport, audit, snapshot, and command-family handlers live under scripts/orchestrator/*
-- HTTP and WebSocket route glue now lives under scripts/orchestrator/server.ts so the entrypoint can stay focused on authority state and execution
+- scripts/openclaw-orchestrator.ts now stays as a thin authority entrypoint over scripts/orchestrator/*
+- Local projection bootstrap and event-log rebuild now live in scripts/orchestrator/bootstrap.ts
+- Projection reducers, score summaries, and social aggregate recomputation now live in scripts/orchestrator/projection.ts
+- Timer scheduling and automatic stage-transition evaluation now live in scripts/orchestrator/runtimeLoop.ts
+- Idempotency replay, conflict handling, and audit shell wiring now live in scripts/orchestrator/commandShell.ts
+- HTTP and WebSocket route glue lives under scripts/orchestrator/server.ts so the entrypoint can stay focused on authority wiring
 - scripts/openclaw-control.ts now stays as the stable CLI entrypoint over scripts/control/*
 - CLI-only glue now lives under scripts/control/*, with support/config helpers in scripts/control/support.ts, command parsing in scripts/control/parse.ts, gateway and orchestrator probing in scripts/control/probe.ts, query and ASCII wiring in scripts/control/query.ts, and command-family handlers under scripts/control/commands/*
 - Control-side command helpers keep the stable entrypoint in src/openclaw/control.ts, with the implementation split across src/openclaw/control/*
@@ -142,6 +147,7 @@ If the configured template is not registered, the orchestrator fails immediately
 The current worktree is intentionally small and backend-first:
 
 - scripts/openclaw-orchestrator.ts is still a single-process local authority, not a full platform deployment
+- scripts/orchestrator/* is now the main internal seam for authority bootstrap, runtime loop, command shell, query, audit, snapshot, and transport refactors
 - only The Fool is wired as a built-in activity package today
 - the live surface is CLI and ASCII only; any future renderer should be a separate consumer of the same authority and query contracts
 - audience and viewer-side native input channels are still operator and CLI-driven today and are not yet merged into a dedicated authoritative social ingress
