@@ -13,6 +13,8 @@
 - Treat public/*.md as operator and participant handoff docs, not formal truth.
 - Repo-level implementation and architecture docs belong at the repo root.
 - Formal activity docs belong under docs/activities/.
+- If autonomy ingress work exists on the branch, keep it as an adapter into the same authoritative command surface rather than a second runtime.
+- Do not describe branch-local autonomy smoke as completed default six-agent ingress unless it has been re-verified and promoted into the baseline.
 
 ## Verification
 

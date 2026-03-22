@@ -7,6 +7,8 @@
     "openclaw:control": "bun run ./scripts/openclaw-control.ts",
     "openclaw:orchestrator": "bun run ./scripts/openclaw-orchestrator.ts",
     "openclaw:smoke:the-fool": "bun run ./scripts/openclaw-smoke-the-fool.ts",
+    "openclaw:autonomy:the-fool": "bun run ./scripts/openclaw-autonomy-the-fool.ts",
+    "openclaw:autonomy:smoke:the-fool": "bun run ./scripts/openclaw-autonomy-smoke-the-fool.ts",
     "build": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "test": "bun test tests/openclaw-orchestrator.integration.test.ts tests/openclaw-control.integration.test.ts"

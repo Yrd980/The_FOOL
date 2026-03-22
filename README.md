@@ -39,6 +39,7 @@ Public operational handoff files remain under [public/](./public/):
 - CLI-only glue now lives under scripts/control/*, with support/config helpers in scripts/control/support.ts, command parsing in scripts/control/parse.ts, gateway and orchestrator probing in scripts/control/probe.ts, query and ASCII wiring in scripts/control/query.ts, and command-family handlers under scripts/control/commands/*
 - Control-side command helpers keep the stable entrypoint in src/openclaw/control.ts, with the implementation split across src/openclaw/control/*
 - Terminal ASCII watch keeps the stable entrypoint in src/openclaw/asciiOverview.ts, with read-model assembly in src/openclaw/asciiOverviewReadModel.ts, ASCII rendering in src/openclaw/asciiOverviewRender.ts, and shared helpers in src/openclaw/asciiOverviewSupport.ts
+- Real OpenClaw agent-ingress work for The Fool currently lives under scripts/autonomy/*, with scripts/openclaw-autonomy-the-fool.ts as the runner entrypoint and scripts/openclaw-autonomy-smoke-the-fool.ts as the smoke harness
 - Local bootstrap defaults live in src/openclaw/localPlatformConfig.ts
 
 Important boundary rules:
@@ -57,6 +58,8 @@ bun run lint
 bun test
 bun run openclaw:orchestrator
 bun run openclaw:smoke:the-fool
+bun run openclaw:autonomy:the-fool
+bun run openclaw:autonomy:smoke:the-fool
 bun run openclaw:control -- probe
 bun run openclaw:control -- snapshot activity-run-01
 bun run openclaw:control -- events activity-run-01 --limit 10
@@ -79,6 +82,10 @@ Current verification baseline for this worktree:
 - bun run lint
 - bun test  # real orchestrator/control integration only
 - bun run openclaw:smoke:the-fool
+
+Current next-stage verification target on this branch:
+
+- bun run openclaw:autonomy:smoke:the-fool  # real OpenClaw agent ingress for the six-contestant full-run path
 
 ## Authoritative ASCII Watch
 
@@ -114,6 +121,23 @@ Current stage-action enforcement worth knowing:
 - move-entity now follows stage allowedActions instead of acting as a cross-stage escape hatch
 - Act IV and Act IX explicitly allow move so room truth stays authoritative during team discussion and co-creation
 - draw remains stage-gated to Act IX only
+
+## Agent Autonomy Ingress
+
+This branch now includes a real OpenClaw agent ingress path for The Fool.
+
+- contestants 01 through 06 map to real same-named OpenClaw agents
+- host-01 maps to the real `main` OpenClaw agent workspace
+- judges and viewers are currently mapped onto separate real agent workspaces while preserving authoritative actor ids and roles inside the runtime
+- the autonomy runner talks to the orchestrator over real WebSocket RPC and talks to OpenClaw through real gateway `agent` calls
+- agent output is constrained into JSON actions which are then converted into authoritative command envelopes before entering the runtime
+- branch-local ledger state is persisted under `.autonomy/<activity-run-id>/state.json`
+
+Important status boundary:
+
+- the shipped baseline already proves a real ten-act authoritative smoke through orchestrator + control + ASCII
+- the new autonomy path is the current next-stage ingress effort for real agent participation
+- do not describe the autonomy smoke as proof that six OpenClaw agents have already fully landed as the default runtime baseline until it has been re-verified and promoted
 
 Typical local run:
 
@@ -161,6 +185,6 @@ The current worktree is intentionally small and backend-first:
 - scripts/orchestrator/* is now the main internal seam for authority bootstrap, runtime loop, command shell, query, audit, snapshot, and transport refactors
 - only The Fool is wired as a built-in activity package today
 - the live surface is CLI and ASCII only; any future renderer should be a separate consumer of the same authority and query contracts
-- audience and viewer-side native input channels are still operator and CLI-driven today and are not yet merged into a dedicated authoritative social ingress
+- the stable baseline remains operator and CLI-driven; the new autonomy runner is a branch-local real agent ingress path, not yet a promoted replacement for the control-driven baseline
 - audience vote endgame follow-through still needs more authority-side work for winner aggregation beyond the current snapshot and replay output
 - when checking behavior, prefer real /api/orchestrator/* queries and openclaw-control ascii over documentation assumptions

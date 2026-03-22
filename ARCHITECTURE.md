@@ -49,11 +49,27 @@ Use this wording:
 - [src/openclaw/control.ts](./src/openclaw/control.ts): stable control helper barrel over split control modules
 - [scripts/openclaw-control.ts](./scripts/openclaw-control.ts): operator CLI entrypoint
 - [scripts/control](./scripts/control): CLI parsing, probe, query, and command-family handlers
+- [scripts/autonomy/orchestratorRpc.ts](./scripts/autonomy/orchestratorRpc.ts): WebSocket RPC adapter used by the real-agent autonomy runner
+- [scripts/autonomy/theFoolAutonomy.ts](./scripts/autonomy/theFoolAutonomy.ts): The Fool branch-local real-agent ingress loop that builds prompts from authority state and emits authoritative commands
+- [scripts/openclaw-autonomy-the-fool.ts](./scripts/openclaw-autonomy-the-fool.ts): autonomy runner entrypoint
+- [scripts/openclaw-autonomy-smoke-the-fool.ts](./scripts/openclaw-autonomy-smoke-the-fool.ts): local end-to-end smoke that boots an orchestrator, runs the autonomy loop, and verifies via control queries
 - [src/openclaw/orchestratorQueryClient.ts](./src/openclaw/orchestratorQueryClient.ts): client-side HTTP query adapter
 - [src/openclaw/asciiOverview.ts](./src/openclaw/asciiOverview.ts): stable ASCII watch entrypoint
 - [src/openclaw/asciiOverviewReadModel.ts](./src/openclaw/asciiOverviewReadModel.ts): authority-backed event normalization and section read-model assembly
 - [src/openclaw/asciiOverviewRender.ts](./src/openclaw/asciiOverviewRender.ts): ASCII layout and rendering
 - [src/openclaw/asciiOverviewSupport.ts](./src/openclaw/asciiOverviewSupport.ts): shared ASCII helpers
+
+### Branch-local autonomy ingress
+
+The current branch also carries a real OpenClaw agent ingress path for The Fool. Its intended flow is:
+
+1. autonomy runner reads authority snapshot, event history, and formal activity docs
+2. runner prompts a real OpenClaw gateway agent for one JSON action
+3. runner validates and converts that JSON into a normal authoritative command envelope
+4. command still enters the same orchestrator command -> event -> projection loop
+5. control queries and ASCII continue to observe the authoritative result
+
+This is an ingress adapter, not a second runtime. Runtime truth still lives only in the orchestrator.
 
 ## Stable Contracts
 
@@ -90,6 +106,8 @@ CLI surface:
 - \`bootstrap.world\` is initialization-only; live world truth comes from the projection
 - \`--activity-package-id\` is a bootstrap and dev fallback for room alias resolution, not a hidden runtime default
 - future renderers must consume the same authority-backed query surface instead of becoming a new truth source
+- autonomy ingress must remain an adapter into the same command surface; it must not become a sidecar truth source
+- control-driven smoke remains the promoted baseline until the real-agent autonomy smoke is re-verified and explicitly promoted
 
 ## Activity Package Boundary
 
