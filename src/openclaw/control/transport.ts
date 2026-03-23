@@ -89,6 +89,7 @@ export const buildGatewayAgentCallArgs = ({
   idempotencyKey,
   activityPackageId,
   roomCatalog,
+  sessionKeySuffix,
 }: {
   agentId: string;
   room: string;
@@ -99,6 +100,7 @@ export const buildGatewayAgentCallArgs = ({
   idempotencyKey: string;
   activityPackageId?: string | null;
   roomCatalog?: ActivityRoomCatalog | null;
+  sessionKeySuffix?: string;
 }): string[] => {
   const normalizedAgentId = normalizeAgentId(agentId);
   const sessionKey = buildGatewaySessionKey(
@@ -107,6 +109,9 @@ export const buildGatewayAgentCallArgs = ({
     activityPackageId,
     roomCatalog ? { roomCatalog } : undefined,
   );
+  const resolvedSessionKey = sessionKeySuffix?.trim()
+    ? `${sessionKey}:${sessionKeySuffix.trim()}`
+    : sessionKey;
   return buildGatewayCallArgs({
     method: "agent",
     expectFinal: true,
@@ -116,7 +121,7 @@ export const buildGatewayAgentCallArgs = ({
     params: {
       agentId: normalizedAgentId,
       message: message.trim(),
-      sessionKey,
+      sessionKey: resolvedSessionKey,
       timeout: timeoutSeconds,
       idempotencyKey,
     },

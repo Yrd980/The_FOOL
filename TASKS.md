@@ -8,9 +8,11 @@
 - external contracts are stable across CLI, HTTP, and WebSocket
 - live operator surface is CLI plus ASCII watch
 - only \`the-fool-v1\` is wired as a built-in activity package today
-- \`the-fool-v1\` now has a real ten-act smoke path through local orchestrator + openclaw-control + ascii verification
+- \`the-fool-v1\` still supports real orchestrator/control execution and authoritative ASCII verification, but the promoted end-to-end run is now the autonomy ingress path
 - current branch also adds a real OpenClaw agent ingress path for The Fool through \`scripts/autonomy/*\`
-- \`bun test\` is intentionally narrowed to real integration tests; helper/read-model/runtime unit tests were removed
+- repo-local automated test files have been removed; verification now centers on real OpenClaw ingress runs plus authority-backed control inspection
+- frontend scope is intentionally limited to terminal ASCII observation while autonomy ingress is being closed
+- real-run verification should stay on a single local orchestrator/autonomy pair so interrupted sessions do not leave multiple competing bun loops behind
 
 ## Documentation Roles
 
@@ -27,9 +29,8 @@
 - \`src/openclaw/control.ts\` was split into narrower internal modules behind a stable barrel
 - \`src/openclaw/asciiOverview.ts\` was split into entrypoint, read-model, render, and support modules
 - \`scripts/orchestrator/server.ts\` now owns HTTP and WebSocket route glue
-- \`scripts/openclaw-smoke-the-fool.ts\` now runs a real act-1..act-10 authoritative smoke and is exposed as \`bun run openclaw:smoke:the-fool\`
 - \`scripts/openclaw-autonomy-the-fool.ts\` now drives The Fool through real gateway agents and real orchestrator RPC while keeping the same authoritative command loop
-- \`scripts/openclaw-autonomy-smoke-the-fool.ts\` now boots a local orchestrator, runs the real-agent autonomy flow, and validates the result with control ascii/snapshot/events
+- \`scripts/autonomy/theFoolAutonomy.ts\` now derives room alias resolution from authoritative snapshot truth before issuing real gateway agent calls
 - \`scripts/openclaw-orchestrator.ts\` is now a thin composition entrypoint over:
   - \`scripts/orchestrator/bootstrap.ts\`
   - \`scripts/orchestrator/projection.ts\`
@@ -48,11 +49,11 @@
 ## Current Phase Boundary
 
 - completed baseline: real orchestrator + real control commands + ASCII observation can drive The Fool from act-1 through act-10 and finish
-- current next stage: six real OpenClaw contestant agents plus supporting host/judge/viewer agent workspaces participate through the new autonomy ingress path
-- important wording: this branch has autonomy runner code and smoke harness, but that should not be described as fully landed default agent ingress until the autonomy smoke is re-verified as part of the baseline
+- current promoted real-run entrypoint: \`bun run openclaw:autonomy:the-fool\` drives six real OpenClaw contestant agents plus supporting host/judge/viewer agent workspaces through the same authoritative runtime
+- important wording: autonomy is still only an ingress adapter into the authoritative command surface; runtime truth remains in the orchestrator and is inspected through control/query output
 
 ## Open Memory
 
 - next architecture validation target is a second minimal real activity package
 - that package should validate the runtime boundary itself, not expand product surface
-- near-term delivery target on this branch is to stabilize and verify \`bun run openclaw:autonomy:smoke:the-fool\` without changing external CLI/HTTP/WebSocket contracts
+- near-term delivery target on this branch is to stabilize and verify \`bun run openclaw:autonomy:the-fool\` without changing external CLI/HTTP/WebSocket contracts

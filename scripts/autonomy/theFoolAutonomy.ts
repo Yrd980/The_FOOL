@@ -3,6 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  buildWorldRoomCatalog,
+  tryBuildBootstrapRoomCatalog,
+  tryResolveActivityPackageId,
+  type ActivityRoomCatalog,
+} from "../../src/openclaw/activityRuntime";
+import {
   buildCommandConfirmation,
   buildCommandEnvelope,
   buildFinishActivityConfirmationChallenge,
@@ -67,6 +73,7 @@ interface ActionSpec {
   actorId: string;
   instruction: string;
   example: PromptAction;
+  promptSkeleton?: PromptAction;
   nonEmptyPaths?: string[];
   validate?: (value: PromptAction) => string | null;
 }
@@ -287,6 +294,16 @@ const readString = (
 const truncate = (value: string, maxChars: number): string =>
   value.length <= maxChars ? value : `${value.slice(0, maxChars)}\n...[truncated]`;
 
+const AUTONOMY_CONTROL_WORDS = new Set([
+  "stop",
+  "abort",
+  "quit",
+  "cancel",
+  "memory_get",
+  "memory_put",
+  "error",
+]);
+
 const stableSubsetMatches = (value: unknown, expected: unknown): boolean => {
   if (expected === null || typeof expected !== "object" || Array.isArray(expected)) {
     return value === expected;
@@ -311,6 +328,24 @@ const readPath = (value: unknown, pathText: string): unknown => {
   return current;
 };
 
+const writePath = (
+  value: Record<string, unknown>,
+  pathText: string,
+  nextValue: unknown,
+): void => {
+  const keys = pathText.split(".");
+  let current: Record<string, unknown> = value;
+  for (let index = 0; index < keys.length - 1; index += 1) {
+    const key = keys[index];
+    const existing = current[key];
+    if (!isRecord(existing)) {
+      current[key] = {};
+    }
+    current = current[key] as Record<string, unknown>;
+  }
+  current[keys.at(-1) ?? pathText] = nextValue;
+};
+
 const ensureNonEmptyPaths = (
   value: PromptAction,
   paths: string[] | undefined,
@@ -332,6 +367,75 @@ const ensureNonEmptyPaths = (
     return `Missing non-empty field ${entry}.`;
   }
   return null;
+};
+
+const selectLastPayloadText = (payload: unknown): string | null => {
+  const texts = collectPayloadTexts(payload)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return texts.at(-1) ?? null;
+};
+
+const selectFreeTextCandidate = (payload: unknown): string | null => {
+  const texts = collectPayloadTexts(payload)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  const filtered = texts.filter(
+    (entry) =>
+      !entry.includes("Return exactly one JSON object") &&
+      !entry.includes("Current stage doc excerpt:") &&
+      !entry.includes("Authority snapshot:") &&
+      !entry.includes("JSON example:") &&
+      !AUTONOMY_CONTROL_WORDS.has(entry.toLowerCase()),
+  );
+  const candidate = filtered.at(-1) ?? texts.at(-1);
+  if (!candidate || candidate.trim().length === 0) {
+    return null;
+  }
+  return AUTONOMY_CONTROL_WORDS.has(candidate.toLowerCase())
+    ? null
+    : candidate.trim();
+};
+
+const coercePromptActionFromText = (
+  payload: unknown,
+  spec: ActionSpec,
+): PromptAction | null => {
+  if ((spec.nonEmptyPaths?.length ?? 0) !== 1) {
+    return null;
+  }
+
+  const targetPath = spec.nonEmptyPaths?.[0];
+  if (
+    !targetPath ||
+    !["message", "note", "stance", "reason", "label"].includes(targetPath)
+  ) {
+    return null;
+  }
+
+  const freeText = selectFreeTextCandidate(payload);
+  if (!freeText) {
+    return null;
+  }
+
+  const coerced = JSON.parse(JSON.stringify(spec.example)) as PromptAction;
+  writePath(coerced, targetPath, freeText);
+  return coerced;
+};
+
+const normalizeParsedPromptAction = (
+  parsed: PromptAction,
+  spec: ActionSpec,
+): PromptAction => {
+  const normalized = JSON.parse(JSON.stringify(parsed)) as PromptAction;
+  if (spec.nonEmptyPaths?.includes("message") && !readString(normalized, "message")) {
+    const aliasedMessage =
+      readString(normalized, "text") ?? readString(normalized, "content");
+    if (aliasedMessage) {
+      normalized.message = aliasedMessage;
+    }
+  }
+  return normalized;
 };
 
 const extractJsonObject = (text: string): PromptAction | null => {
@@ -377,15 +481,22 @@ const collectPayloadTexts = (value: unknown): string[] => {
     return [];
   }
 
-  const texts: string[] = [];
-  for (const [key, child] of Object.entries(value)) {
-    if (key === "text" && typeof child === "string") {
-      texts.push(child);
-      continue;
-    }
-    texts.push(...collectPayloadTexts(child));
+  if (Array.isArray(value.payloads)) {
+    return collectPayloadTexts(value.payloads);
   }
-  return texts;
+
+  if (isRecord(value.result) && Array.isArray(value.result.payloads)) {
+    return collectPayloadTexts(value.result.payloads);
+  }
+
+  const hasOnlyPayloadFields = Object.keys(value).every((key) =>
+    ["text", "mediaUrl", "type"].includes(key),
+  );
+  if (hasOnlyPayloadFields && typeof value.text === "string") {
+    return [value.text];
+  }
+
+  return [];
 };
 
 const createInitialState = (runId: string): AutonomyState => ({
@@ -551,6 +662,29 @@ const resolveRoomForActor = (
   return entityRoomId ?? role?.fallbackRoomId ?? "main-stage";
 };
 
+const resolveSnapshotActivityPackageId = (
+  snapshot: GatewaySnapshotEnvelope,
+): string | null =>
+  tryResolveActivityPackageId({
+    templateId: snapshot.activityRun?.templateId,
+  }) ??
+  snapshot.activityRun?.templateId ??
+  null;
+
+const resolveRoomCatalogForSnapshot = (
+  snapshot: GatewaySnapshotEnvelope,
+): ActivityRoomCatalog | null => {
+  const activityPackageId = resolveSnapshotActivityPackageId(snapshot);
+  if (snapshot.world) {
+    return buildWorldRoomCatalog({
+      world: snapshot.world,
+      activityPackageId,
+    });
+  }
+
+  return tryBuildBootstrapRoomCatalog(activityPackageId);
+};
+
 const queryRecentEventsForActor = async (
   context: RuntimeContext,
   actorId: string,
@@ -640,28 +774,39 @@ const parsePromptAction = (
     if (!parsed) {
       continue;
     }
+    const normalized = normalizeParsedPromptAction(parsed, spec);
 
-    const subsetError = stableSubsetMatches(parsed, spec.example)
+    const subsetError = stableSubsetMatches(normalized, spec.example)
       ? null
       : `Expected subset ${JSON.stringify(spec.example)}.`;
     if (subsetError) {
       continue;
     }
 
-    const nonEmptyError = ensureNonEmptyPaths(parsed, spec.nonEmptyPaths);
+    const nonEmptyError = ensureNonEmptyPaths(normalized, spec.nonEmptyPaths);
     if (nonEmptyError) {
       continue;
     }
 
-    const validateError = spec.validate?.(parsed);
+    const validateError = spec.validate?.(normalized);
     if (validateError) {
       continue;
     }
-    return parsed;
+    return normalized;
   }
 
+  const coerced = coercePromptActionFromText(payload, spec);
+  if (coerced) {
+    const nonEmptyError = ensureNonEmptyPaths(coerced, spec.nonEmptyPaths);
+    const validateError = spec.validate?.(coerced);
+    if (!nonEmptyError && !validateError) {
+      return coerced;
+    }
+  }
+
+  const payloadSnippet = selectLastPayloadText(payload);
   throw new Error(
-    `Agent response for ${spec.stepKey} did not contain valid JSON matching ${JSON.stringify(spec.example)}.`,
+    `Agent response for ${spec.stepKey} did not contain valid JSON matching ${JSON.stringify(spec.example)}.${payloadSnippet ? ` Last payload text: ${JSON.stringify(truncate(payloadSnippet, 400))}` : ""}`,
   );
 };
 
@@ -671,6 +816,8 @@ const callGatewayAgent = async (
   prompt: string,
   gatewayRunId: string,
   activityPackageId: string | null | undefined,
+  roomCatalog: ActivityRoomCatalog | null,
+  sessionKeySuffix: string,
 ): Promise<unknown> => {
   const token = resolveGatewayToken();
   if (!token) {
@@ -689,6 +836,8 @@ const callGatewayAgent = async (
       token,
       idempotencyKey: gatewayRunId,
       activityPackageId: activityPackageId ?? undefined,
+      roomCatalog,
+      sessionKeySuffix,
     }),
   );
 };
@@ -710,6 +859,7 @@ const promptForAction = async (
   );
   const recentEvents = await queryRecentEventsForActor(context, spec.actorId);
   const roomId = resolveRoomForActor(snapshotPayload.snapshot, spec.actorId);
+  const roomCatalog = resolveRoomCatalogForSnapshot(snapshotPayload.snapshot);
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const runOrdinal = nextTurnNumber(context, `${spec.stepKey}-prompt`);
@@ -723,7 +873,7 @@ const promptForAction = async (
             recentEvents,
             docs: context.docs,
             instruction: spec.instruction,
-            example: spec.example,
+            example: spec.promptSkeleton ?? spec.example,
           })
         : [
             buildActionPrompt({
@@ -734,7 +884,7 @@ const promptForAction = async (
               recentEvents,
               docs: context.docs,
               instruction: spec.instruction,
-              example: spec.example,
+              example: spec.promptSkeleton ?? spec.example,
             }),
             "",
             "Previous attempt was invalid.",
@@ -749,7 +899,9 @@ const promptForAction = async (
       roomId,
       prompt,
       `${context.state.runId}-${spec.stepKey}-agent-${runOrdinal}`,
-      snapshotPayload.snapshot.activityRun?.templateId,
+      resolveSnapshotActivityPackageId(snapshotPayload.snapshot),
+      roomCatalog,
+      context.state.runId,
     );
     try {
       const parsed = parsePromptAction(gatewayPayload, spec);
@@ -1418,6 +1570,16 @@ const runAct5 = async (context: RuntimeContext): Promise<void> => {
         action: "submit",
         submissionId: SUBMISSION_BY_TEAM[teamId],
       },
+      promptSkeleton: {
+        action: "submit",
+        submissionId: SUBMISSION_BY_TEAM[teamId],
+        data: {
+          posterOrDeck: seed.posterOrDeck,
+          elevatorPitch: "one short pitch line",
+          highlights: ["highlight one", "highlight two", "highlight three"],
+          risk: seed.risk,
+        },
+      },
       nonEmptyPaths: [
         "data.posterOrDeck",
         "data.elevatorPitch",
@@ -1540,6 +1702,16 @@ const runAct7 = async (context: RuntimeContext): Promise<void> => {
           submissionId,
           score,
         },
+        promptSkeleton: {
+          action: "submit_score",
+          submissionId,
+          score,
+          reason: "one short judging reason",
+          annotations: {
+            favorite: teamId,
+            mostAbsurd: "contestant-01",
+          },
+        },
         nonEmptyPaths: [
           "reason",
           "annotations.favorite",
@@ -1640,6 +1812,14 @@ const runAct9 = async (context: RuntimeContext): Promise<void> => {
         action: "submit",
         submissionId: poemPlan.submissionId,
       },
+      promptSkeleton: {
+        action: "submit",
+        submissionId: poemPlan.submissionId,
+        data: {
+          poem: "one short poem",
+          moodAtSubmission: "one mood phrase",
+        },
+      },
       nonEmptyPaths: ["data.poem", "data.moodAtSubmission"],
     });
     await executeActionSpec(context, {
@@ -1650,6 +1830,16 @@ const runAct9 = async (context: RuntimeContext): Promise<void> => {
       example: {
         action: "draw",
         entityId: contestantId,
+      },
+      promptSkeleton: {
+        action: "draw",
+        entityId: contestantId,
+        data: {
+          color: poemPlan.color,
+          x: poemPlan.x,
+          y: poemPlan.y,
+          poemSubmissionId: poemPlan.submissionId,
+        },
       },
       validate: (value) => {
         const data = isRecord(value.data) ? value.data : null;

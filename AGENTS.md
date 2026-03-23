@@ -18,8 +18,18 @@
 
 ## Verification
 
-- Run bun run build, bun run lint, and bun test after meaningful changes.
-- Prefer real /api/orchestrator/* behavior and integration tests over documentation confidence.
+- Run bun run build and bun run lint after meaningful changes.
+- Prefer a real OpenClaw ingress run plus authority-backed control/ascii observation over repo-local test suites.
+- Prefer real /api/orchestrator/* behavior plus authority-backed control/ascii observation over documentation confidence.
+- Do not add new repo-local test files or test harnesses unless the user explicitly asks for them.
+- When the user asks to continue autonomy ingress closure, debug by running the backend directly and observing with \`openclaw-control ascii\`, not by rebuilding any frontend surface.
+- Keep local verification to one orchestrator and one autonomy runner at a time; interrupted runs should be cleaned up before starting another pass.
+
+## Current Delivery Bias
+
+- Default to backend direct-run debugging for autonomy ingress.
+- The only operator-facing presentation surface to keep evolving in this repo is terminal ASCII output.
+- Do not build or reintroduce a web frontend unless the user explicitly changes direction.
 
 ## Refactor Guardrails
 

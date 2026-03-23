@@ -52,12 +52,13 @@ Use this wording:
 - [scripts/autonomy/orchestratorRpc.ts](./scripts/autonomy/orchestratorRpc.ts): WebSocket RPC adapter used by the real-agent autonomy runner
 - [scripts/autonomy/theFoolAutonomy.ts](./scripts/autonomy/theFoolAutonomy.ts): The Fool branch-local real-agent ingress loop that builds prompts from authority state and emits authoritative commands
 - [scripts/openclaw-autonomy-the-fool.ts](./scripts/openclaw-autonomy-the-fool.ts): autonomy runner entrypoint
-- [scripts/openclaw-autonomy-smoke-the-fool.ts](./scripts/openclaw-autonomy-smoke-the-fool.ts): local end-to-end smoke that boots an orchestrator, runs the autonomy loop, and verifies via control queries
 - [src/openclaw/orchestratorQueryClient.ts](./src/openclaw/orchestratorQueryClient.ts): client-side HTTP query adapter
 - [src/openclaw/asciiOverview.ts](./src/openclaw/asciiOverview.ts): stable ASCII watch entrypoint
 - [src/openclaw/asciiOverviewReadModel.ts](./src/openclaw/asciiOverviewReadModel.ts): authority-backed event normalization and section read-model assembly
 - [src/openclaw/asciiOverviewRender.ts](./src/openclaw/asciiOverviewRender.ts): ASCII layout and rendering
 - [src/openclaw/asciiOverviewSupport.ts](./src/openclaw/asciiOverviewSupport.ts): shared ASCII helpers
+
+The presentation boundary for this repo is intentionally narrow: backend authority plus terminal ASCII observation only. There is no promoted web frontend surface in this worktree.
 
 ### Branch-local autonomy ingress
 
@@ -107,7 +108,8 @@ CLI surface:
 - \`--activity-package-id\` is a bootstrap and dev fallback for room alias resolution, not a hidden runtime default
 - future renderers must consume the same authority-backed query surface instead of becoming a new truth source
 - autonomy ingress must remain an adapter into the same command surface; it must not become a sidecar truth source
-- control-driven smoke remains the promoted baseline until the real-agent autonomy smoke is re-verified and explicitly promoted
+- the promoted real-run entrypoint is the autonomy runner, while authority verification still comes from the same query and control surface
+- repo-local automated test suites are not part of the current delivery path; runtime issues are expected to be debugged through one real OpenClaw run at a time plus authority-backed query/ascii inspection
 
 ## Activity Package Boundary
 

@@ -653,4 +653,4 @@ The Fool v1 作为活动包，最少应显式提供：
 - 当前 live surface 只有 `openclaw-control ascii`，没有富内容 Web renderer
 - authoritative orchestrator 已覆盖 stage、timer、submission、score、award、events、replay、audit、ASCII watch
 - The Fool 是当前唯一已接入并验证过的内置活动包
-- 真实验证应优先看 `../../README.md` 里的运行命令，以及 `bun run build` / `bun run lint` / `bun test`
+- 真实验证应优先看 `../../README.md` 里的运行命令，以及 `bun run build` / `bun run lint` / `bun run verify:real`

@@ -39,7 +39,7 @@ Public operational handoff files remain under [public/](./public/):
 - CLI-only glue now lives under scripts/control/*, with support/config helpers in scripts/control/support.ts, command parsing in scripts/control/parse.ts, gateway and orchestrator probing in scripts/control/probe.ts, query and ASCII wiring in scripts/control/query.ts, and command-family handlers under scripts/control/commands/*
 - Control-side command helpers keep the stable entrypoint in src/openclaw/control.ts, with the implementation split across src/openclaw/control/*
 - Terminal ASCII watch keeps the stable entrypoint in src/openclaw/asciiOverview.ts, with read-model assembly in src/openclaw/asciiOverviewReadModel.ts, ASCII rendering in src/openclaw/asciiOverviewRender.ts, and shared helpers in src/openclaw/asciiOverviewSupport.ts
-- Real OpenClaw agent-ingress work for The Fool currently lives under scripts/autonomy/*, with scripts/openclaw-autonomy-the-fool.ts as the runner entrypoint and scripts/openclaw-autonomy-smoke-the-fool.ts as the smoke harness
+- Real OpenClaw agent-ingress work for The Fool currently lives under scripts/autonomy/*, with scripts/openclaw-autonomy-the-fool.ts as the runner entrypoint
 - Local bootstrap defaults live in src/openclaw/localPlatformConfig.ts
 
 Important boundary rules:
@@ -55,11 +55,9 @@ Important boundary rules:
 ~~~bash
 bun run build
 bun run lint
-bun test
 bun run openclaw:orchestrator
-bun run openclaw:smoke:the-fool
 bun run openclaw:autonomy:the-fool
-bun run openclaw:autonomy:smoke:the-fool
+bun run verify:real
 bun run openclaw:control -- probe
 bun run openclaw:control -- snapshot activity-run-01
 bun run openclaw:control -- events activity-run-01 --limit 10
@@ -80,12 +78,14 @@ Current verification baseline for this worktree:
 
 - bun run build
 - bun run lint
-- bun test  # real orchestrator/control integration only
-- bun run openclaw:smoke:the-fool
+- bun run verify:real
+- observe the authoritative result with openclaw-control snapshot/events/ascii
+- do not add repo-local test suites unless the user explicitly asks for them
+- keep local verification to one orchestrator plus one autonomy runner at a time so interrupted debug sessions do not pile up extra bun processes
 
-Current next-stage verification target on this branch:
+Current promoted end-to-end real run on this branch:
 
-- bun run openclaw:autonomy:smoke:the-fool  # real OpenClaw agent ingress for the six-contestant full-run path
+- bun run openclaw:autonomy:the-fool  # real OpenClaw agent ingress for the six-contestant full-run path
 
 ## Authoritative ASCII Watch
 
@@ -114,7 +114,7 @@ Verified authority-side command and query surface in this worktree currently inc
 - submission loop: open-submission, submit, update-submission, lock-submission
 - scoring loop: submit-score, grant-award, finish
 - authority-backed social loop: talk, broadcast, reaction, bet, vote
-- The Fool v1 real ten-act landing: act-1 through act-10 plus finish via a real local orchestrator and openclaw-control smoke
+- The Fool v1 real-agent ingress path: `bun run openclaw:autonomy:the-fool` drives real OpenClaw participants into the same authoritative command surface
 
 Current stage-action enforcement worth knowing:
 
@@ -135,17 +135,28 @@ This branch now includes a real OpenClaw agent ingress path for The Fool.
 
 Important status boundary:
 
-- the shipped baseline already proves a real ten-act authoritative smoke through orchestrator + control + ASCII
-- the new autonomy path is the current next-stage ingress effort for real agent participation
-- do not describe the autonomy smoke as proof that six OpenClaw agents have already fully landed as the default runtime baseline until it has been re-verified and promoted
+- the promoted real-run entrypoint is `bun run openclaw:autonomy:the-fool`
+- autonomy remains an ingress adapter into the same orchestrator truth surface, not a second runtime
+- do not describe real-agent ingress as a second authority source; control queries and ASCII remain the way to inspect runtime truth
+- frontend scope is intentionally collapsed to authority-backed terminal ASCII only
 
 Typical local run:
 
 ~~~bash
 OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791 \
 OPENCLAW_ORCHESTRATOR_TOKEN=<local-token> \
+OPENCLAW_GATEWAY_TOKEN=<gateway-token> \
+bun run openclaw:autonomy:the-fool
+
+OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791 \
+OPENCLAW_ORCHESTRATOR_TOKEN=<local-token> \
 bun run openclaw:control -- ascii activity-run-01 --limit 20 --watch 0.5
 ~~~
+
+Operational note:
+
+- if a local run is interrupted, any leftover \`bun\` processes are ordinary live processes rather than zombies; clean them up before starting the next real-run verification pass
+- keep the debug loop to one local orchestrator and one autonomy runner so ASCII observation stays tied to a single authoritative run
 
 Current config boundary:
 
@@ -185,6 +196,6 @@ The current worktree is intentionally small and backend-first:
 - scripts/orchestrator/* is now the main internal seam for authority bootstrap, runtime loop, command shell, query, audit, snapshot, and transport refactors
 - only The Fool is wired as a built-in activity package today
 - the live surface is CLI and ASCII only; any future renderer should be a separate consumer of the same authority and query contracts
-- the stable baseline remains operator and CLI-driven; the new autonomy runner is a branch-local real agent ingress path, not yet a promoted replacement for the control-driven baseline
+- the promoted real-run entrypoint is the autonomy runner, while operator inspection still flows through openclaw-control and ASCII queries
 - audience vote endgame follow-through still needs more authority-side work for winner aggregation beyond the current snapshot and replay output
 - when checking behavior, prefer real /api/orchestrator/* queries and openclaw-control ascii over documentation assumptions
