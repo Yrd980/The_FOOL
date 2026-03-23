@@ -33,6 +33,7 @@
 - \`scripts/autonomy/theFoolAutonomy.ts\` now derives room alias resolution from authoritative snapshot truth before issuing real gateway agent calls
 - \`scripts/autonomy/theFoolAutonomy.ts\` now resumes unfinished work with a fresh autonomy run id while preserving ledger-completed steps, so rejected commands can be corrected and retried without idempotency conflicts
 - real \`act-5-submission\` runs are now aligned to authority validation: \`team-project-v1\` \`elevatorPitch\` must stay at 100 characters or fewer, and retry prompts now reuse the full structured skeleton instead of collapsing back to the subset example
+- free-text autonomy coercion now rejects gateway / LLM infrastructure failure strings, so transport-side errors do not get written into authoritative `talk` payloads as if they were valid participant speech
 - \`scripts/openclaw-orchestrator.ts\` is now a thin composition entrypoint over:
   - \`scripts/orchestrator/bootstrap.ts\`
   - \`scripts/orchestrator/projection.ts\`
@@ -53,10 +54,11 @@
 - completed baseline: real orchestrator + real control commands + ASCII observation can drive The Fool from act-1 through act-10 and finish
 - current promoted real-run entrypoint: \`bun run openclaw:autonomy:the-fool\` drives six real OpenClaw contestant agents plus supporting host/judge/viewer agent workspaces through the same authoritative runtime
 - important wording: autonomy is still only an ingress adapter into the authoritative command surface; runtime truth remains in the orchestrator and is inspected through control/query output
-- latest single-run recovery evidence on this branch: one recovered orchestrator/autonomy chain advanced under ASCII observation from \`act-5-submission\` through \`act-6-human-review\`, \`act-7-ai-judging\`, \`act-8-awards\`, and into \`act-9-co-creation\`
+- latest single-run recovery evidence on this branch: one recovered orchestrator/autonomy chain resumed at `act-10-open-mic`, completed the remaining close-out talks, and emitted authoritative `activity.finished` with `team-3` settled as winner
 
 ## Open Memory
 
 - next architecture validation target is a second minimal real activity package
 - that package should validate the runtime boundary itself, not expand product surface
 - near-term delivery target on this branch is to stabilize and verify \`bun run openclaw:autonomy:the-fool\` without changing external CLI/HTTP/WebSocket contracts
+- next operator-facing task is to validate a fully legible end-to-end ASCII The Fool run while separately investigating how far local OpenClaw agent work can be parallelized without breaking the single authoritative orchestrator boundary

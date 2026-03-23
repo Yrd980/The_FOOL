@@ -304,6 +304,16 @@ const AUTONOMY_CONTROL_WORDS = new Set([
   "error",
 ]);
 
+const INFRA_FAILURE_TEXT_PATTERNS = [
+  /^llm request rejected:/i,
+  /organization has been disabled/i,
+  /^openclaw\b.* failed:/i,
+  /^failed to run openclaw\b/i,
+  /returned invalid json/i,
+  /^timed out waiting for event /i,
+  /^websocket connection failed\.?$/i,
+];
+
 const stableSubsetMatches = (value: unknown, expected: unknown): boolean => {
   if (expected === null || typeof expected !== "object" || Array.isArray(expected)) {
     return value === expected;
@@ -397,6 +407,9 @@ const selectFreeTextCandidate = (payload: unknown): string | null => {
     : candidate.trim();
 };
 
+const isInfrastructureFailureText = (value: string): boolean =>
+  INFRA_FAILURE_TEXT_PATTERNS.some((pattern) => pattern.test(value.trim()));
+
 const coercePromptActionFromText = (
   payload: unknown,
   spec: ActionSpec,
@@ -418,8 +431,13 @@ const coercePromptActionFromText = (
     return null;
   }
 
+  const nextText = isInfrastructureFailureText(freeText) ? null : freeText;
+  if (!nextText) {
+    return null;
+  }
+
   const coerced = JSON.parse(JSON.stringify(spec.example)) as PromptAction;
-  writePath(coerced, targetPath, freeText);
+  writePath(coerced, targetPath, nextText);
   return coerced;
 };
 
@@ -903,16 +921,16 @@ const promptForAction = async (
               : "Do not add any explanation before or after the JSON object.",
           ].join("\n");
 
-    const gatewayPayload = await callGatewayAgent(
-      role,
-      roomId,
-      prompt,
-      `${context.state.runId}-${spec.stepKey}-agent-${runOrdinal}`,
-      resolveSnapshotActivityPackageId(snapshotPayload.snapshot),
-      roomCatalog,
-      context.state.runId,
-    );
     try {
+      const gatewayPayload = await callGatewayAgent(
+        role,
+        roomId,
+        prompt,
+        `${context.state.runId}-${spec.stepKey}-agent-${runOrdinal}`,
+        resolveSnapshotActivityPackageId(snapshotPayload.snapshot),
+        roomCatalog,
+        context.state.runId,
+      );
       const parsed = parsePromptAction(gatewayPayload, spec);
       await updateLastSeen(context, spec.actorId, snapshotPayload);
       return parsed;

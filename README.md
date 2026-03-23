@@ -134,6 +134,7 @@ This branch now includes a real OpenClaw agent ingress path for The Fool.
 - branch-local ledger state is persisted under `.autonomy/<activity-run-id>/state.json`
 - resume semantics are step-aware: completed steps stay in the ledger, while a restarted autonomy process issues fresh command ids for unfinished steps so recovery does not reuse a rejected idempotency key
 - real `team-project-v1` submissions currently require `payload.data.elevatorPitch` to stay at 100 characters or fewer; the autonomy runner now aligns its prompt and normalization with that authority rule
+- free-text coercion in the autonomy ingress now rejects gateway / LLM infrastructure failure strings instead of writing those raw transport errors back into authoritative participant speech
 
 Important status boundary:
 
@@ -160,6 +161,7 @@ Operational note:
 - if a local run is interrupted, any leftover \`bun\` processes are ordinary live processes rather than zombies; clean them up before starting the next real-run verification pass
 - keep the debug loop to one local orchestrator and one autonomy runner so ASCII observation stays tied to a single authoritative run
 - if you resume a partial run, keep the same orchestrator data dir and activityRunId, then restart exactly one autonomy runner against the same ledger instead of opening a second competing loop
+- latest recovered single-run evidence on this branch: one authority-backed chain resumed at `act-10-open-mic`, completed the remaining closing talks, emitted `finish_activity`, and wrote authoritative `activity.finished` with `team-3` settled as winner while ASCII stayed aligned end-to-end
 
 Current config boundary:
 
