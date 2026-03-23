@@ -181,6 +181,12 @@ export const theFoolWorld: WorldProjection = {
     { id: "contestant-05", kind: "agent", roomId: "main-stage" },
     { id: "contestant-06", kind: "agent", roomId: "main-stage" },
     { id: "host-01", kind: "host", roomId: "main-stage" },
+    { id: "judge-01", kind: "judge", roomId: "main-stage" },
+    { id: "judge-02", kind: "judge", roomId: "main-stage" },
+    { id: "judge-03", kind: "judge", roomId: "main-stage" },
+    { id: "viewer-01", kind: "viewer", roomId: "main-stage" },
+    { id: "viewer-02", kind: "viewer", roomId: "main-stage" },
+    { id: "viewer-03", kind: "viewer", roomId: "main-stage" },
   ],
 };
 

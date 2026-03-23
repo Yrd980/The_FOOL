@@ -47,6 +47,7 @@ Important boundary rules:
 - Generic runtime code must not hardcode The Fool stage ids, room ids, or score annotation keys.
 - The Fool remains the first built-in activity only via explicit authority startup config.
 - bootstrap.world is initialization-only; running world truth comes from the authority projection.
+- The Fool bootstrap world must still include every authority-visible actor that autonomy depends on for room placement, including host, judges, and viewers.
 - room alias resolution must come from authoritative snapshot.world; bootstrap/dev fallback resolution is no longer part of the runtime path.
 - External CLI, HTTP, and WebSocket contracts should stay stable while internal modules are refactored.
 
@@ -173,6 +174,7 @@ Operational note:
 - keep the debug loop to one local orchestrator and one autonomy runner so ASCII observation stays tied to a single authoritative run
 - if you resume a partial run, keep the same orchestrator data dir and activityRunId, then restart exactly one autonomy runner against the same ledger instead of opening a second competing loop
 - latest recovered single-run evidence on this branch: one authority-backed chain resumed at `act-10-open-mic`, completed the remaining closing talks, emitted `finish_activity`, and wrote authoritative `activity.finished` with `team-3` settled as winner while ASCII stayed aligned end-to-end
+- latest clean end-to-end local run evidence on this branch: isolated authority run `the-fool-live-20260323-201254` started from a fresh data dir, rendered through ASCII watch, and finished with authoritative `activity.finished` for `team-3` after all ten acts plus co-creation closeout
 - latest full operator-view evidence on this branch: authoritative replay/event inspection for `the-fool-operator-check-20260323` rendered act-1 through act-10 checkpoints, pending obligations, full-run summary, and closeout capsule from the same snapshot/events/replay chain
 
 Current config boundary:

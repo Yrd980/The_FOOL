@@ -31,6 +31,7 @@
 - \`scripts/orchestrator/server.ts\` now owns HTTP and WebSocket route glue
 - \`scripts/openclaw-autonomy-the-fool.ts\` now drives The Fool through real gateway agents and real orchestrator RPC while keeping the same authoritative command loop
 - \`scripts/autonomy/theFoolAutonomy.ts\` now derives room alias resolution from authoritative snapshot truth before issuing real gateway agent calls
+- \`src/openclaw/activities/theFoolV1/definition.ts\` now seeds host, judge, and viewer entities directly into the bootstrap world so authority-backed room placement stays available for the full autonomy cast from act-1 onward
 - \`scripts/autonomy/theFoolAutonomy.ts\` now resumes unfinished work with a fresh autonomy run id while preserving ledger-completed steps, so rejected commands can be corrected and retried without idempotency conflicts
 - real \`act-5-submission\` runs are now aligned to authority validation: \`team-project-v1\` \`elevatorPitch\` must stay at 100 characters or fewer, and retry prompts now reuse the full structured skeleton instead of collapsing back to the subset example
 - free-text autonomy coercion now rejects gateway / LLM infrastructure failure strings, so transport-side errors do not get written into authoritative `talk` payloads as if they were valid participant speech
@@ -56,6 +57,7 @@
 - current promoted real-run entrypoint: \`bun run openclaw:autonomy:the-fool\` drives six real OpenClaw contestant agents plus supporting host/judge/viewer agent workspaces through the same authoritative runtime
 - important wording: autonomy is still only an ingress adapter into the authoritative command surface; runtime truth remains in the orchestrator and is inspected through control/query output
 - latest single-run recovery evidence on this branch: one recovered orchestrator/autonomy chain resumed at `act-10-open-mic`, completed the remaining close-out talks, and emitted authoritative `activity.finished` with `team-3` settled as winner
+- latest clean isolated run evidence on this branch: `the-fool-live-20260323-201254` ran from fresh authority storage through ASCII watch to authoritative `activity.finished`, with `team-3` settled as winner at sequence 107
 - latest operator-view evidence on this branch: `openclaw-control ascii` now renders full-run run outcome, per-act checkpoints, pending obligations, dense summary, and closeout capsule from authoritative snapshot/events/replay only
 - latest runtime-shape evidence on this branch: local OpenClaw concurrency is now implemented as concurrent prompt generation plus serialized authoritative dispatch inside the same single-orchestrator runtime
 

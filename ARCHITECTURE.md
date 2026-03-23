@@ -108,6 +108,7 @@ CLI surface:
 
 - runtime truth lives in the orchestrator, not in docs, CLI output, or a renderer
 - \`bootstrap.world\` is initialization-only; live world truth comes from the projection
+- activity bootstrap must still seed every actor that autonomy later resolves through authoritative \`snapshot.world\`, including host, judge, and viewer entities used for room placement
 - control and autonomy room resolution must come from authoritative \`snapshot.world\`; bootstrap/dev room fallback is no longer part of the live runtime path
 - operator mutation dispatch is authority-only; there is no gateway mutation fallback or preview-only downgrade path in the control flow
 - local authority startup requires explicit \`OPENCLAW_ACTIVITY_RUN_ID\`, \`OPENCLAW_ACTIVITY_TEMPLATE_ID\`, and \`OPENCLAW_ORCHESTRATOR_TOKEN\`
