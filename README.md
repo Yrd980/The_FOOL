@@ -132,6 +132,8 @@ This branch now includes a real OpenClaw agent ingress path for The Fool.
 - the autonomy runner talks to the orchestrator over real WebSocket RPC and talks to OpenClaw through real gateway `agent` calls
 - agent output is constrained into JSON actions which are then converted into authoritative command envelopes before entering the runtime
 - branch-local ledger state is persisted under `.autonomy/<activity-run-id>/state.json`
+- resume semantics are step-aware: completed steps stay in the ledger, while a restarted autonomy process issues fresh command ids for unfinished steps so recovery does not reuse a rejected idempotency key
+- real `team-project-v1` submissions currently require `payload.data.elevatorPitch` to stay at 100 characters or fewer; the autonomy runner now aligns its prompt and normalization with that authority rule
 
 Important status boundary:
 
@@ -157,6 +159,7 @@ Operational note:
 
 - if a local run is interrupted, any leftover \`bun\` processes are ordinary live processes rather than zombies; clean them up before starting the next real-run verification pass
 - keep the debug loop to one local orchestrator and one autonomy runner so ASCII observation stays tied to a single authoritative run
+- if you resume a partial run, keep the same orchestrator data dir and activityRunId, then restart exactly one autonomy runner against the same ledger instead of opening a second competing loop
 
 Current config boundary:
 

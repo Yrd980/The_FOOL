@@ -435,6 +435,12 @@ const normalizeParsedPromptAction = (
       normalized.message = aliasedMessage;
     }
   }
+  if (normalized.action === "submit") {
+    const data = isRecord(normalized.data) ? normalized.data : null;
+    if (typeof data?.elevatorPitch === "string") {
+      data.elevatorPitch = Array.from(data.elevatorPitch.trim()).slice(0, 100).join("");
+    }
+  }
   return normalized;
 };
 
@@ -518,7 +524,10 @@ const loadState = async (
       isRecord(parsed.lastSeenSequenceByActor) &&
       isRecord(parsed.turnCounts)
     ) {
-      return parsed;
+      return {
+        ...parsed,
+        runId,
+      };
     }
   } catch {
     // Fall through to a fresh state file.
@@ -890,7 +899,7 @@ const promptForAction = async (
             "Previous attempt was invalid.",
             "Reply with valid JSON only.",
             attempt === 3
-              ? `If needed, echo this exact skeleton and only replace the free-text values: ${JSON.stringify(spec.example)}`
+              ? `If needed, echo this exact skeleton and only replace the free-text values: ${JSON.stringify(spec.promptSkeleton ?? spec.example)}`
               : "Do not add any explanation before or after the JSON object.",
           ].join("\n");
 
@@ -1565,7 +1574,7 @@ const runAct5 = async (context: RuntimeContext): Promise<void> => {
       stepKey: `act-5-submit-${captainId}`,
       actorId: captainId,
       instruction:
-        `Submit the team project package for ${teamId}. Use schema fields posterOrDeck, elevatorPitch, highlights (exactly 3 items), and risk. Build a concise but vivid project concept around ${seed.highlightSeed} and ${seed.pitchSeed}.`,
+        `Submit the team project package for ${teamId}. Use schema fields posterOrDeck, elevatorPitch, highlights (exactly 3 items), and risk. elevatorPitch must be 100 characters or fewer. Build a concise but vivid project concept around ${seed.highlightSeed} and ${seed.pitchSeed}.`,
       example: {
         action: "submit",
         submissionId: SUBMISSION_BY_TEAM[teamId],
@@ -1589,8 +1598,10 @@ const runAct5 = async (context: RuntimeContext): Promise<void> => {
       validate: (value) => {
         const data = isRecord(value.data) ? value.data : null;
         const highlights = Array.isArray(data?.highlights) ? data.highlights : [];
-        if (data?.posterOrDeck !== seed.posterOrDeck) {
-          return `posterOrDeck must stay ${seed.posterOrDeck}.`;
+        const elevatorPitch =
+          typeof data?.elevatorPitch === "string" ? data.elevatorPitch.trim() : "";
+        if (Array.from(elevatorPitch).length > 100) {
+          return "elevatorPitch must be 100 characters or fewer.";
         }
         if (highlights.length !== 3) {
           return "highlights must contain exactly 3 items.";

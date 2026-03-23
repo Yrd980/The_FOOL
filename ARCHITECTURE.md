@@ -69,6 +69,7 @@ The current branch also carries a real OpenClaw agent ingress path for The Fool.
 3. runner validates and converts that JSON into a normal authoritative command envelope
 4. command still enters the same orchestrator command -> event -> projection loop
 5. control queries and ASCII continue to observe the authoritative result
+6. on restart, autonomy keeps ledger-completed steps but refreshes its autonomy run id before issuing unfinished commands so recovery does not pin future retries to an old rejected idempotency key
 
 This is an ingress adapter, not a second runtime. Runtime truth still lives only in the orchestrator.
 
