@@ -9,19 +9,10 @@ import {
   normalizeOrchestratorBaseUrl,
   type ControlActorRole,
 } from "../../src/openclaw/control";
-import {
-  getActivityCliCompatScoreAnnotationOptions,
-} from "../../src/openclaw/activityRuntime";
-import { resolveLocalPlatformBootstrapConfig } from "../../src/openclaw/localPlatformConfig";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const devRoot = path.resolve(scriptDir, "../..");
 const envFilePath = path.join(devRoot, ".env.local");
-const openClawConfigPath = path.join(
-  process.env.HOME ?? "",
-  ".openclaw",
-  "openclaw.json",
-);
 
 const parseEnvFile = (filePath: string): Record<string, string> => {
   try {
@@ -50,49 +41,14 @@ const parseEnvFile = (filePath: string): Record<string, string> => {
 
 const envFile = parseEnvFile(envFilePath);
 
-const parseGatewayTokenFromOpenClawConfig = (
-  filePath: string,
-): string | undefined => {
-  try {
-    const source = readFileSync(filePath, "utf8");
-    const parsed = JSON.parse(source) as {
-      gateway?: { auth?: { token?: string } };
-    };
-    return normalizeControlConfigValue(parsed.gateway?.auth?.token);
-  } catch {
-    return undefined;
-  }
-};
-
-const openClawGatewayToken =
-  parseGatewayTokenFromOpenClawConfig(openClawConfigPath);
-
 export const resolveConfigValue = (key: string): string | undefined =>
   normalizeControlConfigValue(process.env[key]) ??
   normalizeControlConfigValue(envFile[key]);
 
-const resolveCliCompatActivityPackageId = (): string =>
-  resolveConfigValue("OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID") ??
-  resolveConfigValue("OPENCLAW_ACTIVITY_TEMPLATE_ID") ??
-  resolveLocalPlatformBootstrapConfig().defaultTemplateId;
-
-export const legacyScoreCompatOptions =
-  getActivityCliCompatScoreAnnotationOptions(
-    resolveCliCompatActivityPackageId(),
-  );
-
-const legacyScoreCompatUsage = legacyScoreCompatOptions
-  .map((option) => option.description)
-  .filter(
-    (value): value is string =>
-      typeof value === "string" && value.trim().length > 0,
-  )
-  .join(" ");
-
 export const USAGE = `Usage:
   bun run openclaw:control -- probe
-  bun run openclaw:control -- move <agent-id> <room> [--activity-run-id <id>] [--activity-package-id <id>]
-  bun run openclaw:control -- say <agent-id> <room> <message> [--activity-run-id <id>] [--activity-package-id <id>]
+  bun run openclaw:control -- move <agent-id> <room> --activity-run-id <id>
+  bun run openclaw:control -- say <agent-id> <room> <message> --activity-run-id <id>
   bun run openclaw:control -- talk <activity-run-id> <message...> [--room-id <room-id>] [--target-entity-id <entity-id>] [--audience-scope <room|team|global>]
   bun run openclaw:control -- broadcast <activity-run-id> <message...> [--room-id <room-id>] [--team-id <team-id>] [--audience-scope <room|team|global>]
   bun run openclaw:control -- reaction <activity-run-id> <reaction> [note...] [--room-id <room-id>] [--target-entity-id <entity-id>] [--target-team-id <team-id>]
@@ -106,7 +62,7 @@ export const USAGE = `Usage:
   bun run openclaw:control -- update-submission <activity-run-id> <submission-id> <payload-json>
   bun run openclaw:control -- lock-submission <activity-run-id> <submission-id>
   bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> --annotations-json <json>
-  ${legacyScoreCompatUsage ? `bun run openclaw:control -- submit-score <activity-run-id> <submission-id> <score-1..10> --reason <text> ${legacyScoreCompatUsage}\n` : ""}  bun run openclaw:control -- grant-award <activity-run-id> <award-id> <entity-id> [label] [reason]
+  bun run openclaw:control -- grant-award <activity-run-id> <award-id> <entity-id> [label] [reason]
   bun run openclaw:control -- draw <activity-run-id> <entity-id> <draw-data-json>
   bun run openclaw:control -- move-entity <activity-run-id> <entity-id> <to-room-id> [kind]
   bun run openclaw:control -- assign-team <activity-run-id> <team-id> [--members <id,id,...>] [--room-id <room-id>]
@@ -119,19 +75,19 @@ export const USAGE = `Usage:
   bun run openclaw:control -- command <activity-run-id> <command-type> <payload-json>
 
 Room alias resolution for move/say:
-  - with OPENCLAW_ORCHESTRATOR_URL, aliases resolve against the authoritative snapshot.world catalog for the current activity
-  - with --activity-package-id, aliases resolve against that activity package's bootstrap/dev room catalog only
-  - shorthand aliases are not resolved against an implicit default reference activity anymore
+  - aliases resolve only against the authoritative snapshot.world catalog for the requested activity
   - configured activity examples: main | team1 | team2 | team3 | quiet
   - configured activity room ids: main-stage | team-room-1 | team-room-2 | team-room-3 | quiet-orbit
 
-Optional env for command dispatch:
-  OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791
+Required env for authoritative command/query dispatch:
+  OPENCLAW_ACTIVITY_RUN_ID=<authoritative-run-id>
+  OPENCLAW_ACTIVITY_TEMPLATE_ID=<authoritative-template-id>
+  OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:<authoritative-port>
   OPENCLAW_ORCHESTRATOR_TOKEN=<local-backend-token>
-  OPENCLAW_COMMAND_METHOD=<verified-live-method>
-  OPENCLAW_COMMAND_PARAM_KEY=command
-  OPENCLAW_COMMAND_ACTOR_ID=molt-claw
-  OPENCLAW_COMMAND_ACTOR_ROLE=host
+  OPENCLAW_GATEWAY_URL=ws://127.0.0.1:<gateway-port>
+  OPENCLAW_GATEWAY_TOKEN=<gateway-token>
+  OPENCLAW_COMMAND_ACTOR_ID=<authoritative-actor-id>
+  OPENCLAW_COMMAND_ACTOR_ROLE=<host|agent|judge|viewer|admin>
 
 Dangerous orchestrator mutations require --confirm <challenge> when they are actually dispatched:
   stage -> --confirm "PROMOTE <target-stage-id>"
@@ -300,15 +256,26 @@ export const runOpenClawJson = (args: string[]): unknown => {
 };
 
 export const resolveGatewayToken = (): string | undefined =>
-  resolveConfigValue("OPENCLAW_GATEWAY_TOKEN") ?? openClawGatewayToken;
+  resolveConfigValue("OPENCLAW_GATEWAY_TOKEN");
 
 export const resolveOrchestratorBaseUrl = (): string =>
   normalizeOrchestratorBaseUrl(resolveConfigValue("OPENCLAW_ORCHESTRATOR_URL"));
 
 export const resolveOrchestratorToken = (): string | undefined =>
-  resolveConfigValue("OPENCLAW_ORCHESTRATOR_TOKEN") ??
-  resolveConfigValue("OPENCLAW_GATEWAY_TOKEN") ??
-  openClawGatewayToken;
+  resolveConfigValue("OPENCLAW_ORCHESTRATOR_TOKEN");
+
+export const resolveConfiguredActivityRunId = (
+  explicitActivityRunId?: string | null,
+): string => {
+  const activityRunId =
+    explicitActivityRunId?.trim() ?? resolveConfigValue("OPENCLAW_ACTIVITY_RUN_ID");
+  if (!activityRunId) {
+    return fail(
+      "Missing authoritative activity run id. Pass <activity-run-id> or set OPENCLAW_ACTIVITY_RUN_ID.",
+    );
+  }
+  return activityRunId;
+};
 
 export const resolveLocalOrchestratorAuth = (): {
   baseUrl: string;
@@ -317,7 +284,7 @@ export const resolveLocalOrchestratorAuth = (): {
   const token = resolveOrchestratorToken();
   if (!token) {
     return fail(
-      "Missing local orchestrator token. Set OPENCLAW_ORCHESTRATOR_TOKEN or OPENCLAW_GATEWAY_TOKEN.",
+      "Missing local orchestrator token. Set OPENCLAW_ORCHESTRATOR_TOKEN.",
     );
   }
 
@@ -328,7 +295,8 @@ export const resolveLocalOrchestratorAuth = (): {
 };
 
 export const resolveActorId = (): string =>
-  resolveConfigValue("OPENCLAW_COMMAND_ACTOR_ID") ?? "molt-claw";
+  resolveConfigValue("OPENCLAW_COMMAND_ACTOR_ID") ??
+  fail("Missing authoritative actor id. Set OPENCLAW_COMMAND_ACTOR_ID.");
 
 export const resolveActorRole = (): ControlActorRole => {
   const value = resolveConfigValue("OPENCLAW_COMMAND_ACTOR_ROLE");
@@ -342,7 +310,9 @@ export const resolveActorRole = (): ControlActorRole => {
     return value;
   }
 
-  return "host";
+  return fail(
+    "Missing authoritative actor role. Set OPENCLAW_COMMAND_ACTOR_ROLE to host, agent, judge, viewer, or admin.",
+  );
 };
 
 export const readCommandConfirmation = (challenge: string | undefined) =>

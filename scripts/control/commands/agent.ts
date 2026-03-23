@@ -22,10 +22,20 @@ export const handleMoveOrSay = async (
   if (!agentId || !room) {
     fail(USAGE);
   }
+  if (options["activity-package-id"]?.trim()) {
+    fail(
+      "[openclaw-control] --activity-package-id fallback has been removed. Use --activity-run-id with an authoritative orchestrator snapshot.",
+    );
+  }
+  const activityRunId = options["activity-run-id"]?.trim();
+  if (!activityRunId) {
+    fail(
+      "[openclaw-control] move/say now require --activity-run-id so room aliases resolve from authoritative snapshot.world only.",
+    );
+  }
 
   const activityContext = await resolveAgentCommandActivityContext({
-    activityRunId: options["activity-run-id"]?.trim(),
-    explicitActivityPackageId: options["activity-package-id"]?.trim(),
+    activityRunId,
   });
 
   if (activityContext.note) {
@@ -34,7 +44,7 @@ export const handleMoveOrSay = async (
 
   if (!activityContext.roomCatalog) {
     fail(
-      "[openclaw-control] move/say room aliases are now activity-scoped. Configure OPENCLAW_ORCHESTRATOR_URL so the CLI can read snapshot.world, or pass --activity-package-id <id> for an explicit bootstrap/dev alias fallback.",
+      "[openclaw-control] move/say room aliases now require authoritative snapshot.world. Ensure OPENCLAW_ORCHESTRATOR_URL and OPENCLAW_ORCHESTRATOR_TOKEN point at this repo's orchestrator for the requested activity run.",
     );
   }
 
@@ -58,7 +68,7 @@ export const handleMoveOrSay = async (
   const token = resolveGatewayToken();
   if (!token) {
     fail(
-      "Missing OpenClaw token. Set OPENCLAW_GATEWAY_TOKEN, or make sure ~/.openclaw/openclaw.json contains gateway.auth.token.",
+      "Missing OpenClaw gateway token. Set OPENCLAW_GATEWAY_TOKEN.",
     );
   }
 

@@ -1,8 +1,6 @@
 import type { GatewayCapabilitySnapshot } from "./types";
-import { DEFAULT_ORCHESTRATOR_HTTP_URL } from "./types";
 import { hasWrappingQuotes } from "./support";
 
-const DIRECT_GATEWAY_URL = "ws://127.0.0.1:18789";
 const DEFAULT_COMMAND_PARAM_KEY = "command";
 const KNOWN_ORCHESTRATION_EVENT_PREFIXES = [
   "activity.",
@@ -100,7 +98,7 @@ export const normalizeControlGatewayUrl = (
 ): string => {
   const normalized = normalizeControlConfigValue(configuredUrl);
   if (!normalized) {
-    return DIRECT_GATEWAY_URL;
+    throw new Error("OPENCLAW_GATEWAY_URL is required.");
   }
 
   try {
@@ -120,7 +118,7 @@ export const normalizeOrchestratorBaseUrl = (
 ): string => {
   const normalized = normalizeControlConfigValue(value);
   if (!normalized) {
-    return DEFAULT_ORCHESTRATOR_HTTP_URL;
+    throw new Error("OPENCLAW_ORCHESTRATOR_URL is required.");
   }
 
   try {

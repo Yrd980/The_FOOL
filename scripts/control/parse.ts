@@ -4,7 +4,7 @@ import {
   type OrchestratorEventQuery,
   type SubmitScorePayload,
 } from "../../src/openclaw/control";
-import { fail, legacyScoreCompatOptions, readCommandConfirmation, USAGE } from "./support";
+import { fail, readCommandConfirmation, USAGE } from "./support";
 
 export const parsePayloadJson = (source: string): Record<string, unknown> => {
   try {
@@ -172,38 +172,6 @@ const parseAnnotationsJson = (source: string): Record<string, string> => {
   );
 };
 
-const readLegacyScoreCompatAnnotations = (
-  options: Record<string, string>,
-): {
-  annotations: Record<string, string>;
-  usingLegacyCompatFlags: boolean;
-} => {
-  const annotations: Record<string, string> = {};
-  let usingLegacyCompatFlags = false;
-
-  for (const option of legacyScoreCompatOptions) {
-    const providedValue = option.optionNames
-      .map((optionName) => options[optionName]?.trim())
-      .find((value) => value !== undefined);
-
-    if (providedValue === undefined) {
-      continue;
-    }
-
-    usingLegacyCompatFlags = true;
-    if (!providedValue) {
-      fail(`submit-score requires --${option.optionNames[0]} <text>.`);
-    }
-
-    annotations[option.canonicalKey] = providedValue;
-  }
-
-  return {
-    annotations,
-    usingLegacyCompatFlags,
-  };
-};
-
 export const parseSubmitScoreArgs = (
   rawArgs: string[],
 ): {
@@ -225,25 +193,16 @@ export const parseSubmitScoreArgs = (
   const annotationsFromJson = options["annotations-json"]?.trim()
     ? parseAnnotationsJson(options["annotations-json"])
     : {};
-  const {
-    annotations: annotationsFromCompatFlags,
-    usingLegacyCompatFlags,
-  } = readLegacyScoreCompatAnnotations(options);
 
   if (!reason) {
     fail("submit-score requires --reason <text>.");
   }
 
-  const annotations = {
-    ...annotationsFromJson,
-    ...annotationsFromCompatFlags,
-  };
+  const annotations = annotationsFromJson;
 
   if (Object.keys(annotations).length === 0) {
     fail(
-      usingLegacyCompatFlags
-        ? "submit-score requires non-empty score annotation values."
-        : "submit-score requires score annotations. Use --annotations-json '{\"key\":\"value\"}' or the legacy activity compatibility flags.",
+      "submit-score requires score annotations. Use --annotations-json '{\"key\":\"value\"}'.",
     );
   }
 

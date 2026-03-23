@@ -14,7 +14,6 @@ import type {
 
 export interface ActivityRoomCatalog {
   packageId: string;
-  fallbackRoomId: string;
   roomIds: string[];
   aliasMap: Record<string, string>;
   labels: Record<string, string>;
@@ -61,18 +60,11 @@ const applyActivityRoomAliases = (
 export const buildWorldRoomCatalog = ({
   world,
   activityPackageId,
-  fallbackRoomId,
 }: {
   world: WorldProjection;
   activityPackageId?: string | null;
-  fallbackRoomId?: string | null;
 }): ActivityRoomCatalog => {
   const activityPackage = tryGetActivityPackage(activityPackageId);
-  const resolvedFallbackRoomId =
-    fallbackRoomId?.trim() ||
-    activityPackage?.roomConfig?.fallbackRoomId?.trim() ||
-    world.rooms.at(-1)?.id ||
-    "room";
   const roomIds = world.rooms.map((room) => room.id);
   const labels = world.rooms.reduce<Record<string, string>>((result, room) => {
     result[room.id] = room.label?.trim() || room.id;
@@ -88,7 +80,6 @@ export const buildWorldRoomCatalog = ({
   return {
     packageId:
       activityPackage?.id ?? activityPackageId?.trim() ?? "authority-world",
-    fallbackRoomId: resolvedFallbackRoomId,
     roomIds,
     aliasMap,
     labels,
@@ -126,21 +117,6 @@ export const resolveActivityPackageId = ({
   return tryResolveActivityPackageId({ templateId, previewStageId });
 };
 
-export const tryBuildBootstrapRoomCatalog = (
-  activityPackageId?: string | null,
-): ActivityRoomCatalog | null => {
-  const activityPackage = tryResolveActivityPackage(activityPackageId);
-  if (!activityPackage) {
-    return null;
-  }
-
-  return buildWorldRoomCatalog({
-    world: activityPackage.bootstrap.world,
-    activityPackageId: activityPackage.id,
-    fallbackRoomId: activityPackage.roomConfig?.fallbackRoomId,
-  });
-};
-
 export const tryBuildActivityRoomCatalog = (
   activityPackageId?: string | null,
   authorityWorld?: WorldProjection | null,
@@ -153,7 +129,6 @@ export const tryBuildActivityRoomCatalog = (
   return buildWorldRoomCatalog({
     world: authorityWorld,
     activityPackageId: activityPackage?.id ?? activityPackageId,
-    fallbackRoomId: activityPackage?.roomConfig?.fallbackRoomId,
   });
 };
 

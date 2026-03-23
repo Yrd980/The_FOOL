@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 
 import {
   buildWorldRoomCatalog,
-  tryBuildBootstrapRoomCatalog,
   tryResolveActivityPackageId,
   type ActivityRoomCatalog,
 } from "../../src/openclaw/activityRuntime";
@@ -64,7 +63,6 @@ interface AutonomousRole {
   actorId: string;
   actorRole: ActorRole;
   gatewayAgentId: string;
-  fallbackRoomId: string;
   persona: string;
 }
 
@@ -99,91 +97,78 @@ const AUTONOMOUS_ROLES: AutonomousRole[] = [
     actorId: "host-01",
     actorRole: "host",
     gatewayAgentId: "main",
-    fallbackRoomId: "main-stage",
     persona: "authoritative host; advance the show cleanly and keep the activity legible.",
   },
   {
     actorId: "contestant-01",
     actorRole: "agent",
     gatewayAgentId: "contestant-01",
-    fallbackRoomId: "main-stage",
     persona: "chaotic systems architect who still cares about runtime truth.",
   },
   {
     actorId: "contestant-02",
     actorRole: "agent",
     gatewayAgentId: "contestant-02",
-    fallbackRoomId: "main-stage",
     persona: "anti-boring operator who wants crisp, direct collaboration.",
   },
   {
     actorId: "contestant-03",
     actorRole: "agent",
     gatewayAgentId: "contestant-03",
-    fallbackRoomId: "main-stage",
     persona: "competitive builder obsessed with winning without losing rigor.",
   },
   {
     actorId: "contestant-04",
     actorRole: "agent",
     gatewayAgentId: "contestant-04",
-    fallbackRoomId: "main-stage",
     persona: "experimental maker who likes playful but explainable ideas.",
   },
   {
     actorId: "contestant-05",
     actorRole: "agent",
     gatewayAgentId: "contestant-05",
-    fallbackRoomId: "main-stage",
     persona: "poetic maker who turns structure into atmosphere.",
   },
   {
     actorId: "contestant-06",
     actorRole: "agent",
     gatewayAgentId: "contestant-06",
-    fallbackRoomId: "main-stage",
     persona: "electric contrarian who still lands coherent output.",
   },
   {
     actorId: "judge-01",
     actorRole: "judge",
     gatewayAgentId: "contestant-07",
-    fallbackRoomId: "main-stage",
     persona: "precise AI judge focused on authority, clarity, and fit.",
   },
   {
     actorId: "judge-02",
     actorRole: "judge",
     gatewayAgentId: "contestant-08",
-    fallbackRoomId: "main-stage",
     persona: "AI judge who rewards transparent structure and tasteful absurdity.",
   },
   {
     actorId: "judge-03",
     actorRole: "judge",
     gatewayAgentId: "contestant-09",
-    fallbackRoomId: "main-stage",
     persona: "AI judge who prefers strange ideas that still survive scrutiny.",
   },
   {
     actorId: "viewer-01",
     actorRole: "viewer",
     gatewayAgentId: "contestant-10",
-    fallbackRoomId: "main-stage",
     persona: "reaction-heavy viewer who amplifies whoever catches attention first.",
   },
   {
     actorId: "viewer-02",
     actorRole: "viewer",
     gatewayAgentId: "contestant-11",
-    fallbackRoomId: "main-stage",
     persona: "bet-heavy viewer who talks like a confident, dramatic bookmaker.",
   },
   {
     actorId: "viewer-03",
     actorRole: "viewer",
     gatewayAgentId: "contestant-12",
-    fallbackRoomId: "main-stage",
     persona: "vote-heavy viewer who likes momentum, closure, and strong endings.",
   },
 ];
@@ -683,10 +668,14 @@ const resolveRoomForActor = (
   actorId: string,
 ): string => {
   const world = snapshot.world;
-  const role = ROLES_BY_ID.get(actorId);
   const entityRoomId =
     world?.entities.find((entity) => entity.id === actorId)?.roomId ?? null;
-  return entityRoomId ?? role?.fallbackRoomId ?? "main-stage";
+  if (!entityRoomId) {
+    throw new Error(
+      `Authoritative world is missing room placement for ${actorId}.`,
+    );
+  }
+  return entityRoomId;
 };
 
 const resolveSnapshotActivityPackageId = (
@@ -709,7 +698,7 @@ const resolveRoomCatalogForSnapshot = (
     });
   }
 
-  return tryBuildBootstrapRoomCatalog(activityPackageId);
+  return null;
 };
 
 const queryRecentEventsForActor = async (
@@ -848,9 +837,7 @@ const callGatewayAgent = async (
 ): Promise<unknown> => {
   const token = resolveGatewayToken();
   if (!token) {
-    throw new Error(
-      "Missing OpenClaw gateway token. Set OPENCLAW_GATEWAY_TOKEN or configure ~/.openclaw/openclaw.json.",
-    );
+    throw new Error("Missing OpenClaw gateway token. Set OPENCLAW_GATEWAY_TOKEN.");
   }
   const gatewayUrl = resolveConfigValue("OPENCLAW_GATEWAY_URL");
   return runOpenClawJson(
@@ -2005,7 +1992,12 @@ export const runTheFoolAutonomy = async (
 ): Promise<void> => {
   const orchestratorAuth = resolveLocalOrchestratorAuth();
   const logger = options.logger ?? console;
-  const activityRunId = options.activityRunId ?? "activity-run-01";
+  const activityRunId = options.activityRunId?.trim();
+  if (!activityRunId) {
+    throw new Error(
+      "Authoritative activity run id is required for autonomy. Pass it explicitly or set OPENCLAW_ACTIVITY_RUN_ID before launching.",
+    );
+  }
   const runId = `the-fool-autonomy-${Date.now()}`;
   const ledgerDir =
     options.ledgerDir ??

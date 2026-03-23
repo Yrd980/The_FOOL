@@ -2,8 +2,6 @@ import type { ActorRole as PlatformActorRole, ScoreAnnotations } from "../platfo
 
 export type { CommandEnvelope } from "../platform/contracts";
 
-export const DEFAULT_ORCHESTRATOR_HTTP_URL = "http://127.0.0.1:18791";
-
 export const GATEWAY_CONNECT_CLIENT_ID = "openclaw-control";
 export const GATEWAY_CONNECT_CLIENT_MODE = "operator";
 export const GATEWAY_OPERATOR_READ_SCOPE = "operator.read";

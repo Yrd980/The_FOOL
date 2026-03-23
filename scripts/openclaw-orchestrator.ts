@@ -92,17 +92,16 @@ const port = Number.parseInt(
   process.env.OPENCLAW_ORCHESTRATOR_PORT?.trim() || "18791",
   10,
 );
-const authToken =
-  process.env.OPENCLAW_ORCHESTRATOR_TOKEN?.trim() ||
-  "molt-claw-local-dev";
+const authToken = process.env.OPENCLAW_ORCHESTRATOR_TOKEN?.trim();
+if (!authToken) {
+  throw new Error("OPENCLAW_ORCHESTRATOR_TOKEN is required.");
+}
 
 ensureActivityPackagesRegistered();
 
 const localBootstrapConfig = resolveLocalPlatformBootstrapConfig({
   activityRunId: process.env.OPENCLAW_ACTIVITY_RUN_ID?.trim(),
-  templateId:
-    process.env.OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID?.trim() ||
-    process.env.OPENCLAW_ACTIVITY_TEMPLATE_ID?.trim(),
+  templateId: process.env.OPENCLAW_ACTIVITY_TEMPLATE_ID?.trim(),
 });
 
 const bootstrapActivityPackage = getActivityPackage(

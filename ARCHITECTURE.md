@@ -71,6 +71,7 @@ The current branch also carries a real OpenClaw agent ingress path for The Fool.
 5. control queries and ASCII continue to observe the authoritative result
 6. on restart, autonomy keeps ledger-completed steps but refreshes its autonomy run id before issuing unfinished commands so recovery does not pin future retries to an old rejected idempotency key
 7. free-text fallback coercion must not treat gateway / LLM infrastructure failures as valid participant output; those errors stay in the ingress retry path instead of becoming authoritative talk payloads
+8. missing authority state is now a hard failure; ingress must not fall back to bootstrap room catalogs, implicit run ids, or default room placement
 
 This is an ingress adapter, not a second runtime. Runtime truth still lives only in the orchestrator.
 
@@ -107,7 +108,9 @@ CLI surface:
 
 - runtime truth lives in the orchestrator, not in docs, CLI output, or a renderer
 - \`bootstrap.world\` is initialization-only; live world truth comes from the projection
-- \`--activity-package-id\` is a bootstrap and dev fallback for room alias resolution, not a hidden runtime default
+- control and autonomy room resolution must come from authoritative \`snapshot.world\`; bootstrap/dev room fallback is no longer part of the live runtime path
+- operator mutation dispatch is authority-only; there is no gateway mutation fallback or preview-only downgrade path in the control flow
+- local authority startup requires explicit \`OPENCLAW_ACTIVITY_RUN_ID\`, \`OPENCLAW_ACTIVITY_TEMPLATE_ID\`, and \`OPENCLAW_ORCHESTRATOR_TOKEN\`
 - future renderers must consume the same authority-backed query surface instead of becoming a new truth source
 - autonomy ingress must remain an adapter into the same command surface; it must not become a sidecar truth source
 - the promoted real-run entrypoint is the autonomy runner, while authority verification still comes from the same query and control surface

@@ -34,6 +34,7 @@
 - \`scripts/autonomy/theFoolAutonomy.ts\` now resumes unfinished work with a fresh autonomy run id while preserving ledger-completed steps, so rejected commands can be corrected and retried without idempotency conflicts
 - real \`act-5-submission\` runs are now aligned to authority validation: \`team-project-v1\` \`elevatorPitch\` must stay at 100 characters or fewer, and retry prompts now reuse the full structured skeleton instead of collapsing back to the subset example
 - free-text autonomy coercion now rejects gateway / LLM infrastructure failure strings, so transport-side errors do not get written into authoritative `talk` payloads as if they were valid participant speech
+- control/autonomy startup no longer fall back to default orchestrator URL, gateway token reuse, gateway mutation dispatch, bootstrap room catalogs, or implicit activity/template ids; missing authority configuration now fails fast
 - \`scripts/openclaw-orchestrator.ts\` is now a thin composition entrypoint over:
   - \`scripts/orchestrator/bootstrap.ts\`
   - \`scripts/orchestrator/projection.ts\`
@@ -60,5 +61,6 @@
 
 - next architecture validation target is a second minimal real activity package
 - that package should validate the runtime boundary itself, not expand product surface
-- near-term delivery target on this branch is to stabilize and verify \`bun run openclaw:autonomy:the-fool\` without changing external CLI/HTTP/WebSocket contracts
-- next operator-facing task is to validate a fully legible end-to-end ASCII The Fool run while separately investigating how far local OpenClaw agent work can be parallelized without breaking the single authoritative orchestrator boundary
+- near-term delivery target on this branch is to stabilize and verify \`bun run openclaw:autonomy:the-fool\` under the new authority-only configuration rules without changing external CLI/HTTP/WebSocket contracts
+- next operator-facing task is to turn ASCII into a complete end-to-end The Fool operator surface: run outcome, per-act checkpoints, pending obligations, and denser closeout summaries from authoritative snapshot/events only
+- next runtime task after that is to evaluate and implement local OpenClaw prompt parallelism inside the same authoritative orchestrator: parallel prompt generation where safe, but serialized authoritative command dispatch

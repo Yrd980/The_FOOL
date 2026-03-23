@@ -79,7 +79,7 @@ export const resolveSessionRoomId = (
 ): string => {
   const roomCatalog = resolveRoomCatalog(activityPackageId, options);
   if (!sessionKey) {
-    return roomCatalog?.fallbackRoomId ?? UNAVAILABLE_ROOM_ID;
+    return UNAVAILABLE_ROOM_ID;
   }
 
   const match = sessionKey.match(/^agent:[^:]+:(.+)$/);
@@ -97,7 +97,7 @@ export const resolveSessionRoomId = (
     return roomId;
   }
 
-  return roomCatalog.fallbackRoomId;
+  return UNAVAILABLE_ROOM_ID;
 };
 
 export const getRoomLabel = (

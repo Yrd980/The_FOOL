@@ -40,14 +40,14 @@ Public operational handoff files remain under [public/](./public/):
 - Control-side command helpers keep the stable entrypoint in src/openclaw/control.ts, with the implementation split across src/openclaw/control/*
 - Terminal ASCII watch keeps the stable entrypoint in src/openclaw/asciiOverview.ts, with read-model assembly in src/openclaw/asciiOverviewReadModel.ts, ASCII rendering in src/openclaw/asciiOverviewRender.ts, and shared helpers in src/openclaw/asciiOverviewSupport.ts
 - Real OpenClaw agent-ingress work for The Fool currently lives under scripts/autonomy/*, with scripts/openclaw-autonomy-the-fool.ts as the runner entrypoint
-- Local bootstrap defaults live in src/openclaw/localPlatformConfig.ts
+- Local authority bootstrap requirements live in src/openclaw/localPlatformConfig.ts
 
 Important boundary rules:
 
 - Generic runtime code must not hardcode The Fool stage ids, room ids, or score annotation keys.
-- The Fool remains the first built-in activity only via explicit local bootstrap config.
+- The Fool remains the first built-in activity only via explicit authority startup config.
 - bootstrap.world is initialization-only; running world truth comes from the authority projection.
-- --activity-package-id remains a bootstrap and dev fallback for room aliases, not a hidden runtime default.
+- room alias resolution must come from authoritative snapshot.world; bootstrap/dev fallback resolution is no longer part of the runtime path.
 - External CLI, HTTP, and WebSocket contracts should stay stable while internal modules are refactored.
 
 ## Scripts
@@ -72,7 +72,7 @@ bun run openclaw:control -- lock-submission activity-run-01 submission-01 --conf
 bun run openclaw:control -- finish activity-run-01 team team-1 --note "authoritative finale" --confirm "FINISH activity-run-01 team:team-1"
 ~~~
 
-The CLI and query contract is intentionally kept stable while the internal structure is made more generic.
+The CLI and query contract is intentionally kept stable while the internal structure is made more generic. Mutation dispatch is now authority-only: operator commands must target this repo's authoritative orchestrator directly and no longer fall back to gateway dispatch or preview-only behavior.
 
 Current verification baseline for this worktree:
 
@@ -135,6 +135,7 @@ This branch now includes a real OpenClaw agent ingress path for The Fool.
 - resume semantics are step-aware: completed steps stay in the ledger, while a restarted autonomy process issues fresh command ids for unfinished steps so recovery does not reuse a rejected idempotency key
 - real `team-project-v1` submissions currently require `payload.data.elevatorPitch` to stay at 100 characters or fewer; the autonomy runner now aligns its prompt and normalization with that authority rule
 - free-text coercion in the autonomy ingress now rejects gateway / LLM infrastructure failure strings instead of writing those raw transport errors back into authoritative participant speech
+- authority-side room placement and activity/run selection are now explicit requirements; autonomy no longer falls back to bootstrap room catalogs, implicit run ids, or default room placement when authority state is missing
 
 Important status boundary:
 
@@ -146,11 +147,15 @@ Important status boundary:
 Typical local run:
 
 ~~~bash
+OPENCLAW_ACTIVITY_RUN_ID=activity-run-01 \
+OPENCLAW_ACTIVITY_TEMPLATE_ID=the-fool-v1 \
 OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791 \
 OPENCLAW_ORCHESTRATOR_TOKEN=<local-token> \
 OPENCLAW_GATEWAY_TOKEN=<gateway-token> \
 bun run openclaw:autonomy:the-fool
 
+OPENCLAW_ACTIVITY_RUN_ID=activity-run-01 \
+OPENCLAW_ACTIVITY_TEMPLATE_ID=the-fool-v1 \
 OPENCLAW_ORCHESTRATOR_URL=http://127.0.0.1:18791 \
 OPENCLAW_ORCHESTRATOR_TOKEN=<local-token> \
 bun run openclaw:control -- ascii activity-run-01 --limit 20 --watch 0.5
@@ -167,28 +172,27 @@ Current config boundary:
 
 - runtime and debug entrypoints in this worktree only recognize OPENCLAW_* env names
 - old browser and Vite-era VITE_OPENCLAW_* fallbacks are no longer supported here
+- OPENCLAW_ORCHESTRATOR_URL, OPENCLAW_ORCHESTRATOR_TOKEN, OPENCLAW_ACTIVITY_RUN_ID, and OPENCLAW_ACTIVITY_TEMPLATE_ID are now explicit authority requirements for local authority-backed work
+- OPENCLAW_GATEWAY_TOKEN is now explicit for gateway agent calls; control and autonomy no longer read gateway.auth.token from ~/.openclaw/openclaw.json as a hidden fallback
+- openclaw-control mutation commands no longer fall back to OPENCLAW_COMMAND_METHOD or gateway-side dispatch when the authoritative orchestrator is not configured
 - if a future renderer is rebuilt, it should live as a separate consumer of the same authority and query contracts
 
 ## Local Bootstrap
 
-Local startup defaults now live in src/openclaw/localPlatformConfig.ts.
+Local authority startup requirements now live in src/openclaw/localPlatformConfig.ts.
 
-By default the worktree boots:
+Required local authority env:
 
-- defaultActivityRunId = activity-run-01
-- defaultTemplateId = the-fool-v1
+- OPENCLAW_ACTIVITY_RUN_ID=<run-id>
+- OPENCLAW_ACTIVITY_TEMPLATE_ID=<template-id>
+- OPENCLAW_ORCHESTRATOR_TOKEN=<authority-token>
 
-You can override the template or run at startup with:
-
-~~~bash
-OPENCLAW_ACTIVITY_RUN_ID=<run-id>
-OPENCLAW_REFERENCE_ACTIVITY_TEMPLATE_ID=<template-id>
-~~~
-
-or:
+Example:
 
 ~~~bash
+OPENCLAW_ACTIVITY_RUN_ID=activity-run-01
 OPENCLAW_ACTIVITY_TEMPLATE_ID=<template-id>
+OPENCLAW_ORCHESTRATOR_TOKEN=<authority-token>
 ~~~
 
 If the configured template is not registered, the orchestrator fails immediately instead of silently borrowing a hidden reference activity.

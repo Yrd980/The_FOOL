@@ -5,20 +5,25 @@ export interface LocalPlatformBootstrapConfig {
   defaultTemplateId: string;
 }
 
-export const DEFAULT_LOCAL_PLATFORM_BOOTSTRAP_CONFIG: LocalPlatformBootstrapConfig = {
-  defaultActivityRunId: "activity-run-01",
-  defaultTemplateId: THE_FOOL_V1_TEMPLATE_ID,
-};
-
 export const resolveLocalPlatformBootstrapConfig = ({
   activityRunId,
   templateId,
 }: {
   activityRunId?: string | null;
   templateId?: string | null;
-} = {}): LocalPlatformBootstrapConfig => ({
-  defaultActivityRunId:
-    activityRunId?.trim() || DEFAULT_LOCAL_PLATFORM_BOOTSTRAP_CONFIG.defaultActivityRunId,
-  defaultTemplateId:
-    templateId?.trim() || DEFAULT_LOCAL_PLATFORM_BOOTSTRAP_CONFIG.defaultTemplateId,
-});
+}): LocalPlatformBootstrapConfig => {
+  const resolvedActivityRunId = activityRunId?.trim();
+  const resolvedTemplateId = templateId?.trim();
+  if (!resolvedActivityRunId) {
+    throw new Error("OPENCLAW_ACTIVITY_RUN_ID is required.");
+  }
+  if (!resolvedTemplateId) {
+    throw new Error(
+      `OPENCLAW_ACTIVITY_TEMPLATE_ID is required. Expected ${THE_FOOL_V1_TEMPLATE_ID} for The Fool.`,
+    );
+  }
+  return {
+    defaultActivityRunId: resolvedActivityRunId,
+    defaultTemplateId: resolvedTemplateId,
+  };
+};

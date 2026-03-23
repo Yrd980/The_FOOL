@@ -1,5 +1,4 @@
 import { buildOrchestratorSnapshotUrl } from "../../../src/openclaw/control";
-import { resolveLocalPlatformBootstrapConfig } from "../../../src/openclaw/localPlatformConfig";
 import {
   parseAsciiArgs,
   parseEventQueryArgs,
@@ -15,7 +14,11 @@ import {
   runLocalOrchestratorQuery,
 } from "../query";
 import { requireLocalOrchestrator } from "../probe";
-import { fail, resolveOrchestratorBaseUrl } from "../support";
+import {
+  fail,
+  resolveConfiguredActivityRunId,
+  resolveOrchestratorBaseUrl,
+} from "../support";
 
 export const handleProbe = async (): Promise<void> => {
   const { runProbe } = await import("../probe");
@@ -29,8 +32,7 @@ export const handleAscii = async (args: string[]): Promise<void> => {
 
 export const handleSnapshot = async (args: string[]): Promise<void> => {
   const [activityRunIdArgument] = args;
-  const activityRunId =
-    activityRunIdArgument ?? resolveLocalPlatformBootstrapConfig().defaultActivityRunId;
+  const activityRunId = resolveConfiguredActivityRunId(activityRunIdArgument);
   const verified = await requireLocalOrchestrator(activityRunId);
   const snapshotResponse = verified.snapshotResponse;
   if (!snapshotResponse) {
@@ -84,8 +86,7 @@ export const handleReplay = async (args: string[]): Promise<void> => {
 export const handleAudit = async (args: string[]): Promise<void> => {
   const { positional, options } = parseLongOptions(args);
   const [activityRunIdArgument] = positional;
-  const activityRunId =
-    activityRunIdArgument ?? resolveLocalPlatformBootstrapConfig().defaultActivityRunId;
+  const activityRunId = resolveConfiguredActivityRunId(activityRunIdArgument);
 
   await runLocalOrchestratorQuery({
     label: `audit ${activityRunId} via local authoritative orchestrator`,

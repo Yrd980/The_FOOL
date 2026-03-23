@@ -10,11 +10,9 @@ import {
 } from "../../src/openclaw/control";
 import {
   buildWorldRoomCatalog,
-  tryBuildBootstrapRoomCatalog,
   tryResolveActivityPackageId,
   type ActivityRoomCatalog,
 } from "../../src/openclaw/activityRuntime";
-import { resolveLocalPlatformBootstrapConfig } from "../../src/openclaw/localPlatformConfig";
 import type { WorldProjection } from "../../src/openclaw/platform/contracts";
 import type { OrchestratorSnapshotResponse } from "../../src/openclaw/orchestratorQueryClient";
 import {
@@ -28,6 +26,7 @@ import {
   resolveGatewayToken,
   resolveOrchestratorBaseUrl,
   resolveOrchestratorToken,
+  resolveConfiguredActivityRunId,
   runOpenClawJson,
 } from "./support";
 
@@ -695,35 +694,16 @@ export const requireLocalOrchestrator = async (
 
 export const resolveAgentCommandActivityContext = async ({
   activityRunId,
-  explicitActivityPackageId,
 }: {
   activityRunId?: string;
-  explicitActivityPackageId?: string;
 }): Promise<AgentCommandActivityContext> => {
-  const normalizedExplicitActivityPackageId = explicitActivityPackageId?.trim();
-  if (normalizedExplicitActivityPackageId) {
-    const roomCatalog = tryBuildBootstrapRoomCatalog(
-      normalizedExplicitActivityPackageId,
-    );
-    if (!roomCatalog) {
-      fail(
-        `[openclaw-control] Unknown activity package ${normalizedExplicitActivityPackageId}.`,
-      );
-    }
-
-    return {
-      activityPackageId: normalizedExplicitActivityPackageId,
-      roomCatalog,
-      note: `Room aliases resolved against bootstrap seed for activity package ${normalizedExplicitActivityPackageId}.`,
-    };
-  }
-
   const configuredOrchestratorUrl = resolveConfigValue("OPENCLAW_ORCHESTRATOR_URL");
   if (!configuredOrchestratorUrl?.trim()) {
     return {
       activityPackageId: null,
       roomCatalog: null,
-      note: null,
+      note:
+        "OPENCLAW_ORCHESTRATOR_URL is required for authoritative room resolution.",
     };
   }
 
@@ -733,13 +713,13 @@ export const resolveAgentCommandActivityContext = async ({
       activityPackageId: null,
       roomCatalog: null,
       note:
-        "Authoritative orchestrator is configured, but no token is available for activity-scoped room resolution.",
+        "OPENCLAW_ORCHESTRATOR_TOKEN is required for authoritative room resolution.",
     };
   }
 
   try {
     const probe = await probeLocalOrchestrator(
-      activityRunId ?? resolveLocalPlatformBootstrapConfig().defaultActivityRunId,
+      resolveConfiguredActivityRunId(activityRunId),
     );
     if (probe.status !== "available" || !probe.snapshotResponse) {
       return {
@@ -791,7 +771,7 @@ export const resolveAgentCommandActivityContext = async ({
 export const runProbe = async (): Promise<void> => {
   const gatewayUrl = resolveConfigValue("OPENCLAW_GATEWAY_URL");
   const resolvedToken = resolveGatewayToken();
-  const activityRunId = resolveLocalPlatformBootstrapConfig().defaultActivityRunId;
+  const activityRunId = resolveConfiguredActivityRunId();
   const dispatchMethod = normalizeControlDispatchMethod(
     resolveConfigValue("OPENCLAW_COMMAND_METHOD"),
   );
@@ -823,7 +803,7 @@ export const runProbe = async (): Promise<void> => {
         hello: null,
         rawStatus: null,
         note:
-          "Missing OpenClaw gateway token. Set OPENCLAW_GATEWAY_TOKEN, or make sure ~/.openclaw/openclaw.json contains gateway.auth.token.",
+          "Missing OpenClaw gateway token. Set OPENCLAW_GATEWAY_TOKEN.",
       };
   const contract = summarizeGatewayOrchestrationContract({
     capabilities: {
