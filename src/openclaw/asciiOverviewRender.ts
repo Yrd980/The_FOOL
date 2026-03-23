@@ -403,6 +403,56 @@ const renderSocialSnapshot = (
   return lines;
 };
 
+const renderRunCapsule = (
+  readModel: OpenClawAsciiOverviewReadModel,
+): string[] => {
+  const lastEvent = readModel.historyEvents[0];
+  return [
+    `run=${readModel.activityRun?.id ?? "unknown-run"} template=${readModel.activityRun?.templateId ?? "unknown-template"}`,
+    `status=${readModel.activityRun?.status ?? "unknown"} stage=${formatStageLabel(readModel.activityRun?.currentStageId ?? null, readModel.currentStageTemplate)} sequence=${readModel.lastSequence}`,
+    `health=${formatDateTimeLabel(readModel.healthTimestamp)} updated=${formatDateTimeLabel(readModel.now)} replay=${readModel.replayEventCount}`,
+    lastEvent
+      ? `last_event=#${String(lastEvent.sequence).padStart(4, "0")} ${lastEvent.timestampLabel} ${lastEvent.actorId ?? "system"} :: ${lastEvent.summary}`
+      : "last_event=(none)",
+  ];
+};
+
+const renderActCheckpoints = (
+  checkpoints: OpenClawAsciiOverviewReadModel["actCheckpoints"],
+): string[] =>
+  checkpoints.map((checkpoint) => {
+    const marker =
+      checkpoint.status === "done"
+        ? "[x]"
+        : checkpoint.status === "active"
+          ? "[>]"
+          : "[ ]";
+    return `${marker} ${checkpoint.stageId} (${checkpoint.title}) :: ${checkpoint.summary}`;
+  });
+
+const renderPendingObligations = (
+  obligations: OpenClawAsciiOverviewReadModel["pendingObligations"],
+): string[] =>
+  obligations.map((entry, index) => `${index + 1}. ${entry}`);
+
+const renderFullRunSummary = (
+  summary: OpenClawAsciiOverviewReadModel["fullRunSummary"],
+): string[] => [
+  `talks=${summary.talkCount} broadcasts=${summary.broadcastCount} reactions=${summary.reactionCount}`,
+  `bets=${summary.betCount} votes=${summary.voteCount} settlements=${summary.settlementCount}`,
+  `submissions=${summary.submissionCount} locked=${summary.lockedSubmissionCount} scores=${summary.scoreCount} awards=${summary.awardCount}`,
+];
+
+const renderCloseoutCapsule = (
+  readModel: OpenClawAsciiOverviewReadModel,
+): string[] => {
+  const lines = [...readModel.closeoutCapsule.lines];
+  if (readModel.runOutcome.endedAt) {
+    lines.push(`ended_at=${formatDateTimeLabel(readModel.runOutcome.endedAt)}`);
+  }
+  return lines.length > 0 ? lines : ["closeout not reached yet"];
+};
+
 const renderEventFeed = ({
   events,
   eventLimit,
@@ -428,20 +478,19 @@ export const renderOpenClawAsciiOverview = (
   const lines = [
     "THE FOOL AUTHORITATIVE ASCII WATCH",
     "==================================",
-    `run      : ${readModel.activityRun?.id ?? "unknown-run"}`,
-    `template : ${readModel.activityRun?.templateId ?? "unknown-template"}`,
-    `status   : ${readModel.activityRun?.status ?? "unknown"}`,
-    `stage    : ${formatStageLabel(readModel.activityRun?.currentStageId ?? null, readModel.currentStageTemplate)}`,
-    ...(typeof readModel.activityRun?.endedAt === "number" &&
-    Number.isFinite(readModel.activityRun.endedAt)
-      ? [`ended    : ${formatDateTimeLabel(readModel.activityRun.endedAt)}`]
-      : []),
-    `sequence : ${readModel.lastSequence}`,
-    `health   : ${formatDateTimeLabel(readModel.healthTimestamp)}`,
-    `updated  : ${formatDateTimeLabel(readModel.now)}`,
     `events   : showing ${Math.min(readModel.resolvedEventLimit, readModel.recentEventCount)} of ${readModel.recentEventCount} recent authoritative events`,
     `replay   : ${readModel.replayEventCount} historical authoritative events loaded`,
   ];
+
+  renderSection(lines, "RUN CAPSULE", renderRunCapsule(readModel));
+  renderSection(lines, "ACT CHECKPOINTS", renderActCheckpoints(readModel.actCheckpoints));
+  renderSection(
+    lines,
+    "PENDING OBLIGATIONS",
+    renderPendingObligations(readModel.pendingObligations),
+  );
+  renderSection(lines, "FULL-RUN SUMMARY", renderFullRunSummary(readModel.fullRunSummary));
+  renderSection(lines, "CLOSEOUT CAPSULE", renderCloseoutCapsule(readModel));
 
   renderSection(
     lines,

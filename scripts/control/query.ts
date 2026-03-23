@@ -50,6 +50,84 @@ const loadLocalOrchestratorJson = async <T>(url: string): Promise<T> => {
   })) as T;
 };
 
+const fetchFullReplay = async ({
+  activityRunId,
+  limit,
+}: {
+  activityRunId: string;
+  limit: number;
+}): Promise<OrchestratorEventPage> => {
+  const { baseUrl } = resolveLocalOrchestratorAuth();
+  const pageSize = Math.max(limit * 4, 40);
+  let toSequence: number | undefined;
+  let lastSequence = 0;
+  let fromSequence: number | null = null;
+  const allEvents: OrchestratorEventPage["events"] = [];
+
+  while (true) {
+    const page = await loadLocalOrchestratorJson<OrchestratorEventPage>(
+      buildOrchestratorReplayUrl({
+        baseUrl,
+        query: {
+          activityRunId,
+          limit: pageSize,
+          ...(toSequence === undefined ? {} : { toSequence }),
+        },
+      }),
+    );
+    lastSequence = page.lastSequence;
+    fromSequence =
+      fromSequence === null ? page.fromSequence : Math.min(fromSequence, page.fromSequence ?? fromSequence);
+
+    const deduped = page.events.filter(
+      (event) => !allEvents.some((entry) => entry.sequence === event.sequence),
+    );
+    allEvents.push(...deduped);
+
+    if (!page.hasMore || page.events.length === 0) {
+      return {
+        ...page,
+        fromSequence,
+        toSequence: allEvents.reduce<number | null>(
+          (highest, event) =>
+            typeof event.sequence === "number"
+              ? Math.max(highest ?? event.sequence, event.sequence)
+              : highest,
+          page.toSequence,
+        ),
+        lastSequence,
+        hasMore: false,
+        events: allEvents,
+      };
+    }
+
+    const lowestSequence = page.events.reduce<number | null>(
+      (lowest, event) =>
+        typeof event.sequence === "number"
+          ? Math.min(lowest ?? event.sequence, event.sequence)
+          : lowest,
+      null,
+    );
+    if (lowestSequence === null || lowestSequence <= 1) {
+      return {
+        ...page,
+        fromSequence,
+        toSequence: allEvents.reduce<number | null>(
+          (highest, event) =>
+            typeof event.sequence === "number"
+              ? Math.max(highest ?? event.sequence, event.sequence)
+              : highest,
+          page.toSequence,
+        ),
+        lastSequence,
+        hasMore: false,
+        events: allEvents,
+      };
+    }
+    toSequence = lowestSequence - 1;
+  }
+};
+
 const clearTerminalScreen = (): void => {
   process.stdout.write("\x1bc");
 };
@@ -71,7 +149,7 @@ const renderAsciiOverview = async ({
   limit: number;
 }): Promise<string> => {
   const verified = await requireLocalOrchestrator(activityRunId);
-  const { baseUrl, token } = resolveLocalOrchestratorAuth();
+  const { baseUrl } = resolveLocalOrchestratorAuth();
   const eventsResponse = await loadLocalOrchestratorJson<OrchestratorEventPage>(
     buildOrchestratorEventsUrl({
       baseUrl,
@@ -81,16 +159,10 @@ const renderAsciiOverview = async ({
       },
     }),
   );
-  const replayResponse = (await requestLocalOrchestrator({
-    url: buildOrchestratorReplayUrl({
-      baseUrl,
-      query: {
-        activityRunId,
-        limit: Math.max(limit * 4, 40),
-      },
-    }),
-    token,
-  })) as OrchestratorEventPage;
+  const replayResponse = await fetchFullReplay({
+    activityRunId,
+    limit,
+  });
 
   const snapshotResponse = verified.snapshotResponse;
   if (!snapshotResponse) {

@@ -33,7 +33,7 @@ import {
   resolveConfigValue,
   resolveGatewayToken,
   resolveLocalOrchestratorAuth,
-  runOpenClawJson,
+  runOpenClawJsonAsync,
 } from "../control/support";
 import {
   OrchestratorRpcClient,
@@ -74,6 +74,12 @@ interface ActionSpec {
   promptSkeleton?: PromptAction;
   nonEmptyPaths?: string[];
   validate?: (value: PromptAction) => string | null;
+}
+
+interface PreparedAction {
+  spec: ActionSpec;
+  action: PromptAction;
+  baselineStageId: string;
 }
 
 interface RuntimeContext {
@@ -172,6 +178,15 @@ const AUTONOMOUS_ROLES: AutonomousRole[] = [
     persona: "vote-heavy viewer who likes momentum, closure, and strong endings.",
   },
 ];
+
+const PROMPT_PARALLEL_STAGE_IDS = new Set([
+  "act-1-intro",
+  "act-2-preference",
+  "act-4-discussion",
+  "act-7-ai-judging",
+  "act-10-open-mic",
+]);
+const MAX_PROMPT_CONCURRENCY = 4;
 
 const ROLES_BY_ID = new Map(
   AUTONOMOUS_ROLES.map((role) => [role.actorId, role] as const),
@@ -840,7 +855,7 @@ const callGatewayAgent = async (
     throw new Error("Missing OpenClaw gateway token. Set OPENCLAW_GATEWAY_TOKEN.");
   }
   const gatewayUrl = resolveConfigValue("OPENCLAW_GATEWAY_URL");
-  return runOpenClawJson(
+  return runOpenClawJsonAsync(
     buildGatewayAgentCallArgs({
       agentId: role.gatewayAgentId,
       room: roomId,
@@ -859,6 +874,7 @@ const callGatewayAgent = async (
 const promptForAction = async (
   context: RuntimeContext,
   spec: ActionSpec,
+  baselineSnapshotPayload?: RpcSnapshotPayload,
 ): Promise<PromptAction> => {
   const role = ROLES_BY_ID.get(spec.actorId);
   const client = context.clients.get(spec.actorId);
@@ -866,7 +882,8 @@ const promptForAction = async (
     throw new Error(`Unknown autonomy role ${spec.actorId}.`);
   }
 
-  const snapshotPayload = await client.fetchSnapshot(context.activityRunId);
+  const snapshotPayload =
+    baselineSnapshotPayload ?? (await client.fetchSnapshot(context.activityRunId));
   const stageId = snapshotPayload.snapshot.activityRun?.currentStageId ?? "";
   const stageTemplate = snapshotPayload.stageTemplates?.find(
     (entry) => entry.id === stageId,
@@ -1270,6 +1287,107 @@ const executeActionSpec = async (
   await sleep(120);
 };
 
+const prepareActionBatch = async (
+  context: RuntimeContext,
+  specs: ActionSpec[],
+): Promise<PreparedAction[]> => {
+  const pendingSpecs = specs.filter(
+    (spec) => !context.state.completedSteps.includes(spec.stepKey),
+  );
+  if (pendingSpecs.length === 0) {
+    return [];
+  }
+
+  const baselineSnapshot = await fetchHostSnapshot(context);
+  const baselineStageId = baselineSnapshot.snapshot.activityRun?.currentStageId ?? "";
+  const prepared = new Array<PreparedAction>(pendingSpecs.length);
+  let cursor = 0;
+
+  const worker = async (): Promise<void> => {
+    while (cursor < pendingSpecs.length) {
+      const nextIndex = cursor;
+      cursor += 1;
+      const spec = pendingSpecs[nextIndex];
+      prepared[nextIndex] = {
+        spec,
+        action: await promptForAction(context, spec, baselineSnapshot),
+        baselineStageId,
+      };
+    }
+  };
+
+  const concurrency = Math.min(MAX_PROMPT_CONCURRENCY, pendingSpecs.length);
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  return prepared;
+};
+
+const executePreparedActionsSerially = async (
+  context: RuntimeContext,
+  batch: PreparedAction[],
+): Promise<void> => {
+  for (const prepared of batch) {
+    if (context.state.completedSteps.includes(prepared.spec.stepKey)) {
+      continue;
+    }
+
+    const latestSnapshot = await fetchHostSnapshot(context);
+    const liveStageId = latestSnapshot.snapshot.activityRun?.currentStageId ?? "";
+    if (liveStageId !== prepared.baselineStageId) {
+      throw new Error(
+        `Stage drift detected before ${prepared.spec.stepKey}: expected ${prepared.baselineStageId}, got ${liveStageId}.`,
+      );
+    }
+
+    const role = ROLES_BY_ID.get(prepared.spec.actorId);
+    const client = context.clients.get(prepared.spec.actorId);
+    if (!role || !client) {
+      throw new Error(`Unknown actor ${prepared.spec.actorId}.`);
+    }
+
+    const commandId = `${context.state.runId}-${prepared.spec.stepKey}-cmd`;
+    const envelope = buildAutonomyEnvelope({
+      actorId: role.actorId,
+      actorRole: role.actorRole,
+      activityRunId: context.activityRunId,
+      action: prepared.action,
+      idempotencyKey: commandId,
+    });
+    const response = await client.dispatchCommand(envelope);
+    context.logger.log(
+      `[autonomy] ${prepared.spec.stepKey} -> ${response.receipt.status} ${response.receipt.commandType}`,
+    );
+    await client.waitForSequence(
+      Math.max(...response.receipt.emittedSequences, 0),
+      context.activityRunId,
+    );
+    await markCompleted(context, prepared.spec.stepKey);
+    await updateLastSeen(context, prepared.spec.actorId, {
+      snapshot: response.snapshot,
+    });
+    await sleep(120);
+  }
+};
+
+const executeActionSpecs = async (
+  context: RuntimeContext,
+  specs: ActionSpec[],
+): Promise<void> => {
+  if (specs.length === 0) {
+    return;
+  }
+
+  const currentStageId = (await fetchHostSnapshot(context)).snapshot.activityRun?.currentStageId ?? "";
+  if (!PROMPT_PARALLEL_STAGE_IDS.has(currentStageId)) {
+    for (const spec of specs) {
+      await executeActionSpec(context, spec);
+    }
+    return;
+  }
+
+  const batch = await prepareActionBatch(context, specs);
+  await executePreparedActionsSerially(context, batch);
+};
+
 const waitForStage = async (
   context: RuntimeContext,
   expectedStageId: string,
@@ -1397,16 +1515,16 @@ const createTalkSpec = (
 });
 
 const runAct1 = async (context: RuntimeContext): Promise<void> => {
-  for (const contestantId of Object.keys(TEAM_BY_CONTESTANT)) {
-    await executeActionSpec(
-      context,
+  await executeActionSpecs(
+    context,
+    Object.keys(TEAM_BY_CONTESTANT).map((contestantId) =>
       createTalkSpec(
         `act-1-intro-${contestantId}`,
         contestantId,
         "Introduce yourself in one short line. Mention your style and what kind of build energy you bring tonight.",
       ),
-    );
-  }
+    ),
+  );
 
   await executeActionSpec(context, {
     stepKey: "act-1-viewer-01-reaction",
@@ -1460,16 +1578,16 @@ const runAct1 = async (context: RuntimeContext): Promise<void> => {
 };
 
 const runAct2 = async (context: RuntimeContext): Promise<void> => {
-  for (const [contestantId, preference] of Object.entries(PREFERENCE_SCRIPT)) {
-    await executeActionSpec(
-      context,
+  await executeActionSpecs(
+    context,
+    Object.entries(PREFERENCE_SCRIPT).map(([contestantId, preference]) =>
       createTalkSpec(
         `act-2-preference-${contestantId}`,
         contestantId,
         `State two people you most want to team with (${preference.wants.join(", ")}) and two you want to avoid (${preference.avoids.join(", ")}). Keep it to one compact sentence.`,
       ),
-    );
-  }
+    ),
+  );
 
   await executeActionSpec(context, {
     stepKey: "act-2-host-transition",
@@ -1534,17 +1652,17 @@ const runAct4 = async (context: RuntimeContext): Promise<void> => {
     });
   }
 
-  for (const contestantId of Object.keys(TEAM_BY_CONTESTANT)) {
-    const teamId = TEAM_BY_CONTESTANT[contestantId];
-    await executeActionSpec(
-      context,
-      createTalkSpec(
+  await executeActionSpecs(
+    context,
+    Object.keys(TEAM_BY_CONTESTANT).map((contestantId) => {
+      const teamId = TEAM_BY_CONTESTANT[contestantId];
+      return createTalkSpec(
         `act-4-talk-${contestantId}`,
         contestantId,
         `You are in ${teamId}. Propose one concrete project direction your team can build.`,
-      ),
-    );
-  }
+      );
+    }),
+  );
 
   await executeActionSpec(context, {
     stepKey: "act-4-host-start-timer",
@@ -1700,56 +1818,59 @@ const runAct6 = async (context: RuntimeContext): Promise<void> => {
 };
 
 const runAct7 = async (context: RuntimeContext): Promise<void> => {
-  for (const judgeId of ["judge-01", "judge-02", "judge-03"]) {
-    for (const [submissionId, score] of Object.entries(JUDGE_SCORE_PLAN)) {
-      const teamId =
-        submissionId === "submission-1"
-          ? "team-1"
-          : submissionId === "submission-2"
-            ? "team-2"
-            : "team-3";
-      await executeActionSpec(context, {
-        stepKey: `act-7-${judgeId}-${submissionId}`,
-        actorId: judgeId,
-        instruction:
-          `Submit one formal structured score for ${submissionId}. Use score ${score}. The favorite annotation must be ${teamId}. The mostAbsurd annotation must name one contestant id directly.`,
-        example: {
-          action: "submit_score",
-          submissionId,
-          score,
-        },
-        promptSkeleton: {
-          action: "submit_score",
-          submissionId,
-          score,
-          reason: "one short judging reason",
-          annotations: {
-            favorite: teamId,
-            mostAbsurd: "contestant-01",
+  await executeActionSpecs(
+    context,
+    ["judge-01", "judge-02", "judge-03"].flatMap((judgeId) =>
+      Object.entries(JUDGE_SCORE_PLAN).map(([submissionId, score]) => {
+        const teamId =
+          submissionId === "submission-1"
+            ? "team-1"
+            : submissionId === "submission-2"
+              ? "team-2"
+              : "team-3";
+        return {
+          stepKey: `act-7-${judgeId}-${submissionId}`,
+          actorId: judgeId,
+          instruction:
+            `Submit one formal structured score for ${submissionId}. Use score ${score}. The favorite annotation must be ${teamId}. The mostAbsurd annotation must name one contestant id directly.`,
+          example: {
+            action: "submit_score",
+            submissionId,
+            score,
           },
-        },
-        nonEmptyPaths: [
-          "reason",
-          "annotations.favorite",
-          "annotations.mostAbsurd",
-        ],
-        validate: (value) => {
-          const annotations = isRecord(value.annotations) ? value.annotations : null;
-          if (annotations?.favorite !== teamId) {
-            return `favorite annotation must be ${teamId}.`;
-          }
-          const mostAbsurd =
-            typeof annotations?.mostAbsurd === "string"
-              ? annotations.mostAbsurd.trim()
-              : "";
-          if (!mostAbsurd.startsWith("contestant-")) {
-            return "mostAbsurd must be a contestant id.";
-          }
-          return null;
-        },
-      });
-    }
-  }
+          promptSkeleton: {
+            action: "submit_score",
+            submissionId,
+            score,
+            reason: "one short judging reason",
+            annotations: {
+              favorite: teamId,
+              mostAbsurd: "contestant-01",
+            },
+          },
+          nonEmptyPaths: [
+            "reason",
+            "annotations.favorite",
+            "annotations.mostAbsurd",
+          ],
+          validate: (value) => {
+            const annotations = isRecord(value.annotations) ? value.annotations : null;
+            if (annotations?.favorite !== teamId) {
+              return `favorite annotation must be ${teamId}.`;
+            }
+            const mostAbsurd =
+              typeof annotations?.mostAbsurd === "string"
+                ? annotations.mostAbsurd.trim()
+                : "";
+            if (!mostAbsurd.startsWith("contestant-")) {
+              return "mostAbsurd must be a contestant id.";
+            }
+            return null;
+          },
+        } satisfies ActionSpec;
+      }),
+    ),
+  );
   await waitForStage(context, "act-8-awards");
 };
 
@@ -1912,16 +2033,16 @@ const runAct10 = async (context: RuntimeContext): Promise<void> => {
     },
     nonEmptyPaths: ["message"],
   });
-  for (const contestantId of Object.keys(TEAM_BY_CONTESTANT)) {
-    await executeActionSpec(
-      context,
+  await executeActionSpecs(
+    context,
+    Object.keys(TEAM_BY_CONTESTANT).map((contestantId) =>
       createTalkSpec(
         `act-10-talk-${contestantId}`,
         contestantId,
         "Say one short closing line about what the night became.",
       ),
-    );
-  }
+    ),
+  );
 
   const snapshotPayload = await fetchHostSnapshot(context);
   const winner = detectWinner(snapshotPayload.snapshot);

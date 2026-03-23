@@ -56,11 +56,13 @@
 - current promoted real-run entrypoint: \`bun run openclaw:autonomy:the-fool\` drives six real OpenClaw contestant agents plus supporting host/judge/viewer agent workspaces through the same authoritative runtime
 - important wording: autonomy is still only an ingress adapter into the authoritative command surface; runtime truth remains in the orchestrator and is inspected through control/query output
 - latest single-run recovery evidence on this branch: one recovered orchestrator/autonomy chain resumed at `act-10-open-mic`, completed the remaining close-out talks, and emitted authoritative `activity.finished` with `team-3` settled as winner
+- latest operator-view evidence on this branch: `openclaw-control ascii` now renders full-run run outcome, per-act checkpoints, pending obligations, dense summary, and closeout capsule from authoritative snapshot/events/replay only
+- latest runtime-shape evidence on this branch: local OpenClaw concurrency is now implemented as concurrent prompt generation plus serialized authoritative dispatch inside the same single-orchestrator runtime
 
 ## Open Memory
 
 - next architecture validation target is a second minimal real activity package
 - that package should validate the runtime boundary itself, not expand product surface
 - near-term delivery target on this branch is to stabilize and verify \`bun run openclaw:autonomy:the-fool\` under the new authority-only configuration rules without changing external CLI/HTTP/WebSocket contracts
-- next operator-facing task is to turn ASCII into a complete end-to-end The Fool operator surface: run outcome, per-act checkpoints, pending obligations, and denser closeout summaries from authoritative snapshot/events only
-- next runtime task after that is to evaluate and implement local OpenClaw prompt parallelism inside the same authoritative orchestrator: parallel prompt generation where safe, but serialized authoritative command dispatch
+- next operator-facing polish is to tighten finished-stage rendering and summary density without introducing a second truth source
+- next runtime verification task is to run the new prompt-parallel autonomy path against real local OpenClaw gateway credentials and confirm the same single-authority observation chain end to end

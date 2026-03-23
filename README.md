@@ -98,6 +98,10 @@ The primary operator-facing runtime view is terminal-first.
 The watch currently prioritizes:
 
 - current activity run, template, status, and current stage
+- full-run operator capsule: winner, settlement, finish note, podium, and closeout state
+- per-act checkpoints across act-1 through act-10
+- pending authoritative obligations for the current stage or closeout
+- denser full-run summary so an operator can read the entire landing without opening audit logs
 - full room occupancy
 - all teams and members
 - current contestant room placement
@@ -131,6 +135,8 @@ This branch now includes a real OpenClaw agent ingress path for The Fool.
 - judges and viewers are currently mapped onto separate real agent workspaces while preserving authoritative actor ids and roles inside the runtime
 - the autonomy runner talks to the orchestrator over real WebSocket RPC and talks to OpenClaw through real gateway `agent` calls
 - agent output is constrained into JSON actions which are then converted into authoritative command envelopes before entering the runtime
+- prompt generation can now run concurrently for safe same-stage windows such as act-1 intros, act-2 preferences, act-4 talks, act-7 judge reasoning, and act-10 closing talks
+- authoritative command dispatch stays serialized even when prompt generation is concurrent, so stage transitions, finish, timer control, movement, submission lock/open, and award commands remain single-threaded at the authority boundary
 - branch-local ledger state is persisted under `.autonomy/<activity-run-id>/state.json`
 - resume semantics are step-aware: completed steps stay in the ledger, while a restarted autonomy process issues fresh command ids for unfinished steps so recovery does not reuse a rejected idempotency key
 - real `team-project-v1` submissions currently require `payload.data.elevatorPitch` to stay at 100 characters or fewer; the autonomy runner now aligns its prompt and normalization with that authority rule
@@ -167,6 +173,7 @@ Operational note:
 - keep the debug loop to one local orchestrator and one autonomy runner so ASCII observation stays tied to a single authoritative run
 - if you resume a partial run, keep the same orchestrator data dir and activityRunId, then restart exactly one autonomy runner against the same ledger instead of opening a second competing loop
 - latest recovered single-run evidence on this branch: one authority-backed chain resumed at `act-10-open-mic`, completed the remaining closing talks, emitted `finish_activity`, and wrote authoritative `activity.finished` with `team-3` settled as winner while ASCII stayed aligned end-to-end
+- latest full operator-view evidence on this branch: authoritative replay/event inspection for `the-fool-operator-check-20260323` rendered act-1 through act-10 checkpoints, pending obligations, full-run summary, and closeout capsule from the same snapshot/events/replay chain
 
 Current config boundary:
 
@@ -206,5 +213,5 @@ The current worktree is intentionally small and backend-first:
 - only The Fool is wired as a built-in activity package today
 - the live surface is CLI and ASCII only; any future renderer should be a separate consumer of the same authority and query contracts
 - the promoted real-run entrypoint is the autonomy runner, while operator inspection still flows through openclaw-control and ASCII queries
-- audience vote endgame follow-through still needs more authority-side work for winner aggregation beyond the current snapshot and replay output
+- local OpenClaw concurrency is intentionally scoped to prompt preparation windows inside the autonomy adapter; authority command dispatch itself remains serialized
 - when checking behavior, prefer real /api/orchestrator/* queries and openclaw-control ascii over documentation assumptions

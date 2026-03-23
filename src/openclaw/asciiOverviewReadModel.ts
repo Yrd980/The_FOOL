@@ -42,12 +42,49 @@ export interface BuildOpenClawAsciiReadModelArgs {
   now?: number;
 }
 
+export interface RunOutcomeSummary {
+  settled: boolean;
+  settlementMode: string | null;
+  winningTargetType: string | null;
+  winningTargetId: string | null;
+  winnerLabel: string | null;
+  note: string | null;
+  endedAt: number | null;
+}
+
+export interface ActCheckpointSummary {
+  stageId: string;
+  title: string;
+  status: "pending" | "active" | "done";
+  summary: string;
+}
+
+export interface FullRunSummary {
+  talkCount: number;
+  broadcastCount: number;
+  reactionCount: number;
+  betCount: number;
+  voteCount: number;
+  submissionCount: number;
+  lockedSubmissionCount: number;
+  scoreCount: number;
+  awardCount: number;
+  settlementCount: number;
+}
+
+export interface CloseoutCapsuleSummary {
+  lines: string[];
+}
+
 export interface OpenClawAsciiOverviewReadModel {
   activityRun: OrchestratorSnapshotResponse["snapshot"]["activityRun"];
+  actCheckpoints: ActCheckpointSummary[];
   awards: NonNullable<OrchestratorSnapshotResponse["snapshot"]["awards"]>;
+  closeoutCapsule: CloseoutCapsuleSummary;
   currentStageTemplate?: OrchestratorStageTemplate;
   entityRoomMap: Map<string, string>;
   entityTeamMap: Map<string, string>;
+  fullRunSummary: FullRunSummary;
   healthTimestamp: number | null | undefined;
   historyEvents: DescribedEvent[];
   latestMemberActivityById: Map<string, DescribedEvent>;
@@ -55,9 +92,11 @@ export interface OpenClawAsciiOverviewReadModel {
   latestTeamActivityById: Map<string, DescribedEvent>;
   lastSequence: number;
   now: number;
+  pendingObligations: string[];
   recentEventCount: number;
   replayEventCount: number;
   resolvedEventLimit: number;
+  runOutcome: RunOutcomeSummary;
   scoreSummary: GatewayScoreSummarySnapshot[];
   social: OrchestratorSnapshotResponse["snapshot"]["social"];
   socialEvents: DescribedEvent[];
@@ -591,6 +630,294 @@ const buildTeamActivityIndex = (historyEvents: DescribedEvent[]): {
   return { latestTeamActivityById, teamTrailById };
 };
 
+const isContestantId = (value: string | null): value is string =>
+  typeof value === "string" && /^contestant-\d+$/.test(value);
+
+const isLaterStageReached = (
+  stageTemplates: OrchestratorStageTemplate[],
+  currentStageId: string | null,
+  targetStageId: string,
+): boolean => {
+  const currentIndex = stageTemplates.findIndex((entry) => entry.id === currentStageId);
+  const targetIndex = stageTemplates.findIndex((entry) => entry.id === targetStageId);
+  return currentIndex >= 0 && targetIndex >= 0 && currentIndex > targetIndex;
+};
+
+const summarizeRunOutcome = (
+  activityRun: OrchestratorSnapshotResponse["snapshot"]["activityRun"],
+  historyEvents: DescribedEvent[],
+): RunOutcomeSummary => {
+  const finishedEvent = [...historyEvents].find((entry) => entry.type === "activity.finished");
+  const match = finishedEvent?.summary.match(/activity finished(?: -> ([^:]+):([^\s(]+))?/);
+  const winningTargetType = match?.[1] ?? null;
+  const winningTargetId = match?.[2] ?? null;
+  const winnerLabel =
+    winningTargetType && winningTargetId ? `${winningTargetType}:${winningTargetId}` : null;
+  const noteMatch = finishedEvent?.summary.match(/\((.+)\)$/);
+
+  return {
+    settled: activityRun?.status === "finished" || finishedEvent !== undefined,
+    settlementMode:
+      finishedEvent?.summary.includes("[push]") ? "push" : winnerLabel ? "winner" : null,
+    winningTargetType,
+    winningTargetId,
+    winnerLabel,
+    note: noteMatch?.[1] ?? null,
+    endedAt:
+      typeof activityRun?.endedAt === "number"
+        ? activityRun.endedAt
+        : (finishedEvent?.timestamp ?? null),
+  };
+};
+
+const buildFullRunSummary = ({
+  historyEvents,
+  submissions,
+  awards,
+  scoreSummary,
+  social,
+}: {
+  historyEvents: DescribedEvent[];
+  submissions: GatewaySubmissionSnapshot[];
+  awards: NonNullable<OrchestratorSnapshotResponse["snapshot"]["awards"]>;
+  scoreSummary: GatewayScoreSummarySnapshot[];
+  social: OrchestratorSnapshotResponse["snapshot"]["social"];
+}): FullRunSummary => ({
+  talkCount: historyEvents.filter((entry) => entry.type === "agent.talked").length,
+  broadcastCount: historyEvents.filter((entry) => entry.type === "broadcast.sent").length,
+  reactionCount: historyEvents.filter((entry) => entry.type === "reaction.added").length,
+  betCount: historyEvents.filter((entry) => entry.type === "bet.placed").length,
+  voteCount: historyEvents.filter((entry) => entry.type === "vote.cast").length,
+  submissionCount: submissions.length,
+  lockedSubmissionCount: submissions.filter((entry) => entry.locked).length,
+  scoreCount: scoreSummary.reduce((total, entry) => total + entry.judgeCount, 0),
+  awardCount: awards.length,
+  settlementCount: social?.betSettlements?.length ?? 0,
+});
+
+const buildCloseoutCapsule = ({
+  runOutcome,
+  scoreSummary,
+  awards,
+  social,
+}: {
+  runOutcome: RunOutcomeSummary;
+  scoreSummary: GatewayScoreSummarySnapshot[];
+  awards: NonNullable<OrchestratorSnapshotResponse["snapshot"]["awards"]>;
+  social: OrchestratorSnapshotResponse["snapshot"]["social"];
+}): CloseoutCapsuleSummary => {
+  const podium = [...scoreSummary]
+    .sort((left, right) => {
+      if (right.averageScore !== left.averageScore) {
+        return right.averageScore - left.averageScore;
+      }
+      return (right.lastSubmittedAt ?? 0) - (left.lastSubmittedAt ?? 0);
+    })
+    .slice(0, 3)
+    .map(
+      (entry, index) =>
+        `${index + 1}. ${entry.teamId ?? entry.targetId} avg=${entry.averageScore.toFixed(2)} judges=${entry.judgeCount}`,
+    );
+  const mostAbsurd = awards.find((entry) => entry.awardId === "most-absurd");
+  const lines = [
+    `winner=${runOutcome.winnerLabel ?? "pending"} settlement=${runOutcome.settlementMode ?? "pending"}`,
+    runOutcome.note ? `finish_note=${runOutcome.note}` : null,
+    mostAbsurd
+      ? `most_absurd=${mostAbsurd.entityId ?? "n/a"} reason=${mostAbsurd.reason ?? "n/a"}`
+      : null,
+    podium.length > 0 ? `podium=${podium.join(" | ")}` : null,
+    typeof social?.betSettlements?.length === "number"
+      ? `bet_settlements=${social.betSettlements.length}`
+      : null,
+  ].filter((entry): entry is string => entry !== null);
+  return { lines };
+};
+
+const buildActCheckpoints = ({
+  activityRun,
+  stageTemplates,
+  stageHistory,
+  historyEvents,
+  submissions,
+  scoreSummary,
+  awards,
+}: {
+  activityRun: OrchestratorSnapshotResponse["snapshot"]["activityRun"];
+  stageTemplates: OrchestratorStageTemplate[];
+  stageHistory: string[];
+  historyEvents: DescribedEvent[];
+  submissions: GatewaySubmissionSnapshot[];
+  scoreSummary: GatewayScoreSummarySnapshot[];
+  awards: NonNullable<OrchestratorSnapshotResponse["snapshot"]["awards"]>;
+}): ActCheckpointSummary[] => {
+  const currentStageId = activityRun?.currentStageId ?? null;
+  const captainIds = ["contestant-01", "contestant-03", "contestant-05"];
+  const contestantTalkCountByStage = (stageId: string) =>
+    new Set(
+      historyEvents
+        .filter(
+          (entry) =>
+            entry.type === "agent.talked" &&
+            entry.stageIds.includes(stageId) &&
+            isContestantId(entry.actorId),
+        )
+        .map((entry) => entry.actorId),
+    ).size;
+
+  const moveCountByRoom = (roomIdPrefix: string) =>
+    historyEvents.filter(
+      (entry) =>
+        entry.type === "entity.moved" &&
+        entry.summary.includes(`-> ${roomIdPrefix}`),
+    ).length;
+
+  return stageTemplates.map((stageTemplate) => {
+    const status: ActCheckpointSummary["status"] =
+      currentStageId === stageTemplate.id
+        ? "active"
+        : stageHistory.includes(stageTemplate.id) && currentStageId !== stageTemplate.id
+          ? "done"
+          : isLaterStageReached(stageTemplates, currentStageId, stageTemplate.id)
+            ? "done"
+            : "pending";
+
+    let summary = "no authoritative checkpoint yet";
+    switch (stageTemplate.id) {
+      case "act-1-intro":
+        summary = `intros=${contestantTalkCountByStage(stageTemplate.id)}/6 viewer_pulse=${historyEvents.filter((entry) => entry.stageIds.includes(stageTemplate.id) && SOCIAL_EVENT_TYPES.has(entry.type)).length}`;
+        break;
+      case "act-2-preference":
+        summary = `preferences=${contestantTalkCountByStage(stageTemplate.id)}/6`;
+        break;
+      case "act-3-assignment":
+        summary = `host_broadcast=${historyEvents.some((entry) => entry.type === "broadcast.sent" && entry.stageIds.includes(stageTemplate.id)) ? "yes" : "no"} captain_ack=${new Set(historyEvents.filter((entry) => entry.type === "agent.talked" && entry.stageIds.includes(stageTemplate.id) && entry.actorId && captainIds.includes(entry.actorId)).map((entry) => entry.actorId)).size}/3`;
+        break;
+      case "act-4-discussion":
+        summary = `moves=${moveCountByRoom("team-room-")} talks=${contestantTalkCountByStage(stageTemplate.id)}/6 timer=${historyEvents.some((entry) => entry.type === "timer.started" && entry.stageIds.includes(stageTemplate.id)) ? "started" : "idle"}`;
+        break;
+      case "act-5-submission":
+        summary = `opened=${historyEvents.filter((entry) => entry.type === "submission.opened" && entry.stageIds.includes(stageTemplate.id)).length}/3 locked=${submissions.filter((entry) => entry.stageId === stageTemplate.id && entry.locked).length}/3`;
+        break;
+      case "act-6-human-review":
+        summary = `review_social=${historyEvents.filter((entry) => entry.stageIds.includes(stageTemplate.id) && (entry.type === "agent.talked" || entry.type === "reaction.added" || entry.type === "bet.placed" || entry.type === "vote.cast")).length}`;
+        break;
+      case "act-7-ai-judging":
+        summary = `judge_scores=${scoreSummary.reduce((total, entry) => total + entry.judgeCount, 0)} submissions=${scoreSummary.length} judge_coverage=3`;
+        break;
+      case "act-8-awards":
+        summary = `awards=${awards.length} audience_votes=${historyEvents.filter((entry) => entry.type === "vote.cast" && entry.stageIds.includes(stageTemplate.id)).length}`;
+        break;
+      case "act-9-co-creation":
+        summary = `quiet_moves=${moveCountByRoom("quiet-orbit")} poem_submits=${submissions.filter((entry) => entry.stageId === stageTemplate.id).length} draws=${historyEvents.filter((entry) => entry.type === "draw.submitted" && entry.stageIds.includes(stageTemplate.id)).length}`;
+        break;
+      case "act-10-open-mic":
+        summary = `closing_talks=${contestantTalkCountByStage(stageTemplate.id)}/6 finished=${historyEvents.some((entry) => entry.type === "activity.finished") ? "yes" : "no"}`;
+        break;
+      default:
+        break;
+    }
+
+    return {
+      stageId: stageTemplate.id,
+      title: stageTemplate.name ?? stageTemplate.id,
+      status,
+      summary,
+    };
+  });
+};
+
+const buildPendingObligations = ({
+  activityRun,
+  historyEvents,
+  submissions,
+  scoreSummary,
+  runOutcome,
+}: {
+  activityRun: OrchestratorSnapshotResponse["snapshot"]["activityRun"];
+  historyEvents: DescribedEvent[];
+  submissions: GatewaySubmissionSnapshot[];
+  scoreSummary: GatewayScoreSummarySnapshot[];
+  runOutcome: RunOutcomeSummary;
+}): string[] => {
+  if (runOutcome.settled) {
+    return ["closeout complete; no pending authoritative obligations"];
+  }
+
+  const currentStageId = activityRun?.currentStageId ?? null;
+  const contestantIds = ["contestant-01", "contestant-02", "contestant-03", "contestant-04", "contestant-05", "contestant-06"];
+  const captainIds = ["contestant-01", "contestant-03", "contestant-05"];
+  const obligations: string[] = [];
+  const stageTalkers = new Set(
+    historyEvents
+      .filter((entry) => entry.type === "agent.talked" && entry.stageIds.includes(currentStageId ?? ""))
+      .map((entry) => entry.actorId)
+      .filter((entry): entry is string => typeof entry === "string"),
+  );
+
+  if (currentStageId === "act-1-intro") {
+    obligations.push(
+      ...contestantIds
+        .filter((id) => !stageTalkers.has(id))
+        .map((id) => `${id} intro talk missing`),
+    );
+  } else if (currentStageId === "act-2-preference") {
+    obligations.push(
+      ...contestantIds
+        .filter((id) => !stageTalkers.has(id))
+        .map((id) => `${id} preference talk missing`),
+    );
+  } else if (currentStageId === "act-3-assignment") {
+    if (
+      !historyEvents.some(
+        (entry) => entry.type === "broadcast.sent" && entry.stageIds.includes("act-3-assignment"),
+      )
+    ) {
+      obligations.push("host assignment broadcast missing");
+    }
+    obligations.push(
+      ...captainIds
+        .filter((id) => !stageTalkers.has(id))
+        .map((id) => `${id} team acknowledgement missing`),
+    );
+  } else if (currentStageId === "act-4-discussion") {
+    obligations.push(
+      ...contestantIds
+        .filter((id) => !stageTalkers.has(id))
+        .map((id) => `${id} discussion talk missing`),
+    );
+  } else if (currentStageId === "act-5-submission") {
+    obligations.push(
+      ...["submission-1", "submission-2", "submission-3"]
+        .filter((submissionId) => !submissions.some((entry) => entry.id === submissionId && entry.locked))
+        .map((submissionId) => `${submissionId} still unlocked`),
+    );
+  } else if (currentStageId === "act-7-ai-judging") {
+    obligations.push(
+      ...["submission-1", "submission-2", "submission-3"]
+        .filter(
+          (submissionId) =>
+            (scoreSummary.find((entry) => entry.submissionId === submissionId)?.judgeCount ?? 0) < 3,
+        )
+        .map((submissionId) => {
+          const judgeCount =
+            scoreSummary.find((entry) => entry.submissionId === submissionId)?.judgeCount ?? 0;
+          return `${submissionId} judge coverage incomplete (${judgeCount}/3)`;
+        }),
+    );
+  } else if (currentStageId === "act-10-open-mic") {
+    obligations.push(
+      ...contestantIds
+        .filter((id) => !stageTalkers.has(id))
+        .map((id) => `${id} closing talk missing`),
+    );
+    if (!historyEvents.some((entry) => entry.type === "activity.finished")) {
+      obligations.push("finish_activity missing");
+    }
+  }
+
+  return obligations.length > 0 ? obligations : ["no blocking authoritative obligations visible"];
+};
+
 export const buildOpenClawAsciiReadModel = ({
   snapshotResponse,
   eventsPage,
@@ -635,13 +962,46 @@ export const buildOpenClawAsciiReadModel = ({
     1,
     eventLimit ?? eventsPage.events.length ?? 1,
   );
+  const runOutcome = summarizeRunOutcome(activityRun, historyEvents);
+  const fullRunSummary = buildFullRunSummary({
+    historyEvents,
+    submissions: snapshotResponse.snapshot.submissions ?? [],
+    awards: snapshotResponse.snapshot.awards ?? [],
+    scoreSummary: snapshotResponse.snapshot.scoreSummary ?? [],
+    social: snapshotResponse.snapshot.social,
+  });
+  const actCheckpoints = buildActCheckpoints({
+    activityRun,
+    stageTemplates,
+    stageHistory,
+    historyEvents,
+    submissions: snapshotResponse.snapshot.submissions ?? [],
+    scoreSummary: snapshotResponse.snapshot.scoreSummary ?? [],
+    awards: snapshotResponse.snapshot.awards ?? [],
+  });
+  const pendingObligations = buildPendingObligations({
+    activityRun,
+    historyEvents,
+    submissions: snapshotResponse.snapshot.submissions ?? [],
+    scoreSummary: snapshotResponse.snapshot.scoreSummary ?? [],
+    runOutcome,
+  });
+  const closeoutCapsule = buildCloseoutCapsule({
+    runOutcome,
+    scoreSummary: snapshotResponse.snapshot.scoreSummary ?? [],
+    awards: snapshotResponse.snapshot.awards ?? [],
+    social: snapshotResponse.snapshot.social,
+  });
 
   return {
     activityRun,
+    actCheckpoints,
     awards: snapshotResponse.snapshot.awards ?? [],
+    closeoutCapsule,
     currentStageTemplate,
     entityRoomMap,
     entityTeamMap,
+    fullRunSummary,
     healthTimestamp: snapshotResponse.snapshot.health?.ts,
     historyEvents,
     latestMemberActivityById: buildLatestMemberActivityById(historyEvents),
@@ -650,9 +1010,11 @@ export const buildOpenClawAsciiReadModel = ({
     latestTeamActivityById,
     lastSequence: snapshotResponse.snapshot.lastSequence ?? 0,
     now,
+    pendingObligations,
     recentEventCount: recentEvents.length,
     replayEventCount: replayPage?.events.length ?? 0,
     resolvedEventLimit,
+    runOutcome,
     scoreSummary: snapshotResponse.snapshot.scoreSummary ?? [],
     social: snapshotResponse.snapshot.social,
     socialEvents: historyEvents.filter((entry) => SOCIAL_EVENT_TYPES.has(entry.type)),

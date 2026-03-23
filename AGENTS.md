@@ -25,6 +25,8 @@
 - When the user asks to continue autonomy ingress closure, debug by running the backend directly and observing with \`openclaw-control ascii\`, not by rebuilding any frontend surface.
 - Keep local verification to one orchestrator and one autonomy runner at a time; interrupted runs should be cleaned up before starting another pass.
 
+- If local concurrency is extended, keep it on prompt preparation only unless the user explicitly changes the authority-serialization boundary.
+
 ## Current Delivery Bias
 
 - Default to backend direct-run debugging for autonomy ingress.

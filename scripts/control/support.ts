@@ -255,6 +255,39 @@ export const runOpenClawJson = (args: string[]): unknown => {
   }
 };
 
+export const runOpenClawJsonAsync = async (args: string[]): Promise<unknown> => {
+  const proc = Bun.spawn(["openclaw", ...args], {
+    cwd: devRoot,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdoutBuffer, stderrBuffer, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  if (exitCode !== 0) {
+    const stderr = stderrBuffer.trim();
+    const stdout = stdoutBuffer.trim();
+    const detail = stderr || stdout || `exit ${exitCode}`;
+    throw new Error(`openclaw ${args.join(" ")} failed: ${detail}`);
+  }
+
+  const stdout = stdoutBuffer.trim();
+  if (!stdout) {
+    throw new Error(`openclaw ${args.join(" ")} returned empty output.`);
+  }
+
+  try {
+    return JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(
+      `openclaw ${args.join(" ")} returned invalid JSON: ${(error as Error).message}`,
+    );
+  }
+};
+
 export const resolveGatewayToken = (): string | undefined =>
   resolveConfigValue("OPENCLAW_GATEWAY_TOKEN");
 

@@ -65,9 +65,9 @@ The presentation boundary for this repo is intentionally narrow: backend authori
 The current branch also carries a real OpenClaw agent ingress path for The Fool. Its intended flow is:
 
 1. autonomy runner reads authority snapshot, event history, and formal activity docs
-2. runner prompts a real OpenClaw gateway agent for one JSON action
-3. runner validates and converts that JSON into a normal authoritative command envelope
-4. command still enters the same orchestrator command -> event -> projection loop
+2. for safe same-stage windows, runner may prompt multiple real OpenClaw gateway agents concurrently from the same baseline authority snapshot
+3. runner validates and converts each JSON reply into a normal authoritative command envelope
+4. prepared commands are still dispatched serially into the same orchestrator command -> event -> projection loop
 5. control queries and ASCII continue to observe the authoritative result
 6. on restart, autonomy keeps ledger-completed steps but refreshes its autonomy run id before issuing unfinished commands so recovery does not pin future retries to an old rejected idempotency key
 7. free-text fallback coercion must not treat gateway / LLM infrastructure failures as valid participant output; those errors stay in the ingress retry path instead of becoming authoritative talk payloads
@@ -111,8 +111,10 @@ CLI surface:
 - control and autonomy room resolution must come from authoritative \`snapshot.world\`; bootstrap/dev room fallback is no longer part of the live runtime path
 - operator mutation dispatch is authority-only; there is no gateway mutation fallback or preview-only downgrade path in the control flow
 - local authority startup requires explicit \`OPENCLAW_ACTIVITY_RUN_ID\`, \`OPENCLAW_ACTIVITY_TEMPLATE_ID\`, and \`OPENCLAW_ORCHESTRATOR_TOKEN\`
+- real gateway agent calls require explicit `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN`; no hidden config fallback remains in control or autonomy
 - future renderers must consume the same authority-backed query surface instead of becoming a new truth source
 - autonomy ingress must remain an adapter into the same command surface; it must not become a sidecar truth source
+- local concurrency is allowed only in pre-dispatch prompt preparation; authority mutations such as stage changes, finish, timers, movement, submission locks, and awards remain serialized
 - the promoted real-run entrypoint is the autonomy runner, while authority verification still comes from the same query and control surface
 - repo-local automated test suites are not part of the current delivery path; runtime issues are expected to be debugged through one real OpenClaw run at a time plus authority-backed query/ascii inspection
 
