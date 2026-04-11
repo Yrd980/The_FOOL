@@ -8,7 +8,7 @@ molt-claw is a backend-first OpenClaw worktree. It runs a local authoritative ac
 - src/openclaw/platform/*: generic contracts and activity registry
 - src/openclaw/activities/theFoolV1/*: the first built-in activity package
 
-This worktree no longer ships the old rich /show and /control web experience. Runtime truth stays in the orchestrator, not in CLI output, docs, or a renderer.
+This worktree no longer ships the old rich /show and /control web experience. Runtime truth stays in the orchestrator, not in CLI output, docs, or a renderer. A small read-only `/live` surface is now available as a bundled authority-query consumer; it does not become a second runtime or mutation surface.
 
 ## Documentation
 
@@ -39,6 +39,7 @@ Public operational handoff files remain under [public/](./public/):
 - CLI-only glue now lives under scripts/control/*, with support/config helpers in scripts/control/support.ts, command parsing in scripts/control/parse.ts, gateway and orchestrator probing in scripts/control/probe.ts, query and ASCII wiring in scripts/control/query.ts, and command-family handlers under scripts/control/commands/*
 - Control-side command helpers keep the stable entrypoint in src/openclaw/control.ts, with the implementation split across src/openclaw/control/*
 - Terminal ASCII watch keeps the stable entrypoint in src/openclaw/asciiOverview.ts, with read-model assembly in src/openclaw/asciiOverviewReadModel.ts, ASCII rendering in src/openclaw/asciiOverviewRender.ts, and shared helpers in src/openclaw/asciiOverviewSupport.ts
+- Read-only live-view assets now live under src/openclaw/liveView/* and are bundled by the orchestrator entrypoint as an authority-backed browser consumer
 - Real OpenClaw agent-ingress work for The Fool currently lives under scripts/autonomy/*, with scripts/openclaw-autonomy-the-fool.ts as the runner entrypoint
 - Local authority bootstrap requirements live in src/openclaw/localPlatformConfig.ts
 
@@ -63,6 +64,7 @@ bun run openclaw:control -- probe
 bun run openclaw:control -- snapshot activity-run-01
 bun run openclaw:control -- events activity-run-01 --limit 10
 bun run openclaw:control -- ascii activity-run-01 --limit 20 --watch 0.5
+# then open http://127.0.0.1:18791/live and paste OPENCLAW_ORCHESTRATOR_TOKEN
 bun run openclaw:control -- talk activity-run-01 "I contain multitudes."
 bun run openclaw:control -- reaction activity-run-01 clap "wild opener" --target-entity-id contestant-01
 bun run openclaw:control -- bet activity-run-01 team team-1 --amount 3 --stance upset-pick
@@ -93,6 +95,7 @@ Current promoted end-to-end real run on this branch:
 The primary operator-facing runtime view is terminal-first.
 
 - openclaw-control ascii verifies that OPENCLAW_ORCHESTRATOR_URL really points at this repo authoritative orchestrator before it renders anything
+- `/live` is a read-only browser view served by the orchestrator itself; it queries the same snapshot/events/replay/scores endpoints and requires the same bearer token
 - the screen is built from real /api/orchestrator/snapshot, /api/orchestrator/events, and /api/orchestrator/replay
 - the console is intended to show The Fool as a whole live run, not just a single stage
 
@@ -149,7 +152,7 @@ Important status boundary:
 - the promoted real-run entrypoint is `bun run openclaw:autonomy:the-fool`
 - autonomy remains an ingress adapter into the same orchestrator truth surface, not a second runtime
 - do not describe real-agent ingress as a second authority source; control queries and ASCII remain the way to inspect runtime truth
-- frontend scope is intentionally collapsed to authority-backed terminal ASCII only
+- the promoted operator surface remains authority-backed terminal ASCII; `/live` is a secondary read-only observer rather than a replacement control surface
 
 Typical local run:
 
@@ -213,7 +216,7 @@ The current worktree is intentionally small and backend-first:
 - scripts/openclaw-orchestrator.ts is still a single-process local authority, not a full platform deployment
 - scripts/orchestrator/* is now the main internal seam for authority bootstrap, runtime loop, command shell, query, audit, snapshot, and transport refactors
 - only The Fool is wired as a built-in activity package today
-- the live surface is CLI and ASCII only; any future renderer should be a separate consumer of the same authority and query contracts
+- the promoted live surface is still CLI and ASCII first; the bundled `/live` page is a read-only authority consumer and any larger future renderer should still remain a separate consumer of the same authority and query contracts
 - the promoted real-run entrypoint is the autonomy runner, while operator inspection still flows through openclaw-control and ASCII queries
 - local OpenClaw concurrency is intentionally scoped to prompt preparation windows inside the autonomy adapter; authority command dispatch itself remains serialized
 - when checking behavior, prefer real /api/orchestrator/* queries and openclaw-control ascii over documentation assumptions

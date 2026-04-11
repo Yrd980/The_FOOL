@@ -1,4 +1,5 @@
 import type { ServerWebSocket } from "bun";
+import type { LiveViewAssets } from "../../src/openclaw/liveView/assets";
 import type { CommandEnvelope } from "../../src/openclaw/platform/contracts";
 import {
   parseLimit,
@@ -37,6 +38,7 @@ interface OrchestratorServerContext {
   executeCommand: (command: CommandEnvelope) => CommandReceipt;
   parseCommandEnvelope: (value: unknown) => CommandEnvelope | null;
   broadcastHealth: () => void;
+  liveView?: LiveViewAssets;
 }
 
 const extractBearerToken = (request: Request): string | null => {
@@ -106,6 +108,41 @@ const buildStatusPayload = (sessions: Map<string, SessionProjection>) => ({
     ),
   },
 });
+
+const sendTextResponse = (
+  body: string,
+  contentType: string,
+  cacheControl?: string,
+): Response =>
+  new Response(body, {
+    headers: {
+      "content-type": `${contentType}; charset=utf-8`,
+      ...(cacheControl ? { "cache-control": cacheControl } : {}),
+    },
+  });
+
+const resolveLiveViewResponse = (
+  pathname: string,
+  liveView?: LiveViewAssets,
+): Response | null => {
+  if (pathname === "/live") {
+    return sendTextResponse(liveView?.html ?? "Live view unavailable.", "text/html");
+  }
+
+  if (pathname === "/live/app.js") {
+    return sendTextResponse(
+      liveView?.appJs ?? "",
+      "text/javascript",
+      "no-store",
+    );
+  }
+
+  if (pathname === "/live/live.css") {
+    return sendTextResponse(liveView?.css ?? "", "text/css", "no-store");
+  }
+
+  return null;
+};
 
 const handleHttpCommand = async (
   request: Request,
@@ -401,6 +438,16 @@ export const createOrchestratorServerHandlers = (
 } => ({
   fetch(request, runtime) {
     const url = new URL(request.url);
+
+    if (request.method === "GET") {
+      const liveViewResponse = resolveLiveViewResponse(
+        url.pathname,
+        context.liveView,
+      );
+      if (liveViewResponse) {
+        return liveViewResponse;
+      }
+    }
 
     if (request.method === "OPTIONS") {
       return sendJson({ ok: true });

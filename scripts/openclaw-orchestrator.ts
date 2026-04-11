@@ -64,6 +64,7 @@ import {
 } from "./orchestrator/commands/execute";
 import type { CommandHandlerContext } from "./orchestrator/commands/support";
 import { createCommandHelpers } from "./orchestrator/commands/helpers";
+import { buildLiveViewAssets } from "../src/openclaw/liveView/assets";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const devRoot = path.resolve(scriptDir, "..");
@@ -490,6 +491,8 @@ const { executeCommand } = createAuditedCommandExecutor({
   createCommandError,
 });
 
+const liveView = await buildLiveViewAssets(devRoot);
+
 const { fetch, websocket } = createOrchestratorServerHandlers({
   authToken,
   dataDir,
@@ -506,6 +509,7 @@ const { fetch, websocket } = createOrchestratorServerHandlers({
   executeCommand,
   parseCommandEnvelope,
   broadcastHealth,
+  liveView,
 });
 
 const server = Bun.serve<WebSocketSessionData>({

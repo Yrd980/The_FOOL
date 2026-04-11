@@ -57,8 +57,9 @@ Use this wording:
 - [src/openclaw/asciiOverviewReadModel.ts](./src/openclaw/asciiOverviewReadModel.ts): authority-backed event normalization and section read-model assembly
 - [src/openclaw/asciiOverviewRender.ts](./src/openclaw/asciiOverviewRender.ts): ASCII layout and rendering
 - [src/openclaw/asciiOverviewSupport.ts](./src/openclaw/asciiOverviewSupport.ts): shared ASCII helpers
+- [src/openclaw/liveView](./src/openclaw/liveView): bundled read-only browser live view built from the same authority-backed query surface
 
-The presentation boundary for this repo is intentionally narrow: backend authority plus terminal ASCII observation only. There is no promoted web frontend surface in this worktree.
+The presentation boundary for this repo is intentionally narrow: backend authority plus terminal ASCII observation, with a small read-only `/live` browser consumer bundled by the orchestrator. There is still no separate promoted web control frontend in this worktree.
 
 ### Branch-local autonomy ingress
 
@@ -88,6 +89,9 @@ HTTP:
 - \`GET /api/orchestrator/audit\`
 - \`GET /api/orchestrator/scores\`
 - \`POST /api/orchestrator/commands\`
+- \`GET /live\`
+- \`GET /live/app.js\`
+- \`GET /live/live.css\`
 
 WebSocket RPC:
 
@@ -113,7 +117,7 @@ CLI surface:
 - operator mutation dispatch is authority-only; there is no gateway mutation fallback or preview-only downgrade path in the control flow
 - local authority startup requires explicit \`OPENCLAW_ACTIVITY_RUN_ID\`, \`OPENCLAW_ACTIVITY_TEMPLATE_ID\`, and \`OPENCLAW_ORCHESTRATOR_TOKEN\`
 - real gateway agent calls require explicit `OPENCLAW_GATEWAY_URL` and `OPENCLAW_GATEWAY_TOKEN`; no hidden config fallback remains in control or autonomy
-- future renderers must consume the same authority-backed query surface instead of becoming a new truth source
+- read-only presentation consumers such as ASCII and `/live` must consume the same authority-backed query surface instead of becoming a new truth source
 - autonomy ingress must remain an adapter into the same command surface; it must not become a sidecar truth source
 - local concurrency is allowed only in pre-dispatch prompt preparation; authority mutations such as stage changes, finish, timers, movement, submission locks, and awards remain serialized
 - the promoted real-run entrypoint is the autonomy runner, while authority verification still comes from the same query and control surface
