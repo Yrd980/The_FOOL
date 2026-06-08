@@ -11,9 +11,6 @@ node_modules
 dist
 dist-ssr
 *.local
-.orchestrator/
-.autonomy/
-.runs/
 
 # Editor directories and files
 .vscode/*
